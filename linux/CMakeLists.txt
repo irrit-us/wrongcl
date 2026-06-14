@@ -57,6 +57,29 @@ pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
+# Rust native library used by Dart FFI.
+set(WRONGCL_NATIVE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust")
+set(WRONGCL_NATIVE_TARGET_DIR "${CMAKE_BINARY_DIR}/wrongcl_native")
+if(CMAKE_BUILD_TYPE MATCHES "Debug")
+  set(WRONGCL_NATIVE_PROFILE_DIR "debug")
+  set(WRONGCL_NATIVE_CARGO_FLAGS "")
+else()
+  set(WRONGCL_NATIVE_PROFILE_DIR "release")
+  set(WRONGCL_NATIVE_CARGO_FLAGS "--release")
+endif()
+set(WRONGCL_NATIVE_LIB
+  "${WRONGCL_NATIVE_TARGET_DIR}/${WRONGCL_NATIVE_PROFILE_DIR}/libwrongcl_native.so")
+
+add_custom_target(wrongcl_native ALL
+  COMMAND ${CMAKE_COMMAND} -E env
+    CARGO_TARGET_DIR=${WRONGCL_NATIVE_TARGET_DIR}
+    cargo build --manifest-path ${WRONGCL_NATIVE_DIR}/Cargo.toml ${WRONGCL_NATIVE_CARGO_FLAGS}
+  BYPRODUCTS ${WRONGCL_NATIVE_LIB}
+  WORKING_DIRECTORY ${WRONGCL_NATIVE_DIR}
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} wrongcl_native)
+
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
 
@@ -98,6 +121,9 @@ install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}
   COMPONENT Runtime)
 
 install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
+install(FILES "${WRONGCL_NATIVE_LIB}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})

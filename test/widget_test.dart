@@ -1,30 +1,76 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:wrongcl/main.dart';
+import 'package:wrongcl/app.dart';
+import 'package:wrongcl/wrongcl_client.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('client controls render and start proxy', (tester) async {
+    final client = FakeWrongclClient();
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    await tester.pumpWidget(WrongclApp(client: client));
+    await tester.pumpAndSettle();
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    expect(find.text('Wrongcl'), findsOneWidget);
+    expect(find.text('Start proxy'), findsOneWidget);
+    expect(find.text('Run probe'), findsOneWidget);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    await tester.tap(find.text('Start proxy'));
+    await tester.pumpAndSettle();
+
+    expect(client.started, isTrue);
+    expect(find.textContaining('SOCKS5 proxy started'), findsOneWidget);
   });
+}
+
+class FakeWrongclClient implements WrongclClient {
+  bool started = false;
+
+  @override
+  NativeResponse version() {
+    return const NativeResponse(
+      ok: true,
+      message: 'native ready',
+      data: {'version': 'test'},
+    );
+  }
+
+  @override
+  NativeResponse startProxy(ClientSettings settings) {
+    started = true;
+    return NativeResponse(
+      ok: true,
+      message: 'SOCKS5 proxy started',
+      data: {
+        'running': true,
+        'local_host': settings.localHost,
+        'local_port': settings.localPort,
+      },
+    );
+  }
+
+  @override
+  NativeResponse stopProxy() {
+    return const NativeResponse(
+      ok: true,
+      message: 'SOCKS5 proxy stopped',
+      data: {'running': false},
+    );
+  }
+
+  @override
+  NativeResponse status() {
+    return const NativeResponse(
+      ok: true,
+      message: 'SOCKS5 proxy is stopped',
+      data: {'running': false},
+    );
+  }
+
+  @override
+  NativeResponse probe(ClientSettings settings) {
+    return const NativeResponse(
+      ok: true,
+      message: 'probe succeeded',
+      data: {'bytes_read': 4, 'preview': 'pong'},
+    );
+  }
 }
