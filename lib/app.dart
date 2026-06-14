@@ -45,6 +45,8 @@ class _ClientHomeState extends State<ClientHome> {
   final _uuid = TextEditingController(
     text: '12345678-1234-1234-1234-123456789abc',
   );
+  final _path = TextEditingController(text: '/');
+  final _hostHeader = TextEditingController();
   final _localHost = TextEditingController(text: '127.0.0.1');
   final _localPort = TextEditingController(text: '1080');
   final _targetHost = TextEditingController(text: 'example.com');
@@ -55,6 +57,7 @@ class _ClientHomeState extends State<ClientHome> {
 
   bool _busy = false;
   bool _running = false;
+  String _protocol = 'raw-vless-tcp';
   String _nativeInfo = 'Native Rust client not checked';
   String _status = 'Stopped';
   Map<String, Object?> _stats = const {};
@@ -77,6 +80,8 @@ class _ClientHomeState extends State<ClientHome> {
     _serverHost.dispose();
     _serverPort.dispose();
     _uuid.dispose();
+    _path.dispose();
+    _hostHeader.dispose();
     _localHost.dispose();
     _localPort.dispose();
     _targetHost.dispose();
@@ -92,6 +97,9 @@ class _ClientHomeState extends State<ClientHome> {
       uuid: _uuid.text,
       localHost: _localHost.text,
       localPort: int.tryParse(_localPort.text) ?? 0,
+      protocol: _protocol,
+      path: _path.text,
+      hostHeader: _hostHeader.text,
       targetHost: _targetHost.text,
       targetPort: int.tryParse(_targetPort.text) ?? 0,
       payload: _payload.text,
@@ -156,11 +164,19 @@ class _ClientHomeState extends State<ClientHome> {
                       const SizedBox(height: 16),
                       _Section(
                         title: 'Server',
-                        child: _responsiveWrap([
-                          _field(_serverHost, 'Server host', 360),
-                          _field(_serverPort, 'Server port', 150),
-                          _field(_uuid, 'User UUID', 420),
-                        ]),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _responsiveWrap([
+                              _protocolField(),
+                              _field(_serverHost, 'Server host', 300),
+                              _field(_serverPort, 'Server port', 150),
+                              _field(_uuid, 'User UUID', 420),
+                              _field(_path, 'Carrier path', 180),
+                              _field(_hostHeader, 'Host header', 260),
+                            ]),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 16),
                       _Section(
@@ -281,6 +297,42 @@ class _ClientHomeState extends State<ClientHome> {
       child: TextField(
         controller: controller,
         decoration: InputDecoration(labelText: label),
+      ),
+    );
+  }
+
+  Widget _protocolField() {
+    final available = MediaQuery.sizeOf(context).width - 32;
+    return SizedBox(
+      width: available < 230 ? available : 230,
+      child: DropdownButtonFormField<String>(
+        initialValue: _protocol,
+        isExpanded: true,
+        decoration: const InputDecoration(labelText: 'Protocol'),
+        items: const [
+          DropdownMenuItem(value: 'raw-vless-tcp', child: Text('Raw TCP')),
+          DropdownMenuItem(value: 'vless-websocket', child: Text('WebSocket')),
+          DropdownMenuItem(
+            value: 'vless-httpupgrade',
+            child: Text('HTTPUpgrade'),
+          ),
+        ],
+        onChanged: _busy
+            ? null
+            : (value) {
+                if (value == null) {
+                  return;
+                }
+                setState(() {
+                  _protocol = value;
+                  if (value == 'vless-websocket' && _path.text == '/') {
+                    _path.text = '/ws';
+                  } else if (value == 'vless-httpupgrade' &&
+                      _path.text == '/') {
+                    _path.text = '/up';
+                  }
+                });
+              },
       ),
     );
   }

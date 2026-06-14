@@ -11,12 +11,16 @@ use crate::error::{ClientError, Result};
 pub enum Protocol {
     #[default]
     RawVlessTcp,
+    VlessWebsocket,
+    VlessHttpupgrade,
 }
 
 impl Protocol {
     pub fn as_str(&self) -> &'static str {
         match self {
             Protocol::RawVlessTcp => "raw-vless-tcp",
+            Protocol::VlessWebsocket => "vless-websocket",
+            Protocol::VlessHttpupgrade => "vless-httpupgrade",
         }
     }
 }
@@ -28,6 +32,13 @@ pub struct ServerConfig {
     pub uuid: String,
     #[serde(default)]
     pub protocol: Protocol,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    #[serde(rename = "host-header")]
+    pub host_header: Option<String>,
+    #[serde(default)]
+    pub flow: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -56,6 +67,9 @@ impl ClientConfig {
                 port: server_port,
                 uuid: uuid.into(),
                 protocol: Protocol::RawVlessTcp,
+                path: None,
+                host_header: None,
+                flow: String::new(),
             },
             local: LocalProxyConfig {
                 host: local_host.into(),
@@ -77,6 +91,13 @@ impl ClientConfig {
         validate_host(&self.server.host, "server host")?;
         validate_port(self.server.port, "server port")?;
         validate_host(&self.local.host, "local listen host")?;
+        if !self.server.flow.trim().is_empty() {
+            return Err(ClientError::UnsupportedProtocol(format!(
+                "{} with flow '{}' (XTLS Vision is not implemented in wrongcl yet)",
+                self.server.protocol.as_str(),
+                self.server.flow
+            )));
+        }
         Uuid::parse_str(self.server.uuid.trim())
             .map_err(|e| ClientError::Config(format!("invalid UUID: {e}")))?;
         Ok(())
@@ -96,6 +117,9 @@ pub fn default_config() -> ClientConfig {
             port: 443,
             uuid: "12345678-1234-1234-1234-123456789abc".into(),
             protocol: Protocol::RawVlessTcp,
+            path: None,
+            host_header: None,
+            flow: String::new(),
         },
         local: LocalProxyConfig {
             host: "127.0.0.1".into(),
@@ -110,6 +134,9 @@ host = "127.0.0.1"
 port = 443
 uuid = "12345678-1234-1234-1234-123456789abc"
 protocol = "raw-vless-tcp"
+# path = "/ws"
+# host-header = "example.com"
+flow = ""
 
 [local]
 host = "127.0.0.1"

@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use crate::client::RawVlessTcpClient;
+use crate::client::{Tunnel, WrongsvClient};
 use crate::config::ClientConfig;
 use crate::error::{ClientError, Result};
 use crate::protocol::Target;
@@ -220,7 +220,7 @@ fn handle_socks_client(
         }
     };
 
-    let tunnel_client = RawVlessTcpClient::new(config.server.clone())?;
+    let tunnel_client = WrongsvClient::new(config.server.clone())?;
     match tunnel_client.connect(&target) {
         Ok(upstream) => {
             write_socks5_reply(&mut client, 0x00)?;
@@ -309,11 +309,12 @@ fn write_socks5_reply(client: &mut TcpStream, reply: u8) -> io::Result<()> {
     client.write_all(&[0x05, reply, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
 }
 
-fn relay(mut client: TcpStream, mut upstream: TcpStream, metrics: &ProxyMetrics) -> Result<()> {
-    upstream.set_read_timeout(None)?;
-    upstream.set_write_timeout(None)?;
-
-    let mut upstream_reader = upstream.try_clone()?;
+fn relay(
+    mut client: TcpStream,
+    mut upstream: Box<dyn Tunnel>,
+    metrics: &ProxyMetrics,
+) -> Result<()> {
+    let mut upstream_reader = upstream.try_clone_box()?;
     let mut client_writer = client.try_clone()?;
     let download_counter = &metrics.bytes_downloaded;
     let downstream = thread::scope(|scope| {
@@ -323,7 +324,7 @@ fn relay(mut client: TcpStream, mut upstream: TcpStream, metrics: &ProxyMetrics)
         });
 
         let upload_result = copy_counted(&mut client, &mut upstream, &metrics.bytes_uploaded);
-        let _ = upstream.shutdown(Shutdown::Write);
+        let _ = upstream.shutdown_write();
         let _ = downstream.join();
         upload_result
     });

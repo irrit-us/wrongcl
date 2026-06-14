@@ -11,6 +11,9 @@ class ClientSettings {
     required this.uuid,
     required this.localHost,
     required this.localPort,
+    required this.protocol,
+    required this.path,
+    required this.hostHeader,
     required this.targetHost,
     required this.targetPort,
     required this.payload,
@@ -21,6 +24,9 @@ class ClientSettings {
   final String uuid;
   final String localHost;
   final int localPort;
+  final String protocol;
+  final String path;
+  final String hostHeader;
   final String targetHost;
   final int targetPort;
   final String payload;
@@ -69,21 +75,27 @@ abstract interface class WrongclClient {
 typedef _NativeVersion = Pointer<Utf8> Function();
 typedef _DartVersion = Pointer<Utf8> Function();
 
-typedef _NativeStart =
+typedef _NativeStartEx =
     Pointer<Utf8> Function(
       Pointer<Utf8>,
       Uint16,
       Pointer<Utf8>,
       Pointer<Utf8>,
       Uint16,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
     );
-typedef _DartStart =
+typedef _DartStartEx =
     Pointer<Utf8> Function(
       Pointer<Utf8>,
       int,
       Pointer<Utf8>,
       Pointer<Utf8>,
       int,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
     );
 
 typedef _NativeStop = Pointer<Utf8> Function();
@@ -92,19 +104,25 @@ typedef _DartStop = Pointer<Utf8> Function();
 typedef _NativeStatus = Pointer<Utf8> Function();
 typedef _DartStatus = Pointer<Utf8> Function();
 
-typedef _NativeProbe =
+typedef _NativeProbeEx =
     Pointer<Utf8> Function(
       Pointer<Utf8>,
       Uint16,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
       Pointer<Utf8>,
       Pointer<Utf8>,
       Uint16,
       Pointer<Utf8>,
     );
-typedef _DartProbe =
+typedef _DartProbeEx =
     Pointer<Utf8> Function(
       Pointer<Utf8>,
       int,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
       Pointer<Utf8>,
       Pointer<Utf8>,
       int,
@@ -120,8 +138,8 @@ class NativeWrongclClient implements WrongclClient {
     _version = _library.lookupFunction<_NativeVersion, _DartVersion>(
       'wrongcl_native_version',
     );
-    _start = _library.lookupFunction<_NativeStart, _DartStart>(
-      'wrongcl_start_proxy',
+    _startEx = _library.lookupFunction<_NativeStartEx, _DartStartEx>(
+      'wrongcl_start_proxy_ex',
     );
     _stop = _library.lookupFunction<_NativeStop, _DartStop>(
       'wrongcl_stop_proxy',
@@ -129,7 +147,9 @@ class NativeWrongclClient implements WrongclClient {
     _status = _library.lookupFunction<_NativeStatus, _DartStatus>(
       'wrongcl_proxy_status',
     );
-    _probe = _library.lookupFunction<_NativeProbe, _DartProbe>('wrongcl_probe');
+    _probeEx = _library.lookupFunction<_NativeProbeEx, _DartProbeEx>(
+      'wrongcl_probe_ex',
+    );
     _free = _library.lookupFunction<_NativeFree, _DartFree>(
       'wrongcl_free_string',
     );
@@ -137,10 +157,10 @@ class NativeWrongclClient implements WrongclClient {
 
   final DynamicLibrary _library;
   late final _DartVersion _version;
-  late final _DartStart _start;
+  late final _DartStartEx _startEx;
   late final _DartStop _stop;
   late final _DartStatus _status;
-  late final _DartProbe _probe;
+  late final _DartProbeEx _probeEx;
   late final _DartFree _free;
 
   static DynamicLibrary _openLibrary() {
@@ -156,14 +176,24 @@ class NativeWrongclClient implements WrongclClient {
   @override
   NativeResponse startProxy(ClientSettings settings) {
     return _withUtf8(
-      [settings.serverHost, settings.uuid, settings.localHost],
+      [
+        settings.serverHost,
+        settings.uuid,
+        settings.localHost,
+        settings.protocol,
+        settings.path,
+        settings.hostHeader,
+      ],
       (args) => _take(
-        _start(
+        _startEx(
           args[0],
           settings.serverPort,
           args[1],
           args[2],
           settings.localPort,
+          args[3],
+          args[4],
+          args[5],
         ),
       ),
     );
@@ -181,17 +211,23 @@ class NativeWrongclClient implements WrongclClient {
       [
         settings.serverHost,
         settings.uuid,
+        settings.protocol,
+        settings.path,
+        settings.hostHeader,
         settings.targetHost,
         settings.payload,
       ],
       (args) => _take(
-        _probe(
+        _probeEx(
           args[0],
           settings.serverPort,
           args[1],
           args[2],
-          settings.targetPort,
           args[3],
+          args[4],
+          args[5],
+          settings.targetPort,
+          args[6],
         ),
       ),
     );

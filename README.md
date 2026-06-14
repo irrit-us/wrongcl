@@ -10,7 +10,14 @@ library through Dart FFI. The native layer can:
 - run a direct probe through wrongsv and show the first response bytes
 - report connection-manager state and byte counters
 
-Current verified scope is Linux desktop and wrongsv `configs/basic-tcp.toml`.
+Current verified scope is Linux desktop and these wrongsv profiles:
+
+- `configs/basic-tcp.toml` — VLESS raw TCP
+- `configs/ws-tcp.toml` — VLESS WebSocket without TLS
+- `configs/httpupgrade.toml` — VLESS HTTPUpgrade without TLS
+
+The capability adapter recognizes the rest of wrongsv's profile surface and
+reports unsupported profiles explicitly.
 
 ## Build
 
@@ -63,6 +70,31 @@ cargo run --manifest-path rust/Cargo.toml --bin wrongcl-headless -- probe \
 
 You can also skip the config file and pass `--server-host`, `--server-port`,
 `--uuid`, `--listen-host`, and `--listen-port` directly.
+
+Inspect a wrongsv server config:
+
+```bash
+cargo run --manifest-path rust/Cargo.toml --bin wrongcl-headless -- capabilities \
+  --wrongsv-config ../wrongsv/configs/ws-tcp.toml
+```
+
+Adapt a wrongsv config into a wrongcl config/report:
+
+```bash
+cargo run --manifest-path rust/Cargo.toml --bin wrongcl-headless -- adapt \
+  --wrongsv-config ../wrongsv/configs/httpupgrade.toml \
+  --server-host 127.0.0.1
+```
+
+`serve` and `probe` can also consume a wrongsv config directly:
+
+```bash
+cargo run --manifest-path rust/Cargo.toml --bin wrongcl-headless -- probe \
+  --wrongsv-config ../wrongsv/configs/ws-tcp.toml \
+  --server-host 127.0.0.1 \
+  --target-host example.com \
+  --target-port 80
+```
 
 ## Local Smoke Test
 

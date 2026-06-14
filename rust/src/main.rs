@@ -3,7 +3,8 @@ use std::sync::mpsc;
 
 use clap::{Args, Parser, Subcommand};
 use serde_json::json;
-use wrongcl_native::client::RawVlessTcpClient;
+use wrongcl_native::adapter::{adapt_wrongsv_config, inspect_wrongsv_config};
+use wrongcl_native::client::WrongsvClient;
 use wrongcl_native::config::{config_example, default_config, ClientConfig};
 use wrongcl_native::manager::ConnectionManager;
 use wrongcl_native::protocol::Target;
@@ -21,6 +22,8 @@ struct Cli {
 enum Command {
     Serve(ServeArgs),
     Probe(ProbeArgs),
+    Capabilities(CapabilityArgs),
+    Adapt(AdaptArgs),
     ConfigExample,
 }
 
@@ -28,6 +31,8 @@ enum Command {
 struct ServeArgs {
     #[arg(long)]
     config: Option<PathBuf>,
+    #[arg(long)]
+    wrongsv_config: Option<PathBuf>,
     #[arg(long)]
     server_host: Option<String>,
     #[arg(long)]
@@ -45,6 +50,8 @@ struct ProbeArgs {
     #[arg(long)]
     config: Option<PathBuf>,
     #[arg(long)]
+    wrongsv_config: Option<PathBuf>,
+    #[arg(long)]
     server_host: Option<String>,
     #[arg(long)]
     server_port: Option<u16>,
@@ -58,6 +65,24 @@ struct ProbeArgs {
     payload: String,
 }
 
+#[derive(Debug, Args)]
+struct CapabilityArgs {
+    #[arg(long)]
+    wrongsv_config: PathBuf,
+}
+
+#[derive(Debug, Args)]
+struct AdaptArgs {
+    #[arg(long)]
+    wrongsv_config: PathBuf,
+    #[arg(long)]
+    server_host: String,
+    #[arg(long, default_value = "127.0.0.1")]
+    listen_host: String,
+    #[arg(long, default_value_t = 1080)]
+    listen_port: u16,
+}
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("{e}");
@@ -69,6 +94,8 @@ fn run() -> Result<()> {
     match Cli::parse().command {
         Command::Serve(args) => serve(args),
         Command::Probe(args) => probe(args),
+        Command::Capabilities(args) => capabilities(args),
+        Command::Adapt(args) => adapt(args),
         Command::ConfigExample => {
             print!("{}", config_example());
             Ok(())
@@ -79,6 +106,7 @@ fn run() -> Result<()> {
 fn serve(args: ServeArgs) -> Result<()> {
     let config = resolve_config(
         args.config,
+        args.wrongsv_config,
         args.server_host,
         args.server_port,
         args.uuid,
@@ -116,6 +144,7 @@ fn serve(args: ServeArgs) -> Result<()> {
 fn probe(args: ProbeArgs) -> Result<()> {
     let config = resolve_config(
         args.config,
+        args.wrongsv_config,
         args.server_host,
         args.server_port,
         args.uuid,
@@ -123,7 +152,7 @@ fn probe(args: ProbeArgs) -> Result<()> {
         None,
     )?;
     let target = Target::new(args.target_host, args.target_port)?;
-    let client = RawVlessTcpClient::new(config.server)?;
+    let client = WrongsvClient::new(config.server)?;
     let result = client.probe(&target, &args.payload)?;
     println!(
         "{}",
@@ -135,17 +164,56 @@ fn probe(args: ProbeArgs) -> Result<()> {
     Ok(())
 }
 
+fn capabilities(args: CapabilityArgs) -> Result<()> {
+    let report = inspect_wrongsv_config(args.wrongsv_config)?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
+fn adapt(args: AdaptArgs) -> Result<()> {
+    let adapted = adapt_wrongsv_config(
+        args.wrongsv_config,
+        args.server_host,
+        args.listen_host,
+        args.listen_port,
+    )?;
+    println!("{}", serde_json::to_string_pretty(&adapted)?);
+    Ok(())
+}
+
 fn resolve_config(
     path: Option<PathBuf>,
+    wrongsv_path: Option<PathBuf>,
     server_host: Option<String>,
     server_port: Option<u16>,
     uuid: Option<String>,
     listen_host: Option<String>,
     listen_port: Option<u16>,
 ) -> Result<ClientConfig> {
-    let mut config = match path {
-        Some(path) => ClientConfig::from_file(path)?,
-        None => default_config(),
+    if path.is_some() && wrongsv_path.is_some() {
+        return Err(wrongcl_native::ClientError::Config(
+            "use either --config or --wrongsv-config, not both".into(),
+        ));
+    }
+
+    let mut config = match (path, wrongsv_path) {
+        (Some(path), None) => ClientConfig::from_file(path)?,
+        (None, Some(path)) => {
+            let adapted = adapt_wrongsv_config(
+                path,
+                server_host.clone().unwrap_or_else(|| "127.0.0.1".into()),
+                listen_host.clone().unwrap_or_else(|| "127.0.0.1".into()),
+                listen_port.unwrap_or(1080),
+            )?;
+            adapted.config.ok_or_else(|| {
+                wrongcl_native::ClientError::UnsupportedProtocol(format!(
+                    "wrongsv active profile '{}' is not implemented in wrongcl yet",
+                    adapted.report.active_profile
+                ))
+            })?
+        }
+        (None, None) => default_config(),
+        (Some(_), Some(_)) => unreachable!("checked above"),
     };
 
     if let Some(value) = server_host {
