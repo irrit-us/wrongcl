@@ -10,9 +10,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Wrongcl'), findsOneWidget);
+    expect(find.text('Connection Manager'), findsOneWidget);
     expect(find.text('Start proxy'), findsOneWidget);
     expect(find.text('Run probe'), findsOneWidget);
 
+    await tester.ensureVisible(find.text('Start proxy'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Start proxy'));
     await tester.pumpAndSettle();
 
@@ -29,7 +32,10 @@ class FakeWrongclClient implements WrongclClient {
     return const NativeResponse(
       ok: true,
       message: 'native ready',
-      data: {'version': 'test'},
+      data: {
+        'version': 'test',
+        'protocols': ['raw-vless-tcp'],
+      },
     );
   }
 
@@ -43,6 +49,11 @@ class FakeWrongclClient implements WrongclClient {
         'running': true,
         'local_host': settings.localHost,
         'local_port': settings.localPort,
+        'active_connections': 0,
+        'total_connections': 0,
+        'failed_connections': 0,
+        'bytes_uploaded': 0,
+        'bytes_downloaded': 0,
       },
     );
   }
@@ -52,7 +63,14 @@ class FakeWrongclClient implements WrongclClient {
     return const NativeResponse(
       ok: true,
       message: 'SOCKS5 proxy stopped',
-      data: {'running': false},
+      data: {
+        'running': false,
+        'active_connections': 0,
+        'total_connections': 0,
+        'failed_connections': 0,
+        'bytes_uploaded': 0,
+        'bytes_downloaded': 0,
+      },
     );
   }
 
@@ -61,7 +79,14 @@ class FakeWrongclClient implements WrongclClient {
     return const NativeResponse(
       ok: true,
       message: 'SOCKS5 proxy is stopped',
-      data: {'running': false},
+      data: {
+        'running': false,
+        'active_connections': 0,
+        'total_connections': 0,
+        'failed_connections': 0,
+        'bytes_uploaded': 0,
+        'bytes_downloaded': 0,
+      },
     );
   }
 

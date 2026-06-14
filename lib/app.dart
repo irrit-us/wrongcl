@@ -55,12 +55,18 @@ class _ClientHomeState extends State<ClientHome> {
 
   bool _busy = false;
   bool _running = false;
+  String _nativeInfo = 'Native Rust client not checked';
   String _status = 'Stopped';
+  Map<String, Object?> _stats = const {};
   NativeResponse? _lastResponse;
 
   @override
   void initState() {
     super.initState();
+    final version = widget.client.version();
+    _nativeInfo = version.ok
+        ? 'Native ${version.data['version']} | protocols: ${version.data['protocols']}'
+        : version.message;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _run('status', () => widget.client.status());
     });
@@ -109,6 +115,9 @@ class _ClientHomeState extends State<ClientHome> {
     setState(() {
       _busy = false;
       _lastResponse = response;
+      if (response.ok) {
+        _stats = response.data;
+      }
       if (running is bool) {
         _running = running;
         _status = running ? 'Running at $localHost:$localPort' : 'Stopped';
@@ -137,6 +146,12 @@ class _ClientHomeState extends State<ClientHome> {
                         running: _running,
                         busy: _busy,
                         status: _status,
+                        nativeInfo: _nativeInfo,
+                      ),
+                      const SizedBox(height: 16),
+                      _Section(
+                        title: 'Connection Manager',
+                        child: _StatsGrid(stats: _stats),
                       ),
                       const SizedBox(height: 16),
                       _Section(
@@ -287,28 +302,79 @@ class _StatusBar extends StatelessWidget {
     required this.running,
     required this.busy,
     required this.status,
+    required this.nativeInfo,
   });
 
   final bool running;
   final bool busy;
   final String status;
+  final String nativeInfo;
 
   @override
   Widget build(BuildContext context) {
     final color = running ? Colors.green.shade700 : Colors.grey.shade700;
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(
-          running ? Icons.check_circle : Icons.radio_button_unchecked,
-          color: color,
+        Row(
+          children: [
+            Icon(
+              running ? Icons.check_circle : Icons.radio_button_unchecked,
+              color: color,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                busy ? 'Working...' : status,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            busy ? 'Working...' : status,
-            style: Theme.of(context).textTheme.titleMedium,
+        const SizedBox(height: 4),
+        Text(
+          nativeInfo,
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade700),
+        ),
+      ],
+    );
+  }
+}
+
+class _StatsGrid extends StatelessWidget {
+  const _StatsGrid({required this.stats});
+
+  final Map<String, Object?> stats;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      ('Running', stats['running'] == true ? 'yes' : 'no'),
+      ('Active', '${stats['active_connections'] ?? 0}'),
+      ('Total', '${stats['total_connections'] ?? 0}'),
+      ('Failed', '${stats['failed_connections'] ?? 0}'),
+      ('Uploaded', '${stats['bytes_uploaded'] ?? 0} B'),
+      ('Downloaded', '${stats['bytes_downloaded'] ?? 0} B'),
+    ];
+
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: [
+        for (final item in items)
+          SizedBox(
+            width: 140,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.$1, style: Theme.of(context).textTheme.labelMedium),
+                const SizedBox(height: 2),
+                Text(item.$2, style: Theme.of(context).textTheme.titleMedium),
+              ],
+            ),
           ),
-        ),
       ],
     );
   }

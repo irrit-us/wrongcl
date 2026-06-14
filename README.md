@@ -2,17 +2,25 @@
 
 Flutter desktop client for a wrongsv raw VLESS TCP server.
 
-The Flutter UI calls a Rust `cdylib` through Dart FFI. The native library can:
+The Rust core is also a headless client. The Flutter UI calls the same Rust
+library through Dart FFI. The native layer can:
 
 - start and stop a local SOCKS5 CONNECT proxy
 - tunnel SOCKS5 TCP connections through wrongsv raw VLESS TCP
 - run a direct probe through wrongsv and show the first response bytes
+- report connection-manager state and byte counters
 
 Current verified scope is Linux desktop and wrongsv `configs/basic-tcp.toml`.
 
 ## Build
 
-Install Flutter, then run:
+Build the headless Rust client:
+
+```bash
+cargo build --manifest-path rust/Cargo.toml --bin wrongcl-headless
+```
+
+Install Flutter, then build the desktop app:
 
 ```bash
 flutter pub get
@@ -29,6 +37,32 @@ cargo test --manifest-path rust/Cargo.toml
 flutter test
 flutter build linux
 ```
+
+## Headless Usage
+
+Generate a config:
+
+```bash
+cargo run --manifest-path rust/Cargo.toml --bin wrongcl-headless -- config-example > wrongcl.toml
+```
+
+Start a local SOCKS5 proxy:
+
+```bash
+cargo run --manifest-path rust/Cargo.toml --bin wrongcl-headless -- serve --config wrongcl.toml
+```
+
+Run a direct probe through wrongsv:
+
+```bash
+cargo run --manifest-path rust/Cargo.toml --bin wrongcl-headless -- probe \
+  --config wrongcl.toml \
+  --target-host example.com \
+  --target-port 80
+```
+
+You can also skip the config file and pass `--server-host`, `--server-port`,
+`--uuid`, `--listen-host`, and `--listen-port` directly.
 
 ## Local Smoke Test
 
