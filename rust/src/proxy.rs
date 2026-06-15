@@ -364,7 +364,7 @@ mod tests {
     fn socks_proxy_relays_and_tracks_metrics() {
         let server = spawn_fake_vless_server();
         let config =
-            ClientConfig::new("127.0.0.1", server.port, TEST_UUID, "127.0.0.1", 0).unwrap();
+            ClientConfig::raw_vless("127.0.0.1", server.port, TEST_UUID, "127.0.0.1", 0).unwrap();
         let mut proxy = ProxyHandle::start(config).unwrap();
 
         let response = run_socks_echo(proxy.snapshot().socket_addr()).unwrap();

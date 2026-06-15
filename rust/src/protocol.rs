@@ -85,16 +85,33 @@ impl VlessAddress {
     }
 }
 
-pub fn encode_raw_vless_header(uuid: &str, target: &Target) -> Result<Vec<u8>> {
+pub fn encode_raw_vless_header(uuid: &str, target: &Target, flow: &str) -> Result<Vec<u8>> {
     target.validate()?;
     let parsed_uuid = Uuid::parse_str(uuid.trim())
         .map_err(|e| ClientError::Config(format!("invalid UUID '{uuid}': {e}")))?;
     let address = VlessAddress::parse(&target.host)?;
 
-    let mut header = Vec::with_capacity(64 + target.host.len());
+    let mut header = Vec::with_capacity(64 + target.host.len() + flow.len());
     header.push(0x00);
     header.extend_from_slice(parsed_uuid.as_bytes());
-    header.push(0x00);
+
+    let flow = flow.trim();
+    if flow.is_empty() {
+        header.push(0x00);
+    } else {
+        if flow.len() >= 128 {
+            return Err(ClientError::Config(format!(
+                "VLESS flow string too long ({} bytes, max 127)",
+                flow.len()
+            )));
+        }
+        let addons_len = 2 + flow.len();
+        header.push(addons_len as u8);
+        header.push(0x0a);
+        header.push(flow.len() as u8);
+        header.extend_from_slice(flow.as_bytes());
+    }
+
     header.push(0x01);
     header.extend_from_slice(&target.port.to_be_bytes());
     address.write_to(&mut header)?;
@@ -126,7 +143,8 @@ mod tests {
     #[test]
     fn encodes_domain_header() {
         let header =
-            encode_raw_vless_header(TEST_UUID, &Target::new("example.com", 443).unwrap()).unwrap();
+            encode_raw_vless_header(TEST_UUID, &Target::new("example.com", 443).unwrap(), "")
+                .unwrap();
 
         assert_eq!(header[0], 0x00);
         assert_eq!(
@@ -144,7 +162,7 @@ mod tests {
     #[test]
     fn encodes_ipv4_header() {
         let header =
-            encode_raw_vless_header(TEST_UUID, &Target::new("127.0.0.1", 80).unwrap()).unwrap();
+            encode_raw_vless_header(TEST_UUID, &Target::new("127.0.0.1", 80).unwrap(), "").unwrap();
 
         assert_eq!(header[21], 0x01);
         assert_eq!(&header[22..26], &[127, 0, 0, 1]);
@@ -152,9 +170,30 @@ mod tests {
 
     #[test]
     fn rejects_invalid_uuid() {
-        let err = encode_raw_vless_header("not-a-uuid", &Target::new("127.0.0.1", 80).unwrap())
+        let err = encode_raw_vless_header("not-a-uuid", &Target::new("127.0.0.1", 80).unwrap(), "")
             .unwrap_err();
 
         assert!(matches!(err, ClientError::Config(_)));
+    }
+
+    #[test]
+    fn encodes_vision_flow_addons() {
+        let header = encode_raw_vless_header(
+            TEST_UUID,
+            &Target::new("example.com", 443).unwrap(),
+            "xtls-rprx-vision",
+        )
+        .unwrap();
+
+        assert_eq!(header[0], 0x00);
+        assert_eq!(header[17], 18);
+        assert_eq!(header[18], 0x0a);
+        assert_eq!(header[19], 16);
+        assert_eq!(&header[20..36], b"xtls-rprx-vision");
+        assert_eq!(header[36], 0x01);
+        assert_eq!(&header[37..39], &443u16.to_be_bytes());
+        assert_eq!(header[39], 0x02);
+        assert_eq!(header[40], "example.com".len() as u8);
+        assert_eq!(&header[41..], b"example.com");
     }
 }

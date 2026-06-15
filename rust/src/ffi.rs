@@ -4,8 +4,9 @@ use std::os::raw::c_char;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::client::RawVlessTcpClient;
-use crate::config::{ClientConfig, LocalProxyConfig, Protocol, ServerConfig};
+use crate::client::WrongsvClient;
+use crate::config::{ClientConfig, LocalProxyConfig, ServerConfig};
+use crate::endpoint::{Endpoint, OuterSecurity, ProxyProtocol, Transport, VlessOptions};
 use crate::error::{ClientError, Result};
 use crate::manager::global_manager;
 use crate::protocol::Target;
@@ -18,47 +19,31 @@ fn c_string_arg(ptr: *const c_char, name: &str) -> Result<String> {
     Ok(value.to_str()?.to_string())
 }
 
-fn ffi_config(
+fn raw_vless_config(
     server_host: *const c_char,
     server_port: u16,
     uuid: *const c_char,
     local_host: *const c_char,
     local_port: u16,
 ) -> Result<ClientConfig> {
-    ClientConfig::new(
-        c_string_arg(server_host, "server host")?,
-        server_port,
-        c_string_arg(uuid, "UUID")?,
-        c_string_arg(local_host, "local host")?,
-        local_port,
-    )
-}
-
-fn ffi_config_ex(
-    server_host: *const c_char,
-    server_port: u16,
-    uuid: *const c_char,
-    local_host: *const c_char,
-    local_port: u16,
-    protocol: *const c_char,
-    path: *const c_char,
-    host_header: *const c_char,
-) -> Result<ClientConfig> {
-    let protocol = parse_protocol(&c_string_arg(protocol, "protocol")?)?;
-    let path = optional_string_arg(path, "path")?;
-    let host_header = optional_string_arg(host_header, "host header")?;
+    let host = c_string_arg(server_host, "server host")?;
+    let uuid = c_string_arg(uuid, "UUID")?;
+    let local_host = c_string_arg(local_host, "local host")?;
     let config = ClientConfig {
         server: ServerConfig {
-            host: c_string_arg(server_host, "server host")?,
+            host,
             port: server_port,
-            uuid: c_string_arg(uuid, "UUID")?,
-            protocol,
-            path,
-            host_header,
-            flow: String::new(),
+            endpoint: Endpoint {
+                proxy: ProxyProtocol::Vless(VlessOptions {
+                    uuid,
+                    flow: String::new(),
+                }),
+                transport: Transport::Raw,
+                outer_security: OuterSecurity::None,
+            },
         },
         local: LocalProxyConfig {
-            host: c_string_arg(local_host, "local host")?,
+            host: local_host,
             port: local_port,
         },
     };
@@ -66,19 +51,9 @@ fn ffi_config_ex(
     Ok(config)
 }
 
-fn parse_protocol(value: &str) -> Result<Protocol> {
-    match value {
-        "raw-vless-tcp" => Ok(Protocol::RawVlessTcp),
-        "vless-websocket" => Ok(Protocol::VlessWebsocket),
-        "vless-httpupgrade" => Ok(Protocol::VlessHttpupgrade),
-        other => Err(ClientError::UnsupportedProtocol(other.into())),
-    }
-}
-
-fn optional_string_arg(ptr: *const c_char, name: &str) -> Result<Option<String>> {
-    let value = c_string_arg(ptr, name)?;
-    let trimmed = value.trim();
-    Ok((!trimmed.is_empty()).then(|| trimmed.to_string()))
+fn parse_json_config(ptr: *const c_char) -> Result<ClientConfig> {
+    let text = c_string_arg(ptr, "config JSON")?;
+    ClientConfig::from_json(&text)
 }
 
 fn json_ptr(value: Value) -> *mut c_char {
@@ -113,7 +88,10 @@ pub extern "C" fn wrongcl_native_version() -> *mut c_char {
         json!({
             "version": env!("CARGO_PKG_VERSION"),
             "headless": true,
-            "protocols": ["raw-vless-tcp", "vless-websocket", "vless-httpupgrade"],
+            "proxies": ["vless", "trojan", "mixed", "shadowsocks"],
+            "transports": ["raw", "websocket", "httpupgrade", "xhttp", "grpc"],
+            "outer_security": ["none", "tls", "reality", "anytls"],
+            "vless_flows": ["", "xtls-rprx-vision"],
         }),
     )
 }
@@ -126,44 +104,32 @@ pub extern "C" fn wrongcl_start_proxy(
     local_host: *const c_char,
     local_port: u16,
 ) -> *mut c_char {
-    let config = match ffi_config(server_host, server_port, uuid, local_host, local_port) {
+    let config = match raw_vless_config(server_host, server_port, uuid, local_host, local_port) {
         Ok(config) => config,
         Err(e) => return err(e.to_string()),
     };
-
-    match global_manager().start_proxy(config) {
-        Ok(snapshot) => ok("SOCKS5 proxy started", snapshot),
-        Err(e) => err(e.to_string()),
-    }
+    start_proxy_with_config(config)
 }
 
 #[no_mangle]
-pub extern "C" fn wrongcl_start_proxy_ex(
-    server_host: *const c_char,
-    server_port: u16,
-    uuid: *const c_char,
-    local_host: *const c_char,
-    local_port: u16,
-    protocol: *const c_char,
-    path: *const c_char,
-    host_header: *const c_char,
-) -> *mut c_char {
-    let config = match ffi_config_ex(
-        server_host,
-        server_port,
-        uuid,
-        local_host,
-        local_port,
-        protocol,
-        path,
-        host_header,
-    ) {
+pub extern "C" fn wrongcl_start_proxy_json(config_json: *const c_char) -> *mut c_char {
+    let config = match parse_json_config(config_json) {
         Ok(config) => config,
         Err(e) => return err(e.to_string()),
     };
+    start_proxy_with_config(config)
+}
 
+fn start_proxy_with_config(config: ClientConfig) -> *mut c_char {
+    let stack = config.server.endpoint.stack_summary();
     match global_manager().start_proxy(config) {
-        Ok(snapshot) => ok("SOCKS5 proxy started", snapshot),
+        Ok(snapshot) => ok(
+            "SOCKS5 proxy started",
+            json!({
+                "stack": stack,
+                "proxy": snapshot,
+            }),
+        ),
         Err(e) => err(e.to_string()),
     }
 }
@@ -194,95 +160,85 @@ pub extern "C" fn wrongcl_probe(
     target_port: u16,
     payload: *const c_char,
 ) -> *mut c_char {
-    let config = match ClientConfig::new(
-        match c_string_arg(server_host, "server host") {
-            Ok(value) => value,
-            Err(e) => return err(e.to_string()),
-        },
-        server_port,
-        match c_string_arg(uuid, "UUID") {
-            Ok(value) => value,
-            Err(e) => return err(e.to_string()),
-        },
-        "127.0.0.1",
-        0,
-    ) {
+    let config = match raw_vless_config(server_host, server_port, uuid, c"127.0.0.1".as_ptr(), 0) {
         Ok(config) => config,
         Err(e) => return err(e.to_string()),
     };
-    let target = match Target::new(
-        match c_string_arg(target_host, "target host") {
-            Ok(value) => value,
-            Err(e) => return err(e.to_string()),
-        },
-        target_port,
-    ) {
-        Ok(target) => target,
+    let target_host = match c_string_arg(target_host, "target host") {
+        Ok(value) => value,
         Err(e) => return err(e.to_string()),
     };
     let payload = match c_string_arg(payload, "payload") {
         Ok(value) => value,
         Err(e) => return err(e.to_string()),
     };
+    probe_with_config(config, target_host, target_port, payload)
+}
 
-    let client = match RawVlessTcpClient::new(config.server) {
+#[no_mangle]
+pub extern "C" fn wrongcl_probe_json(
+    config_json: *const c_char,
+    target_host: *const c_char,
+    target_port: u16,
+    payload: *const c_char,
+) -> *mut c_char {
+    let config = match parse_json_config(config_json) {
+        Ok(config) => config,
+        Err(e) => return err(e.to_string()),
+    };
+    let target_host = match c_string_arg(target_host, "target host") {
+        Ok(value) => value,
+        Err(e) => return err(e.to_string()),
+    };
+    let payload = match c_string_arg(payload, "payload") {
+        Ok(value) => value,
+        Err(e) => return err(e.to_string()),
+    };
+    probe_with_config(config, target_host, target_port, payload)
+}
+
+fn probe_with_config(
+    config: ClientConfig,
+    target_host: String,
+    target_port: u16,
+    payload: String,
+) -> *mut c_char {
+    let target = match Target::new(target_host, target_port) {
+        Ok(target) => target,
+        Err(e) => return err(e.to_string()),
+    };
+    let client = match WrongsvClient::new(config.server) {
         Ok(client) => client,
         Err(e) => return err(e.to_string()),
     };
+    let stack = client.stack_summary();
     match client.probe(&target, &payload) {
-        Ok(data) => ok("probe succeeded", data),
+        Ok(data) => ok(
+            "probe succeeded",
+            json!({
+                "stack": stack,
+                "probe": data,
+            }),
+        ),
         Err(e) => err(e.to_string()),
     }
 }
 
 #[no_mangle]
-pub extern "C" fn wrongcl_probe_ex(
-    server_host: *const c_char,
-    server_port: u16,
-    uuid: *const c_char,
-    protocol: *const c_char,
-    path: *const c_char,
-    host_header: *const c_char,
-    target_host: *const c_char,
-    target_port: u16,
-    payload: *const c_char,
-) -> *mut c_char {
-    let config = match ffi_config_ex(
-        server_host,
-        server_port,
-        uuid,
-        c"127.0.0.1".as_ptr(),
-        0,
-        protocol,
-        path,
-        host_header,
-    ) {
+pub extern "C" fn wrongcl_stack_summary_json(config_json: *const c_char) -> *mut c_char {
+    let config = match parse_json_config(config_json) {
         Ok(config) => config,
         Err(e) => return err(e.to_string()),
     };
-    let target = match Target::new(
-        match c_string_arg(target_host, "target host") {
-            Ok(value) => value,
-            Err(e) => return err(e.to_string()),
-        },
-        target_port,
-    ) {
-        Ok(target) => target,
-        Err(e) => return err(e.to_string()),
-    };
-    let payload = match c_string_arg(payload, "payload") {
-        Ok(value) => value,
-        Err(e) => return err(e.to_string()),
-    };
-
-    let client = match RawVlessTcpClient::new(config.server) {
-        Ok(client) => client,
-        Err(e) => return err(e.to_string()),
-    };
-    match client.probe(&target, &payload) {
-        Ok(data) => ok("probe succeeded", data),
-        Err(e) => err(e.to_string()),
-    }
+    ok(
+        "stack resolved",
+        json!({
+            "stack": config.server.endpoint.stack_summary(),
+            "proxy": config.server.endpoint.proxy.id(),
+            "transport": config.server.endpoint.transport.id(),
+            "outer_security": config.server.endpoint.outer_security.id(),
+        }),
+    )
 }
 
 #[no_mangle]

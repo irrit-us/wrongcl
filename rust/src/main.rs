@@ -6,13 +6,14 @@ use serde_json::json;
 use wrongcl_native::adapter::{adapt_wrongsv_config, inspect_wrongsv_config};
 use wrongcl_native::client::WrongsvClient;
 use wrongcl_native::config::{config_example, default_config, ClientConfig};
+use wrongcl_native::endpoint::ProxyProtocol;
 use wrongcl_native::manager::ConnectionManager;
 use wrongcl_native::protocol::Target;
 use wrongcl_native::Result;
 
 #[derive(Debug, Parser)]
 #[command(name = "wrongcl-headless")]
-#[command(about = "Headless wrongsv raw VLESS TCP client")]
+#[command(about = "Headless wrongsv client (VLESS / Trojan / Mixed over raw / WebSocket / HTTPUpgrade, with optional TLS)")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -24,6 +25,7 @@ enum Command {
     Probe(ProbeArgs),
     Capabilities(CapabilityArgs),
     Adapt(AdaptArgs),
+    Stack(StackArgs),
     ConfigExample,
 }
 
@@ -83,6 +85,16 @@ struct AdaptArgs {
     listen_port: u16,
 }
 
+#[derive(Debug, Args)]
+struct StackArgs {
+    #[arg(long)]
+    config: Option<PathBuf>,
+    #[arg(long)]
+    wrongsv_config: Option<PathBuf>,
+    #[arg(long)]
+    server_host: Option<String>,
+}
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("{e}");
@@ -96,6 +108,7 @@ fn run() -> Result<()> {
         Command::Probe(args) => probe(args),
         Command::Capabilities(args) => capabilities(args),
         Command::Adapt(args) => adapt(args),
+        Command::Stack(args) => stack(args),
         Command::ConfigExample => {
             print!("{}", config_example());
             Ok(())
@@ -113,12 +126,14 @@ fn serve(args: ServeArgs) -> Result<()> {
         args.listen_host,
         args.listen_port,
     )?;
+    let stack_summary = config.server.endpoint.stack_summary();
     let manager = ConnectionManager::new();
     let snapshot = manager.start_proxy(config)?;
     println!(
         "{}",
         serde_json::to_string_pretty(&json!({
             "event": "started",
+            "stack": stack_summary,
             "proxy": snapshot,
         }))?
     );
@@ -153,11 +168,13 @@ fn probe(args: ProbeArgs) -> Result<()> {
     )?;
     let target = Target::new(args.target_host, args.target_port)?;
     let client = WrongsvClient::new(config.server)?;
+    let stack = client.stack_summary();
     let result = client.probe(&target, &args.payload)?;
     println!(
         "{}",
         serde_json::to_string_pretty(&json!({
             "ok": true,
+            "stack": stack,
             "probe": result,
         }))?
     );
@@ -178,6 +195,28 @@ fn adapt(args: AdaptArgs) -> Result<()> {
         args.listen_port,
     )?;
     println!("{}", serde_json::to_string_pretty(&adapted)?);
+    Ok(())
+}
+
+fn stack(args: StackArgs) -> Result<()> {
+    let config = resolve_config(
+        args.config,
+        args.wrongsv_config,
+        args.server_host,
+        None,
+        None,
+        None,
+        None,
+    )?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json!({
+            "stack": config.server.endpoint.stack_summary(),
+            "proxy": config.server.endpoint.proxy.id(),
+            "transport": config.server.endpoint.transport.id(),
+            "outer_security": config.server.endpoint.outer_security.id(),
+        }))?
+    );
     Ok(())
 }
 
@@ -223,7 +262,13 @@ fn resolve_config(
         config.server.port = value;
     }
     if let Some(value) = uuid {
-        config.server.uuid = value;
+        if let ProxyProtocol::Vless(opts) = &mut config.server.endpoint.proxy {
+            opts.uuid = value;
+        } else {
+            return Err(wrongcl_native::ClientError::Config(
+                "--uuid only applies to a VLESS proxy".into(),
+            ));
+        }
     }
     if let Some(value) = listen_host {
         config.local.host = value;

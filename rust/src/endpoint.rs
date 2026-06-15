@@ -1,0 +1,460 @@
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::error::{ClientError, Result};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Endpoint {
+    pub proxy: ProxyProtocol,
+    #[serde(default)]
+    pub transport: Transport,
+    #[serde(default, rename = "outer-security")]
+    pub outer_security: OuterSecurity,
+}
+
+impl Default for Endpoint {
+    fn default() -> Self {
+        Self {
+            proxy: ProxyProtocol::Vless(VlessOptions::default()),
+            transport: Transport::default(),
+            outer_security: OuterSecurity::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum ProxyProtocol {
+    Vless(VlessOptions),
+    Trojan(TrojanOptions),
+    Mixed(MixedOptions),
+    Shadowsocks(ShadowsocksOptions),
+}
+
+impl ProxyProtocol {
+    pub fn id(&self) -> &'static str {
+        match self {
+            ProxyProtocol::Vless(_) => "vless",
+            ProxyProtocol::Trojan(_) => "trojan",
+            ProxyProtocol::Mixed(_) => "mixed",
+            ProxyProtocol::Shadowsocks(_) => "shadowsocks",
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            ProxyProtocol::Vless(_) => "VLESS",
+            ProxyProtocol::Trojan(_) => "Trojan",
+            ProxyProtocol::Mixed(_) => "Mixed remote SOCKS/HTTP",
+            ProxyProtocol::Shadowsocks(_) => "Shadowsocks",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct VlessOptions {
+    pub uuid: String,
+    #[serde(default)]
+    pub flow: String,
+}
+
+impl Default for VlessOptions {
+    fn default() -> Self {
+        Self {
+            uuid: "12345678-1234-1234-1234-123456789abc".into(),
+            flow: String::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TrojanOptions {
+    pub password: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct MixedOptions {
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ShadowsocksOptions {
+    pub method: String,
+    pub password: String,
+}
+
+impl Default for ShadowsocksOptions {
+    fn default() -> Self {
+        Self {
+            method: "chacha20-ietf-poly1305".into(),
+            password: String::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum Transport {
+    #[default]
+    Raw,
+    Websocket(WsOptions),
+    Httpupgrade(HuOptions),
+    Xhttp(XhttpOptions),
+    Grpc(GrpcOptions),
+}
+
+impl Transport {
+    pub fn id(&self) -> &'static str {
+        match self {
+            Transport::Raw => "raw",
+            Transport::Websocket(_) => "websocket",
+            Transport::Httpupgrade(_) => "httpupgrade",
+            Transport::Xhttp(_) => "xhttp",
+            Transport::Grpc(_) => "grpc",
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Transport::Raw => "raw",
+            Transport::Websocket(_) => "WebSocket",
+            Transport::Httpupgrade(_) => "HTTPUpgrade",
+            Transport::Xhttp(_) => "XHTTP",
+            Transport::Grpc(_) => "gRPC",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WsOptions {
+    #[serde(default = "default_ws_path")]
+    pub path: String,
+    #[serde(default)]
+    pub host: Option<String>,
+}
+
+impl Default for WsOptions {
+    fn default() -> Self {
+        Self {
+            path: default_ws_path(),
+            host: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HuOptions {
+    #[serde(default = "default_hu_path")]
+    pub path: String,
+    #[serde(default)]
+    pub host: Option<String>,
+}
+
+impl Default for HuOptions {
+    fn default() -> Self {
+        Self {
+            path: default_hu_path(),
+            host: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct XhttpOptions {
+    #[serde(default = "default_xhttp_path")]
+    pub path: String,
+    #[serde(default)]
+    pub host: Option<String>,
+}
+
+impl Default for XhttpOptions {
+    fn default() -> Self {
+        Self {
+            path: default_xhttp_path(),
+            host: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GrpcOptions {
+    #[serde(default = "default_grpc_service_name", rename = "service-name")]
+    pub service_name: String,
+}
+
+impl Default for GrpcOptions {
+    fn default() -> Self {
+        Self {
+            service_name: default_grpc_service_name(),
+        }
+    }
+}
+
+fn default_ws_path() -> String {
+    "/ws".into()
+}
+
+fn default_hu_path() -> String {
+    "/up".into()
+}
+
+fn default_xhttp_path() -> String {
+    "/xhttp".into()
+}
+
+fn default_grpc_service_name() -> String {
+    "GunService".into()
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum OuterSecurity {
+    #[default]
+    None,
+    Tls(TlsOptions),
+    Reality(RealityOptions),
+    AnyTls(AnyTlsOptions),
+}
+
+impl OuterSecurity {
+    pub fn id(&self) -> &'static str {
+        match self {
+            OuterSecurity::None => "none",
+            OuterSecurity::Tls(_) => "tls",
+            OuterSecurity::Reality(_) => "reality",
+            OuterSecurity::AnyTls(_) => "anytls",
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            OuterSecurity::None => "none",
+            OuterSecurity::Tls(_) => "TLS",
+            OuterSecurity::Reality(_) => "REALITY",
+            OuterSecurity::AnyTls(_) => "AnyTLS",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TlsOptions {
+    #[serde(rename = "server-name")]
+    pub server_name: String,
+    #[serde(default, rename = "insecure-skip-verify")]
+    pub insecure_skip_verify: bool,
+    #[serde(default)]
+    pub alpn: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RealityOptions {
+    #[serde(rename = "server-name")]
+    pub server_name: String,
+    #[serde(rename = "public-key")]
+    pub public_key: String,
+    #[serde(rename = "short-id")]
+    pub short_id: String,
+    #[serde(default, rename = "raw-pubkey")]
+    pub raw_pubkey: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AnyTlsOptions {
+    #[serde(rename = "server-name")]
+    pub server_name: String,
+    pub password: String,
+    #[serde(default, rename = "insecure-skip-verify")]
+    pub insecure_skip_verify: bool,
+    #[serde(default)]
+    pub alpn: Vec<String>,
+}
+
+impl Endpoint {
+    pub fn validate(&self) -> Result<()> {
+        match &self.proxy {
+            ProxyProtocol::Vless(opts) => {
+                Uuid::parse_str(opts.uuid.trim())
+                    .map_err(|e| ClientError::Config(format!("invalid VLESS UUID: {e}")))?;
+                let flow = opts.flow.trim();
+                if !flow.is_empty() && flow != "xtls-rprx-vision" {
+                    return Err(ClientError::UnsupportedProtocol(format!(
+                        "VLESS flow '{}' is not implemented in wrongcl (only 'xtls-rprx-vision' is supported)",
+                        opts.flow
+                    )));
+                }
+            }
+            ProxyProtocol::Trojan(opts) => {
+                if opts.password.trim().is_empty() {
+                    return Err(ClientError::Config(
+                        "Trojan requires a non-empty password".into(),
+                    ));
+                }
+                if !matches!(self.outer_security, OuterSecurity::Tls(_)) {
+                    return Err(ClientError::Config(
+                        "Trojan requires TLS as outer security".into(),
+                    ));
+                }
+            }
+            ProxyProtocol::Mixed(_) => {
+                if !matches!(self.transport, Transport::Raw) {
+                    return Err(ClientError::Config(
+                        "Mixed remote SOCKS5 only supports raw transport".into(),
+                    ));
+                }
+                if !matches!(self.outer_security, OuterSecurity::None) {
+                    return Err(ClientError::Config(
+                        "Mixed remote SOCKS5 does not wrap an outer security layer".into(),
+                    ));
+                }
+            }
+            ProxyProtocol::Shadowsocks(opts) => {
+                if opts.password.is_empty() {
+                    return Err(ClientError::Config(
+                        "Shadowsocks requires a non-empty password".into(),
+                    ));
+                }
+                match opts.method.trim().to_ascii_lowercase().as_str() {
+                    "aes-128-gcm"
+                    | "aes-256-gcm"
+                    | "chacha20-ietf-poly1305"
+                    | "2022-blake3-aes-128-gcm"
+                    | "2022-blake3-aes-256-gcm" => {}
+                    other => {
+                        return Err(ClientError::Config(format!(
+                            "Shadowsocks method '{other}' is not recognized"
+                        )));
+                    }
+                }
+                if !matches!(self.transport, Transport::Raw) {
+                    return Err(ClientError::Config(
+                        "Shadowsocks only supports raw transport".into(),
+                    ));
+                }
+                if !matches!(self.outer_security, OuterSecurity::None) {
+                    return Err(ClientError::Config(
+                        "Shadowsocks does not wrap an outer security layer".into(),
+                    ));
+                }
+            }
+        }
+
+        if let OuterSecurity::Tls(opts) = &self.outer_security {
+            if opts.server_name.trim().is_empty() {
+                return Err(ClientError::Config(
+                    "TLS outer security requires server-name".into(),
+                ));
+            }
+        }
+        if let OuterSecurity::Reality(opts) = &self.outer_security {
+            if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
+                return Err(ClientError::Config(
+                    "REALITY outer security only wraps the VLESS proxy".into(),
+                ));
+            }
+            if !matches!(self.transport, Transport::Raw) {
+                return Err(ClientError::Config(
+                    "REALITY outer security only supports raw transport".into(),
+                ));
+            }
+            if opts.server_name.trim().is_empty() {
+                return Err(ClientError::Config(
+                    "REALITY requires server-name (SNI used for the cover handshake)".into(),
+                ));
+            }
+            if opts.public_key.trim().is_empty() {
+                return Err(ClientError::Config(
+                    "REALITY requires public-key (base64-url server X25519 pubkey)".into(),
+                ));
+            }
+            if opts.short_id.trim().is_empty() {
+                return Err(ClientError::Config(
+                    "REALITY requires short-id (8 hex chars)".into(),
+                ));
+            }
+        }
+        if let OuterSecurity::AnyTls(opts) = &self.outer_security {
+            if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
+                return Err(ClientError::Config(
+                    "AnyTLS outer security only wraps the VLESS proxy".into(),
+                ));
+            }
+            if !matches!(self.transport, Transport::Raw) {
+                return Err(ClientError::Config(
+                    "AnyTLS outer security only supports raw transport".into(),
+                ));
+            }
+            if opts.server_name.trim().is_empty() {
+                return Err(ClientError::Config(
+                    "AnyTLS requires server-name (SNI for the outer TLS handshake)".into(),
+                ));
+            }
+            if opts.password.trim().is_empty() {
+                return Err(ClientError::Config(
+                    "AnyTLS requires a non-empty password".into(),
+                ));
+            }
+        }
+        if let Transport::Xhttp(opts) = &self.transport {
+            if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
+                return Err(ClientError::Config(
+                    "XHTTP transport only wraps the VLESS proxy".into(),
+                ));
+            }
+            if !matches!(
+                self.outer_security,
+                OuterSecurity::None | OuterSecurity::Tls(_)
+            ) {
+                return Err(ClientError::Config(
+                    "XHTTP transport only supports 'none' or 'tls' outer security (it owns the TLS+h2 stack)".into(),
+                ));
+            }
+            if !opts.path.starts_with('/') {
+                return Err(ClientError::Config("XHTTP path must start with '/'".into()));
+            }
+        }
+        if let Transport::Grpc(opts) = &self.transport {
+            if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
+                return Err(ClientError::Config(
+                    "gRPC transport only wraps the VLESS proxy".into(),
+                ));
+            }
+            if !matches!(
+                self.outer_security,
+                OuterSecurity::None | OuterSecurity::Tls(_)
+            ) {
+                return Err(ClientError::Config(
+                    "gRPC transport only supports 'none' or 'tls' outer security (it owns the TLS+h2 stack)".into(),
+                ));
+            }
+            if opts.service_name.trim().is_empty() {
+                return Err(ClientError::Config(
+                    "gRPC requires a non-empty service-name".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn stack_summary(&self) -> String {
+        let mut parts: Vec<&str> = Vec::new();
+        parts.push(self.proxy.display_name());
+        match self.transport {
+            Transport::Raw => parts.push("raw"),
+            Transport::Websocket(_) => parts.push("WebSocket"),
+            Transport::Httpupgrade(_) => parts.push("HTTPUpgrade"),
+            Transport::Xhttp(_) => parts.push("XHTTP"),
+            Transport::Grpc(_) => parts.push("gRPC"),
+        }
+        match self.outer_security {
+            OuterSecurity::Tls(_) => parts.push("TLS"),
+            OuterSecurity::Reality(_) => parts.push("REALITY"),
+            OuterSecurity::AnyTls(_) => parts.push("AnyTLS"),
+            OuterSecurity::None => {}
+        }
+        parts.push("TCP");
+        parts.join(" → ")
+    }
+}

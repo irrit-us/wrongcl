@@ -10,6 +10,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Wrongcl'), findsOneWidget);
+    expect(find.text('Endpoint'), findsOneWidget);
     expect(find.text('Connection Manager'), findsOneWidget);
     expect(find.text('Start proxy'), findsOneWidget);
     expect(find.text('Run probe'), findsOneWidget);
@@ -19,13 +20,22 @@ void main() {
     await tester.tap(find.text('Start proxy'));
     await tester.pumpAndSettle();
 
-    expect(client.started, isTrue);
+    expect(client.startCount, 1);
     expect(find.textContaining('SOCKS5 proxy started'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Run probe'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Run probe'));
+    await tester.pumpAndSettle();
+
+    expect(client.probeCount, 1);
+    expect(find.textContaining('probe succeeded'), findsOneWidget);
   });
 }
 
 class FakeWrongclClient implements WrongclClient {
-  bool started = false;
+  int startCount = 0;
+  int probeCount = 0;
 
   @override
   NativeResponse version() {
@@ -34,26 +44,31 @@ class FakeWrongclClient implements WrongclClient {
       message: 'native ready',
       data: {
         'version': 'test',
-        'protocols': ['raw-vless-tcp'],
+        'proxies': ['vless', 'trojan', 'mixed', 'shadowsocks'],
+        'transports': ['raw', 'websocket', 'httpupgrade'],
+        'outer_security': ['none', 'tls'],
       },
     );
   }
 
   @override
-  NativeResponse startProxy(ClientSettings settings) {
-    started = true;
+  NativeResponse startProxy(ClientConfigInput config) {
+    startCount += 1;
     return NativeResponse(
       ok: true,
       message: 'SOCKS5 proxy started',
       data: {
-        'running': true,
-        'local_host': settings.localHost,
-        'local_port': settings.localPort,
-        'active_connections': 0,
-        'total_connections': 0,
-        'failed_connections': 0,
-        'bytes_uploaded': 0,
-        'bytes_downloaded': 0,
+        'stack': 'VLESS → raw → TCP',
+        'proxy': {
+          'running': true,
+          'local_host': config.localHost,
+          'local_port': config.localPort,
+          'active_connections': 0,
+          'total_connections': 0,
+          'failed_connections': 0,
+          'bytes_uploaded': 0,
+          'bytes_downloaded': 0,
+        },
       },
     );
   }
@@ -91,11 +106,29 @@ class FakeWrongclClient implements WrongclClient {
   }
 
   @override
-  NativeResponse probe(ClientSettings settings) {
+  NativeResponse probe(ProbeRequest request) {
+    probeCount += 1;
     return const NativeResponse(
       ok: true,
       message: 'probe succeeded',
-      data: {'bytes_read': 4, 'preview': 'pong'},
+      data: {
+        'stack': 'VLESS → raw → TCP',
+        'probe': {'bytes_read': 4, 'preview': 'pong'},
+      },
+    );
+  }
+
+  @override
+  NativeResponse stackSummary(ClientConfigInput config) {
+    return const NativeResponse(
+      ok: true,
+      message: 'stack resolved',
+      data: {
+        'stack': 'VLESS → raw → TCP',
+        'proxy': 'vless',
+        'transport': 'raw',
+        'outer_security': 'none',
+      },
     );
   }
 }

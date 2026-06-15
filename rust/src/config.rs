@@ -2,43 +2,16 @@ use std::fs;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
+use crate::endpoint::{Endpoint, OuterSecurity, ProxyProtocol, Transport, VlessOptions};
 use crate::error::{ClientError, Result};
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Protocol {
-    #[default]
-    RawVlessTcp,
-    VlessWebsocket,
-    VlessHttpupgrade,
-}
-
-impl Protocol {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Protocol::RawVlessTcp => "raw-vless-tcp",
-            Protocol::VlessWebsocket => "vless-websocket",
-            Protocol::VlessHttpupgrade => "vless-httpupgrade",
-        }
-    }
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
-    pub uuid: String,
-    #[serde(default)]
-    pub protocol: Protocol,
-    #[serde(default)]
-    pub path: Option<String>,
-    #[serde(default)]
-    #[serde(rename = "host-header")]
-    pub host_header: Option<String>,
-    #[serde(default)]
-    pub flow: String,
+    #[serde(flatten)]
+    pub endpoint: Endpoint,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -54,7 +27,7 @@ pub struct ClientConfig {
 }
 
 impl ClientConfig {
-    pub fn new(
+    pub fn raw_vless(
         server_host: impl Into<String>,
         server_port: u16,
         uuid: impl Into<String>,
@@ -65,11 +38,14 @@ impl ClientConfig {
             server: ServerConfig {
                 host: server_host.into(),
                 port: server_port,
-                uuid: uuid.into(),
-                protocol: Protocol::RawVlessTcp,
-                path: None,
-                host_header: None,
-                flow: String::new(),
+                endpoint: Endpoint {
+                    proxy: ProxyProtocol::Vless(VlessOptions {
+                        uuid: uuid.into(),
+                        flow: String::new(),
+                    }),
+                    transport: Transport::Raw,
+                    outer_security: OuterSecurity::None,
+                },
             },
             local: LocalProxyConfig {
                 host: local_host.into(),
@@ -87,19 +63,17 @@ impl ClientConfig {
         Ok(config)
     }
 
+    pub fn from_json(text: &str) -> Result<Self> {
+        let config: Self = serde_json::from_str(text)?;
+        config.validate()?;
+        Ok(config)
+    }
+
     pub fn validate(&self) -> Result<()> {
         validate_host(&self.server.host, "server host")?;
         validate_port(self.server.port, "server port")?;
         validate_host(&self.local.host, "local listen host")?;
-        if !self.server.flow.trim().is_empty() {
-            return Err(ClientError::UnsupportedProtocol(format!(
-                "{} with flow '{}' (XTLS Vision is not implemented in wrongcl yet)",
-                self.server.protocol.as_str(),
-                self.server.flow
-            )));
-        }
-        Uuid::parse_str(self.server.uuid.trim())
-            .map_err(|e| ClientError::Config(format!("invalid UUID: {e}")))?;
+        self.server.endpoint.validate()?;
         Ok(())
     }
 
@@ -115,11 +89,7 @@ pub fn default_config() -> ClientConfig {
         server: ServerConfig {
             host: "127.0.0.1".into(),
             port: 443,
-            uuid: "12345678-1234-1234-1234-123456789abc".into(),
-            protocol: Protocol::RawVlessTcp,
-            path: None,
-            host_header: None,
-            flow: String::new(),
+            endpoint: Endpoint::default(),
         },
         local: LocalProxyConfig {
             host: "127.0.0.1".into(),
@@ -132,11 +102,44 @@ pub fn config_example() -> String {
     r#"[server]
 host = "127.0.0.1"
 port = 443
+
+[server.proxy]
+type = "vless"
 uuid = "12345678-1234-1234-1234-123456789abc"
-protocol = "raw-vless-tcp"
-# path = "/ws"
-# host-header = "example.com"
 flow = ""
+
+[server.transport]
+type = "raw"
+
+[server.outer-security]
+type = "none"
+
+# Sample alternates — uncomment one.
+#
+# [server.proxy]
+# type = "trojan"
+# password = "change-this-password"
+#
+# [server.proxy]
+# type = "mixed"
+# username = "admin"
+# password = "change-this-password"
+#
+# [server.transport]
+# type = "websocket"
+# path = "/ws"
+# host = "example.com"
+#
+# [server.transport]
+# type = "httpupgrade"
+# path = "/up"
+# host = "example.com"
+#
+# [server.outer-security]
+# type = "tls"
+# server-name = "example.com"
+# insecure-skip-verify = false
+# alpn = ["h2", "http/1.1"]
 
 [local]
 host = "127.0.0.1"
