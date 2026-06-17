@@ -13,7 +13,9 @@ use wrongcl_native::Result;
 
 #[derive(Debug, Parser)]
 #[command(name = "wrongcl-headless")]
-#[command(about = "Headless wrongsv client (VLESS / Trojan / Mixed over raw / WebSocket / HTTPUpgrade, with optional TLS)")]
+#[command(
+    about = "Headless wrongsv client (VLESS / Trojan / Mixed over raw / WebSocket / HTTPUpgrade, with optional TLS)"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -244,12 +246,15 @@ fn resolve_config(
                 listen_host.clone().unwrap_or_else(|| "127.0.0.1".into()),
                 listen_port.unwrap_or(1080),
             )?;
-            adapted.config.ok_or_else(|| {
+            let document = adapted.config.ok_or_else(|| {
                 wrongcl_native::ClientError::UnsupportedProtocol(format!(
-                    "wrongsv active profile '{}' is not implemented in wrongcl yet",
-                    adapted.report.active_profile
+                    "wrongsv active profile '{}' is not runnable in wrongcl yet: {}",
+                    adapted.report.active_profile, adapted.report.active_reason
                 ))
-            })?
+            })?;
+            let value = serde_json::to_value(document)?;
+            let config: ClientConfig = serde_json::from_value(value)?;
+            config
         }
         (None, None) => default_config(),
         (Some(_), Some(_)) => unreachable!("checked above"),

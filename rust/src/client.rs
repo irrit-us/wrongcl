@@ -1,10 +1,14 @@
 use std::io::{self, Read, Write};
-use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, TcpStream, ToSocketAddrs};
+use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, TcpStream, ToSocketAddrs, UdpSocket};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::thread;
 use std::time::Duration;
 
 use base64::Engine as _;
 use rand::RngCore;
 use serde::Serialize;
+use wrongsv_net_types::{Address, Port};
+use wrongsv_vless_encoding::{LengthPacketReader, LengthPacketWriter, PacketReadError};
 
 use crate::anytls;
 use crate::config::ServerConfig;
@@ -13,7 +17,9 @@ use crate::endpoint::{
     TrojanOptions, VlessOptions, WsOptions,
 };
 use crate::error::{ClientError, Result};
-use crate::protocol::{encode_raw_vless_header, read_raw_vless_response, Target};
+use crate::protocol::{
+    encode_raw_vless_header, encode_udp_vless_header, read_raw_vless_response, Target,
+};
 use crate::reality;
 use crate::shadowsocks as ss;
 use crate::tls;
@@ -22,10 +28,20 @@ use crate::vision;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+const MIXED_DETECT_TIMEOUT: Duration = Duration::from_millis(500);
 const VISION_FLOW: &str = "xtls-rprx-vision";
+
+pub trait TunnelReader: Read + Send {}
+
+impl<T: Read + Send + ?Sized> TunnelReader for T {}
+
+pub trait TunnelWriter: Write + Send {
+    fn shutdown_write(&mut self) -> io::Result<()>;
+}
 
 pub trait Tunnel: Read + Write + Send {
     fn try_clone_box(&self) -> io::Result<Box<dyn Tunnel>>;
+    fn split_box(self: Box<Self>) -> io::Result<(Box<dyn TunnelReader>, Box<dyn TunnelWriter>)>;
     fn shutdown_write(&mut self) -> io::Result<()>;
     fn set_socket_timeouts(
         &self,
@@ -34,9 +50,24 @@ pub trait Tunnel: Read + Write + Send {
     ) -> io::Result<()>;
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UdpPacket {
+    pub target: Target,
+    pub payload: Vec<u8>,
+}
+
+pub trait UdpSession: Send {
+    fn send_packet(&mut self, payload: &[u8]) -> Result<()>;
+    fn try_recv_packet(&mut self) -> Result<Option<UdpPacket>>;
+}
+
 impl Tunnel for TcpStream {
     fn try_clone_box(&self) -> io::Result<Box<dyn Tunnel>> {
         Ok(Box::new(self.try_clone()?))
+    }
+
+    fn split_box(self: Box<Self>) -> io::Result<(Box<dyn TunnelReader>, Box<dyn TunnelWriter>)> {
+        split_cloneable_tunnel(self)
     }
 
     fn shutdown_write(&mut self) -> io::Result<()> {
@@ -52,6 +83,47 @@ impl Tunnel for TcpStream {
         TcpStream::set_write_timeout(self, write)?;
         Ok(())
     }
+}
+
+struct DefaultTunnelReader {
+    inner: Box<dyn Tunnel>,
+}
+
+impl Read for DefaultTunnelReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+struct DefaultTunnelWriter {
+    inner: Box<dyn Tunnel>,
+}
+
+impl Write for DefaultTunnelWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+impl TunnelWriter for DefaultTunnelWriter {
+    fn shutdown_write(&mut self) -> io::Result<()> {
+        self.inner.shutdown_write()
+    }
+}
+
+pub(crate) fn split_cloneable_tunnel<T: Tunnel + 'static>(
+    inner: Box<T>,
+) -> io::Result<(Box<dyn TunnelReader>, Box<dyn TunnelWriter>)> {
+    let writer = inner.try_clone_box()?;
+    let reader: Box<dyn Tunnel> = inner;
+    Ok((
+        Box::new(DefaultTunnelReader { inner: reader }),
+        Box::new(DefaultTunnelWriter { inner: writer }),
+    ))
 }
 
 #[derive(Clone, Debug)]
@@ -79,6 +151,25 @@ impl WrongsvClient {
             ProxyProtocol::Trojan(opts) => self.connect_trojan(target, &opts),
             ProxyProtocol::Mixed(opts) => self.connect_mixed(target, &opts),
             ProxyProtocol::Shadowsocks(opts) => self.connect_shadowsocks(target, &opts),
+        }
+    }
+
+    pub fn supports_udp(&self) -> bool {
+        match &self.server.endpoint.proxy {
+            ProxyProtocol::Vless(opts) => opts.flow.trim().is_empty(),
+            ProxyProtocol::Trojan(_) | ProxyProtocol::Shadowsocks(_) => true,
+            ProxyProtocol::Mixed(_) => false,
+        }
+    }
+
+    pub fn connect_udp_session(&self, target: &Target) -> Result<Box<dyn UdpSession>> {
+        match self.server.endpoint.proxy.clone() {
+            ProxyProtocol::Vless(opts) => self.connect_vless_udp(target, &opts),
+            ProxyProtocol::Trojan(opts) => self.connect_trojan_udp(target, &opts),
+            ProxyProtocol::Shadowsocks(opts) => self.connect_shadowsocks_udp(target, &opts),
+            ProxyProtocol::Mixed(_) => Err(ClientError::UnsupportedProtocol(
+                "remote mixed proxy does not support UDP ASSOCIATE in wrongcl yet".into(),
+            )),
         }
     }
 
@@ -125,6 +216,26 @@ impl WrongsvClient {
         Ok(stream)
     }
 
+    fn connect_vless_udp(
+        &self,
+        target: &Target,
+        opts: &VlessOptions,
+    ) -> Result<Box<dyn UdpSession>> {
+        if opts.flow.trim() == VISION_FLOW {
+            return Err(ClientError::UnsupportedProtocol(
+                "XTLS Vision does not support UDP".into(),
+            ));
+        }
+        let (mut stream, timeout_handle) = self.open_proxy_stack()?;
+        let header = encode_udp_vless_header(&opts.uuid, target, &opts.flow)?;
+        stream.write_all(&header)?;
+        read_raw_vless_response(&mut stream)?;
+        if let Some(handle) = timeout_handle {
+            clear_timeouts(&handle)?;
+        }
+        open_stream_udp_session(stream, target.clone())
+    }
+
     fn connect_trojan(&self, target: &Target, opts: &TrojanOptions) -> Result<Box<dyn Tunnel>> {
         let (mut stream, timeout_handle) = self.open_proxy_stack()?;
         let header = trojan::encode_handshake(&opts.password, target)?;
@@ -136,11 +247,43 @@ impl WrongsvClient {
         Ok(stream)
     }
 
+    fn connect_trojan_udp(
+        &self,
+        target: &Target,
+        opts: &TrojanOptions,
+    ) -> Result<Box<dyn UdpSession>> {
+        let (mut stream, timeout_handle) = self.open_proxy_stack()?;
+        let header = trojan::encode_udp_associate_handshake(&opts.password)?;
+        stream.write_all(&header)?;
+        stream.flush().ok();
+        if let Some(handle) = timeout_handle {
+            clear_timeouts(&handle)?;
+        }
+        open_trojan_udp_session(stream, target.clone())
+    }
+
     fn connect_mixed(&self, target: &Target, opts: &MixedOptions) -> Result<Box<dyn Tunnel>> {
         let mut tcp = self.connect_tcp_with_timeouts()?;
-        remote_socks5_connect(&mut tcp, opts, target)?;
-        clear_timeouts(&tcp)?;
-        Ok(Box::new(tcp))
+        tcp.set_read_timeout(Some(MIXED_DETECT_TIMEOUT))?;
+        tcp.set_write_timeout(Some(MIXED_DETECT_TIMEOUT))?;
+        match remote_socks5_connect(&mut tcp, opts, target) {
+            Ok(()) => {
+                clear_timeouts(&tcp)?;
+                Ok(Box::new(tcp))
+            }
+            Err(socks_err) => {
+                let mut http = self.connect_tcp_with_timeouts()?;
+                match remote_http_connect(&mut http, opts, target) {
+                    Ok(()) => {
+                        clear_timeouts(&http)?;
+                        Ok(Box::new(http))
+                    }
+                    Err(http_err) => Err(ClientError::Config(format!(
+                        "remote mixed proxy connect failed: SOCKS5 path: {socks_err}; HTTP CONNECT path: {http_err}"
+                    ))),
+                }
+            }
+        }
     }
 
     fn connect_shadowsocks(
@@ -154,6 +297,22 @@ impl WrongsvClient {
         let tunnel = ss::open_tunnel(inner, opts, target)?;
         clear_timeouts(&timeout_handle)?;
         Ok(tunnel)
+    }
+
+    fn connect_shadowsocks_udp(
+        &self,
+        target: &Target,
+        opts: &ShadowsocksOptions,
+    ) -> Result<Box<dyn UdpSession>> {
+        let config = wrongsv_shadowsocks::ServerConfig::new(&opts.method, opts.password.clone())
+            .map_err(|e| ClientError::Config(format!("Shadowsocks: {e}")))?;
+        let server_addr = format!("{}:{}", self.server.host, self.server.port)
+            .to_socket_addrs()?
+            .next()
+            .ok_or_else(|| {
+                ClientError::Config("failed to resolve Shadowsocks server address".into())
+            })?;
+        open_shadowsocks_udp_session(config, server_addr, target.clone())
     }
 
     fn open_proxy_stack(&self) -> Result<(Box<dyn Tunnel>, Option<TcpStream>)> {
@@ -255,6 +414,304 @@ fn connect_websocket(
 pub struct ProbeResult {
     pub bytes_read: usize,
     pub preview: String,
+}
+
+struct StreamUdpSession {
+    writer: Box<dyn TunnelWriter>,
+    responses: Receiver<std::result::Result<UdpPacket, ClientError>>,
+}
+
+impl StreamUdpSession {
+    fn new(stream: Box<dyn Tunnel>, target: Target) -> Result<Self> {
+        let (reader, writer) = stream.split_box()?;
+        let (tx, rx) = mpsc::channel();
+        let target_for_thread = target.clone();
+        thread::spawn(move || {
+            let mut reader = LengthPacketReader::new(reader);
+            loop {
+                match reader.read_packet() {
+                    Ok(packet) => {
+                        if tx
+                            .send(Ok(UdpPacket {
+                                target: target_for_thread.clone(),
+                                payload: packet.to_vec(),
+                            }))
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Err(PacketReadError::Io(ref e)) if e.kind() == io::ErrorKind::UnexpectedEof => {
+                        break;
+                    }
+                    Err(PacketReadError::Io(e)) => {
+                        let _ = tx.send(Err(ClientError::Io(e)));
+                        break;
+                    }
+                    Err(PacketReadError::TooLarge(len)) => {
+                        let _ = tx.send(Err(ClientError::Config(format!(
+                            "UDP packet too large: {len} bytes"
+                        ))));
+                        break;
+                    }
+                }
+            }
+        });
+        Ok(Self {
+            writer,
+            responses: rx,
+        })
+    }
+}
+
+impl Drop for StreamUdpSession {
+    fn drop(&mut self) {
+        let _ = self.writer.shutdown_write();
+    }
+}
+
+impl UdpSession for StreamUdpSession {
+    fn send_packet(&mut self, payload: &[u8]) -> Result<()> {
+        LengthPacketWriter::new(self.writer.as_mut()).write_packet(payload)?;
+        self.writer.flush()?;
+        Ok(())
+    }
+
+    fn try_recv_packet(&mut self) -> Result<Option<UdpPacket>> {
+        match self.responses.try_recv() {
+            Ok(result) => result.map(Some),
+            Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => Ok(None),
+        }
+    }
+}
+
+struct TrojanUdpSession {
+    target: Target,
+    writer: Box<dyn TunnelWriter>,
+    responses: Receiver<std::result::Result<UdpPacket, ClientError>>,
+}
+
+impl TrojanUdpSession {
+    fn new(stream: Box<dyn Tunnel>, target: Target) -> Result<Self> {
+        let (mut reader, writer) = stream.split_box()?;
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let mut buf = Vec::new();
+            let mut tmp = [0u8; 8192];
+            loop {
+                match reader.read(&mut tmp) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        buf.extend_from_slice(&tmp[..n]);
+                        loop {
+                            match trojan::parse_udp_packet(&buf) {
+                                Ok(Some((target, payload, consumed))) => {
+                                    buf.drain(..consumed);
+                                    if tx.send(Ok(UdpPacket { target, payload })).is_err() {
+                                        return;
+                                    }
+                                }
+                                Ok(None) => break,
+                                Err(err) => {
+                                    let _ = tx.send(Err(err));
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    Err(ref e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
+                    Err(e) => {
+                        let _ = tx.send(Err(ClientError::Io(e)));
+                        return;
+                    }
+                }
+            }
+        });
+        Ok(Self {
+            target,
+            writer,
+            responses: rx,
+        })
+    }
+}
+
+impl Drop for TrojanUdpSession {
+    fn drop(&mut self) {
+        let _ = self.writer.shutdown_write();
+    }
+}
+
+impl UdpSession for TrojanUdpSession {
+    fn send_packet(&mut self, payload: &[u8]) -> Result<()> {
+        let packet = trojan::encode_udp_packet(&self.target, payload)?;
+        self.writer.write_all(&packet)?;
+        self.writer.flush()?;
+        Ok(())
+    }
+
+    fn try_recv_packet(&mut self) -> Result<Option<UdpPacket>> {
+        match self.responses.try_recv() {
+            Ok(result) => result.map(Some),
+            Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => Ok(None),
+        }
+    }
+}
+
+struct ShadowsocksUdpSession {
+    target: Target,
+    config: wrongsv_shadowsocks::ServerConfig,
+    socket: UdpSocket,
+    responses: Receiver<std::result::Result<UdpPacket, ClientError>>,
+    client_session_id: [u8; 8],
+    next_packet_id: u64,
+}
+
+impl ShadowsocksUdpSession {
+    fn new(
+        config: wrongsv_shadowsocks::ServerConfig,
+        server_addr: std::net::SocketAddr,
+        target: Target,
+    ) -> Result<Self> {
+        let bind_addr = match server_addr {
+            std::net::SocketAddr::V4(_) => "0.0.0.0:0",
+            std::net::SocketAddr::V6(_) => "[::]:0",
+        };
+        let socket = UdpSocket::bind(bind_addr)?;
+        socket.connect(server_addr)?;
+        let read_socket = socket.try_clone()?;
+        read_socket.set_read_timeout(Some(Duration::from_millis(200)))?;
+        let config_for_thread = config.clone();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let mut buf = [0u8; 65535];
+            loop {
+                match read_socket.recv(&mut buf) {
+                    Ok(0) => continue,
+                    Ok(n) => {
+                        let packet = &buf[..n];
+                        let parsed = if config_for_thread.method.is_aead_2022() {
+                            wrongsv_shadowsocks::decrypt_aead_2022_udp_response(
+                                packet,
+                                &config_for_thread,
+                            )
+                            .map(|response| UdpPacket {
+                                target: Target::new(response.address.to_string(), response.port.0)
+                                    .expect("valid target"),
+                                payload: response.payload,
+                            })
+                            .map_err(|e| {
+                                ClientError::Config(format!("Shadowsocks UDP response: {e}"))
+                            })
+                        } else {
+                            let plaintext =
+                                wrongsv_shadowsocks::decrypt_udp_packet(packet, &config_for_thread)
+                                    .map_err(|e| {
+                                        ClientError::Config(format!(
+                                            "Shadowsocks UDP response: {e}"
+                                        ))
+                                    });
+                            plaintext.and_then(|plain| {
+                                let (address, port, consumed) =
+                                    wrongsv_shadowsocks::parse_request_header(&plain).map_err(
+                                        |e| {
+                                            ClientError::Config(format!(
+                                                "Shadowsocks UDP header: {e}"
+                                            ))
+                                        },
+                                    )?;
+                                Ok(UdpPacket {
+                                    target: Target::new(address.to_string(), port.0)?,
+                                    payload: plain[consumed..].to_vec(),
+                                })
+                            })
+                        };
+                        if tx.send(parsed).is_err() {
+                            break;
+                        }
+                    }
+                    Err(ref e)
+                        if matches!(
+                            e.kind(),
+                            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                        ) =>
+                    {
+                        continue;
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(ClientError::Io(e)));
+                        break;
+                    }
+                }
+            }
+        });
+
+        let mut client_session_id = [0u8; 8];
+        rand::rngs::OsRng.fill_bytes(&mut client_session_id);
+
+        Ok(Self {
+            target,
+            config,
+            socket,
+            responses: rx,
+            client_session_id,
+            next_packet_id: 0,
+        })
+    }
+}
+
+impl UdpSession for ShadowsocksUdpSession {
+    fn send_packet(&mut self, payload: &[u8]) -> Result<()> {
+        let address = Address::parse(&self.target.host);
+        let port = Port(self.target.port);
+        let packet = if self.config.method.is_aead_2022() {
+            let packet = wrongsv_shadowsocks::encrypt_aead_2022_udp_request(
+                &self.config,
+                self.client_session_id,
+                self.next_packet_id,
+                &address,
+                port,
+                payload,
+            )
+            .map_err(|e| ClientError::Config(format!("Shadowsocks UDP request: {e}")))?;
+            self.next_packet_id = self.next_packet_id.wrapping_add(1);
+            packet
+        } else {
+            let mut plaintext = Vec::with_capacity(payload.len() + self.target.host.len() + 32);
+            wrongsv_shadowsocks::write_request_header(&mut plaintext, &address, port);
+            plaintext.extend_from_slice(payload);
+            wrongsv_shadowsocks::encrypt_udp_packet(&plaintext, &self.config)
+                .map_err(|e| ClientError::Config(format!("Shadowsocks UDP request: {e}")))?
+        };
+        self.socket.send(&packet)?;
+        Ok(())
+    }
+
+    fn try_recv_packet(&mut self) -> Result<Option<UdpPacket>> {
+        match self.responses.try_recv() {
+            Ok(result) => result.map(Some),
+            Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => Ok(None),
+        }
+    }
+}
+
+fn open_stream_udp_session(stream: Box<dyn Tunnel>, target: Target) -> Result<Box<dyn UdpSession>> {
+    Ok(Box::new(StreamUdpSession::new(stream, target)?))
+}
+
+fn open_trojan_udp_session(stream: Box<dyn Tunnel>, target: Target) -> Result<Box<dyn UdpSession>> {
+    Ok(Box::new(TrojanUdpSession::new(stream, target)?))
+}
+
+fn open_shadowsocks_udp_session(
+    config: wrongsv_shadowsocks::ServerConfig,
+    server_addr: std::net::SocketAddr,
+    target: Target,
+) -> Result<Box<dyn UdpSession>> {
+    Ok(Box::new(ShadowsocksUdpSession::new(
+        config,
+        server_addr,
+        target,
+    )?))
 }
 
 pub(crate) fn connect_tcp(host: &str, port: u16) -> Result<TcpStream> {
@@ -518,6 +975,43 @@ fn read_socks_bound_address(stream: &mut TcpStream, atyp: u8) -> Result<()> {
     Ok(())
 }
 
+fn remote_http_connect(stream: &mut TcpStream, opts: &MixedOptions, target: &Target) -> Result<()> {
+    let authority = http_connect_authority(&target.host, target.port);
+    let mut request =
+        format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\nConnection: keep-alive\r\n");
+
+    let username = opts.username.as_deref().unwrap_or("");
+    let password = opts.password.as_deref().unwrap_or("");
+    if !username.is_empty() || !password.is_empty() {
+        let basic =
+            base64::engine::general_purpose::STANDARD.encode(format!("{username}:{password}"));
+        request.push_str(&format!("Proxy-Authorization: Basic {basic}\r\n"));
+    }
+    request.push_str("\r\n");
+    stream.write_all(request.as_bytes())?;
+    stream.flush()?;
+
+    let response = read_http_headers(stream, "remote HTTP CONNECT")?;
+    let mut lines = response.split("\r\n");
+    let status_line = lines
+        .next()
+        .ok_or_else(|| ClientError::Config("remote HTTP CONNECT missing status line".into()))?;
+    if status_line.starts_with("HTTP/1.1 200 ") || status_line.starts_with("HTTP/1.0 200 ") {
+        return Ok(());
+    }
+    Err(ClientError::Config(format!(
+        "remote HTTP CONNECT failed with status: {status_line}"
+    )))
+}
+
+fn http_connect_authority(host: &str, port: u16) -> String {
+    if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum OpCode {
     Close = 0x08,
@@ -546,6 +1040,10 @@ impl Tunnel for WebSocketTunnel {
             inner: self.inner.try_clone_box()?,
             read_buf: Vec::new(),
         }))
+    }
+
+    fn split_box(self: Box<Self>) -> io::Result<(Box<dyn TunnelReader>, Box<dyn TunnelWriter>)> {
+        split_cloneable_tunnel(self)
     }
 
     fn shutdown_write(&mut self) -> io::Result<()> {
@@ -686,11 +1184,13 @@ fn read_ws_frame(stream: &mut dyn Read) -> io::Result<(OpCode, Vec<u8>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{ClientConfig, LocalProxyConfig};
     use crate::endpoint::{
         Endpoint, HuOptions, MixedOptions, ProxyProtocol, ShadowsocksOptions, Transport,
         VlessOptions, WsOptions,
     };
-    use std::net::TcpListener;
+    use crate::proxy::{ProxyHandle, ProxySnapshot};
+    use std::net::{SocketAddr, TcpListener};
     use std::sync::mpsc;
     use std::thread;
 
@@ -774,6 +1274,60 @@ mod tests {
     }
 
     #[test]
+    fn socks_proxy_udp_works_against_fake_httpupgrade_server() {
+        let server = spawn_fake_server(FakeCarrier::HttpUpgrade);
+        let client = WrongsvClient::new(vless_server(
+            "127.0.0.1",
+            server.port,
+            TEST_UUID,
+            Transport::Httpupgrade(HuOptions {
+                path: "/up".into(),
+                host: None,
+            }),
+        ))
+        .unwrap();
+
+        let mut session = client
+            .connect_udp_session(&Target::new("example.com", 53).unwrap())
+            .unwrap();
+        session.send_packet(b"ping-udp").unwrap();
+        for _ in 0..20 {
+            if let Some(packet) = session.try_recv_packet().unwrap() {
+                assert_eq!(packet.payload, b"ping-udp");
+                return;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        panic!("no UDP response from HTTPUpgrade session");
+    }
+
+    #[test]
+    fn socks_proxy_works_against_fake_httpupgrade_server() {
+        let server = spawn_fake_server(FakeCarrier::HttpUpgrade);
+        let mut proxy = ProxyHandle::start(ClientConfig {
+            server: vless_server(
+                "127.0.0.1",
+                server.port,
+                TEST_UUID,
+                Transport::Httpupgrade(HuOptions {
+                    path: "/up".into(),
+                    host: None,
+                }),
+            ),
+            local: LocalProxyConfig {
+                host: "127.0.0.1".into(),
+                port: 0,
+            },
+        })
+        .unwrap();
+
+        let response = run_socks_echo(proxy.snapshot().socket_addr(), b"hello-httpup").unwrap();
+        proxy.stop().unwrap();
+
+        assert_eq!(response, b"hello-httpup".to_vec());
+    }
+
+    #[test]
     fn probe_works_against_fake_websocket_server() {
         let server = spawn_fake_server(FakeCarrier::WebSocket);
         let client = WrongsvClient::new(vless_server(
@@ -791,6 +1345,60 @@ mod tests {
             .probe(&Target::new("example.com", 80).unwrap(), "ping")
             .unwrap();
         assert_eq!(result.preview, "ping");
+    }
+
+    #[test]
+    fn socks_proxy_udp_works_against_fake_websocket_server() {
+        let server = spawn_fake_server(FakeCarrier::WebSocket);
+        let client = WrongsvClient::new(vless_server(
+            "127.0.0.1",
+            server.port,
+            TEST_UUID,
+            Transport::Websocket(WsOptions {
+                path: "/ws".into(),
+                host: None,
+            }),
+        ))
+        .unwrap();
+
+        let mut session = client
+            .connect_udp_session(&Target::new("example.com", 53).unwrap())
+            .unwrap();
+        session.send_packet(b"ping-udp").unwrap();
+        for _ in 0..20 {
+            if let Some(packet) = session.try_recv_packet().unwrap() {
+                assert_eq!(packet.payload, b"ping-udp");
+                return;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        panic!("no UDP response from WebSocket session");
+    }
+
+    #[test]
+    fn socks_proxy_works_against_fake_websocket_server() {
+        let server = spawn_fake_server(FakeCarrier::WebSocket);
+        let mut proxy = ProxyHandle::start(ClientConfig {
+            server: vless_server(
+                "127.0.0.1",
+                server.port,
+                TEST_UUID,
+                Transport::Websocket(WsOptions {
+                    path: "/ws".into(),
+                    host: None,
+                }),
+            ),
+            local: LocalProxyConfig {
+                host: "127.0.0.1".into(),
+                port: 0,
+            },
+        })
+        .unwrap();
+
+        let response = run_socks_echo(proxy.snapshot().socket_addr(), b"hello-ws").unwrap();
+        proxy.stop().unwrap();
+
+        assert_eq!(response, b"hello-ws".to_vec());
     }
 
     #[test]
@@ -812,6 +1420,41 @@ mod tests {
     #[test]
     fn probe_works_against_fake_authenticated_remote_socks5_server() {
         let server = spawn_fake_socks5_server(Some("user"), Some("pass"));
+        let client = WrongsvClient::new(mixed_server(
+            "127.0.0.1",
+            server.port,
+            MixedOptions {
+                username: Some("user".into()),
+                password: Some("pass".into()),
+            },
+        ))
+        .unwrap();
+
+        let result = client
+            .probe(&Target::new("example.com", 80).unwrap(), "ping")
+            .unwrap();
+        assert_eq!(result.preview, "ping");
+    }
+
+    #[test]
+    fn probe_works_against_fake_remote_http_connect_server() {
+        let server = spawn_fake_http_connect_server(None, None);
+        let client = WrongsvClient::new(mixed_server(
+            "127.0.0.1",
+            server.port,
+            MixedOptions::default(),
+        ))
+        .unwrap();
+
+        let result = client
+            .probe(&Target::new("example.com", 80).unwrap(), "ping")
+            .unwrap();
+        assert_eq!(result.preview, "ping");
+    }
+
+    #[test]
+    fn probe_works_against_fake_authenticated_remote_http_connect_server() {
+        let server = spawn_fake_http_connect_server(Some("user"), Some("pass"));
         let client = WrongsvClient::new(mixed_server(
             "127.0.0.1",
             server.port,
@@ -868,6 +1511,84 @@ mod tests {
             .probe(&Target::new("example.com", 80).unwrap(), "ping-2022")
             .unwrap();
         assert_eq!(result.preview, "ping-2022");
+    }
+
+    #[test]
+    fn socks_proxy_works_against_fake_shadowsocks_server() {
+        let server =
+            spawn_fake_shadowsocks_server("chacha20-ietf-poly1305".into(), "hunter2".into());
+        let mut proxy = ProxyHandle::start(ClientConfig {
+            server: shadowsocks_server(
+                "127.0.0.1",
+                server.port,
+                ShadowsocksOptions {
+                    method: "chacha20-ietf-poly1305".into(),
+                    password: "hunter2".into(),
+                },
+            ),
+            local: LocalProxyConfig {
+                host: "127.0.0.1".into(),
+                port: 0,
+            },
+        })
+        .unwrap();
+
+        let response = run_socks_echo(proxy.snapshot().socket_addr(), b"hello-ss").unwrap();
+        proxy.stop().unwrap();
+
+        assert_eq!(response, b"hello-ss".to_vec());
+    }
+
+    #[test]
+    fn socks_proxy_works_against_fake_shadowsocks_aead_2022_server() {
+        let psk_b64 = "AAAAAAAAAAAAAAAAAAAAAA==";
+        let server =
+            spawn_fake_shadowsocks_server("2022-blake3-aes-128-gcm".into(), psk_b64.into());
+        let mut proxy = ProxyHandle::start(ClientConfig {
+            server: shadowsocks_server(
+                "127.0.0.1",
+                server.port,
+                ShadowsocksOptions {
+                    method: "2022-blake3-aes-128-gcm".into(),
+                    password: psk_b64.into(),
+                },
+            ),
+            local: LocalProxyConfig {
+                host: "127.0.0.1".into(),
+                port: 0,
+            },
+        })
+        .unwrap();
+
+        let response = run_socks_echo(proxy.snapshot().socket_addr(), b"hello-2022").unwrap();
+        proxy.stop().unwrap();
+
+        assert_eq!(response, b"hello-2022".to_vec());
+    }
+
+    fn run_socks_echo(local_addr: SocketAddr, payload: &[u8]) -> io::Result<Vec<u8>> {
+        let mut stream = TcpStream::connect_timeout(&local_addr, Duration::from_secs(2))?;
+        stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+        stream.write_all(&[0x05, 0x01, 0x00])?;
+
+        let mut greeting = [0u8; 2];
+        stream.read_exact(&mut greeting)?;
+        assert_eq!(greeting, [0x05, 0x00]);
+
+        let host = b"example.com";
+        let mut request = vec![0x05, 0x01, 0x00, 0x03, host.len() as u8];
+        request.extend_from_slice(host);
+        request.extend_from_slice(&80u16.to_be_bytes());
+        stream.write_all(&request)?;
+
+        let mut reply = [0u8; 10];
+        stream.read_exact(&mut reply)?;
+        assert_eq!(reply[1], 0x00);
+
+        stream.write_all(payload)?;
+        let mut response = vec![0u8; payload.len()];
+        stream.read_exact(&mut response)?;
+        Ok(response)
     }
 
     fn spawn_fake_shadowsocks_server(method: String, password: String) -> FakeServer {
@@ -934,6 +1655,18 @@ mod tests {
         port: u16,
     }
 
+    trait SnapshotAddr {
+        fn socket_addr(&self) -> SocketAddr;
+    }
+
+    impl SnapshotAddr for ProxySnapshot {
+        fn socket_addr(&self) -> SocketAddr {
+            format!("{}:{}", self.local_host, self.local_port)
+                .parse()
+                .unwrap()
+        }
+    }
+
     fn spawn_fake_server(carrier: FakeCarrier) -> FakeServer {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -958,6 +1691,25 @@ mod tests {
             ready_tx.send(()).unwrap();
             for stream in listener.incoming().flatten() {
                 let _ = handle_fake_socks5(stream, username.as_deref(), password.as_deref());
+            }
+        });
+        ready_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        FakeServer { port }
+    }
+
+    fn spawn_fake_http_connect_server(
+        username: Option<&str>,
+        password: Option<&str>,
+    ) -> FakeServer {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let username = username.map(str::to_string);
+        let password = password.map(str::to_string);
+        let (ready_tx, ready_rx) = mpsc::channel();
+        thread::spawn(move || {
+            ready_tx.send(()).unwrap();
+            for stream in listener.incoming().flatten() {
+                let _ = handle_fake_http_connect(stream, username.as_deref(), password.as_deref());
             }
         });
         ready_rx.recv_timeout(Duration::from_secs(1)).unwrap();
@@ -1019,6 +1771,44 @@ mod tests {
         }
         stream.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])?;
 
+        let mut buf = [0u8; 1024];
+        loop {
+            match stream.read(&mut buf) {
+                Ok(0) => return Ok(()),
+                Ok(n) => stream.write_all(&buf[..n])?,
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    fn handle_fake_http_connect(
+        mut stream: TcpStream,
+        username: Option<&str>,
+        password: Option<&str>,
+    ) -> io::Result<()> {
+        stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+        let request = read_http_headers(&mut stream, "fake-http-connect")?;
+        let mut lines = request.split("\r\n");
+        let status = lines.next().unwrap_or_default();
+        assert_eq!(status, "CONNECT example.com:80 HTTP/1.1");
+
+        let auth_header = lines.find(|line| {
+            line.to_ascii_lowercase()
+                .starts_with("proxy-authorization:")
+        });
+        if username.is_some() || password.is_some() {
+            let expected = base64::engine::general_purpose::STANDARD.encode(format!(
+                "{}:{}",
+                username.unwrap_or(""),
+                password.unwrap_or("")
+            ));
+            let expected_line = format!("Proxy-Authorization: Basic {expected}");
+            assert_eq!(auth_header, Some(expected_line.as_str()));
+        } else {
+            assert!(auth_header.is_none());
+        }
+
+        stream.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")?;
         let mut buf = [0u8; 1024];
         loop {
             match stream.read(&mut buf) {

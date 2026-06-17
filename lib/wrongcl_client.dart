@@ -63,10 +63,7 @@ class TrojanConfig {
   const TrojanConfig({required this.password});
   final String password;
 
-  Map<String, Object?> toJson() => {
-    'type': 'trojan',
-    'password': password,
-  };
+  Map<String, Object?> toJson() => {'type': 'trojan', 'password': password};
 }
 
 class MixedConfig {
@@ -239,15 +236,8 @@ class ClientConfigInput {
   final EndpointConfig endpoint;
 
   Map<String, Object?> toJson() => {
-    'server': {
-      'host': serverHost,
-      'port': serverPort,
-      ...endpoint.toJson(),
-    },
-    'local': {
-      'host': localHost,
-      'port': localPort,
-    },
+    'server': {'host': serverHost, 'port': serverPort, ...endpoint.toJson()},
+    'local': {'host': localHost, 'port': localPort},
   };
 
   String toJsonString() => jsonEncode(toJson());
@@ -265,6 +255,173 @@ class ProbeRequest {
   final String targetHost;
   final int targetPort;
   final String payload;
+}
+
+class WrongsvAdaptRequest {
+  const WrongsvAdaptRequest({
+    required this.path,
+    required this.serverHost,
+    this.listenHost = '127.0.0.1',
+    this.listenPort = 1080,
+  });
+
+  final String path;
+  final String serverHost;
+  final String listenHost;
+  final int listenPort;
+}
+
+class WrongsvMissingField {
+  const WrongsvMissingField({required this.field, required this.reason});
+
+  final String field;
+  final String reason;
+
+  factory WrongsvMissingField.fromMap(Map<String, Object?> map) {
+    return WrongsvMissingField(
+      field: map['field'] as String? ?? '',
+      reason: map['reason'] as String? ?? '',
+    );
+  }
+
+  Map<String, Object?> toMap() => {'field': field, 'reason': reason};
+}
+
+class WrongsvProfileSupport {
+  const WrongsvProfileSupport({
+    required this.profile,
+    required this.displayName,
+    required this.implemented,
+    required this.support,
+    required this.active,
+    required this.reason,
+  });
+
+  final String profile;
+  final String displayName;
+  final bool implemented;
+  final String support;
+  final bool active;
+  final String reason;
+
+  factory WrongsvProfileSupport.fromMap(Map<String, Object?> map) {
+    return WrongsvProfileSupport(
+      profile: map['profile'] as String? ?? '',
+      displayName: map['display_name'] as String? ?? '',
+      implemented: map['implemented'] == true,
+      support: map['support'] as String? ?? 'unsupported',
+      active: map['active'] == true,
+      reason: map['reason'] as String? ?? '',
+    );
+  }
+
+  Map<String, Object?> toMap() => {
+    'profile': profile,
+    'display_name': displayName,
+    'implemented': implemented,
+    'support': support,
+    'active': active,
+    'reason': reason,
+  };
+}
+
+class WrongsvCapabilityReport {
+  const WrongsvCapabilityReport({
+    required this.activeProfile,
+    required this.listen,
+    required this.listenPort,
+    required this.payloadNetworks,
+    required this.baseCarriers,
+    required this.activeSupport,
+    required this.activeReason,
+    required this.missingFields,
+    required this.profiles,
+  });
+
+  final String activeProfile;
+  final String listen;
+  final int listenPort;
+  final List<String> payloadNetworks;
+  final List<String> baseCarriers;
+  final String activeSupport;
+  final String activeReason;
+  final List<WrongsvMissingField> missingFields;
+  final List<WrongsvProfileSupport> profiles;
+
+  factory WrongsvCapabilityReport.fromMap(Map<String, Object?> map) {
+    final missingFields = (map['missing_fields'] as List? ?? const [])
+        .map(
+          (value) => WrongsvMissingField.fromMap(
+            Map<String, Object?>.from(value as Map),
+          ),
+        )
+        .toList();
+    final profiles = (map['profiles'] as List? ?? const [])
+        .map(
+          (value) => WrongsvProfileSupport.fromMap(
+            Map<String, Object?>.from(value as Map),
+          ),
+        )
+        .toList();
+    return WrongsvCapabilityReport(
+      activeProfile: map['active_profile'] as String? ?? '',
+      listen: map['listen'] as String? ?? '',
+      listenPort: (map['listen_port'] as num?)?.toInt() ?? 0,
+      payloadNetworks: (map['payload_networks'] as List? ?? const [])
+          .map((value) => '$value')
+          .toList(),
+      baseCarriers: (map['base_carriers'] as List? ?? const [])
+          .map((value) => '$value')
+          .toList(),
+      activeSupport: map['active_support'] as String? ?? 'unsupported',
+      activeReason: map['active_reason'] as String? ?? '',
+      missingFields: missingFields,
+      profiles: profiles,
+    );
+  }
+
+  Map<String, Object?> toMap() => {
+    'active_profile': activeProfile,
+    'listen': listen,
+    'listen_port': listenPort,
+    'payload_networks': payloadNetworks,
+    'base_carriers': baseCarriers,
+    'active_support': activeSupport,
+    'active_reason': activeReason,
+    'missing_fields': [for (final field in missingFields) field.toMap()],
+    'profiles': [for (final profile in profiles) profile.toMap()],
+  };
+}
+
+class WrongsvAdaptResult {
+  const WrongsvAdaptResult({
+    required this.report,
+    required this.config,
+    required this.draftConfig,
+    required this.stackSummary,
+  });
+
+  final WrongsvCapabilityReport report;
+  final Map<String, Object?>? config;
+  final Map<String, Object?>? draftConfig;
+  final String stackSummary;
+
+  Map<String, Object?>? get effectiveConfig => config ?? draftConfig;
+
+  factory WrongsvAdaptResult.fromMap(Map<String, Object?> map) {
+    final config = map['config'];
+    final draftConfig = map['draft_config'];
+    return WrongsvAdaptResult(
+      report: WrongsvCapabilityReport.fromMap(
+        Map<String, Object?>.from(map['report'] as Map? ?? const {}),
+      ),
+      config: config is Map ? Map<String, Object?>.from(config) : null,
+      draftConfig: draftConfig is Map
+          ? Map<String, Object?>.from(draftConfig)
+          : null,
+      stackSummary: map['stack_summary'] as String? ?? '',
+    );
+  }
 }
 
 class NativeResponse {
@@ -307,6 +464,16 @@ abstract interface class WrongclClient {
   NativeResponse probe(ProbeRequest request);
 
   NativeResponse stackSummary(ClientConfigInput config);
+
+  NativeResponse validateConfig(ClientConfigInput config);
+
+  NativeResponse loadClientConfigFile(String path);
+
+  NativeResponse exportConfigToml(ClientConfigInput config);
+
+  NativeResponse inspectWrongsvConfig(String path);
+
+  NativeResponse adaptWrongsvConfig(WrongsvAdaptRequest request);
 }
 
 typedef _NativeNoArg = Pointer<Utf8> Function();
@@ -319,6 +486,11 @@ typedef _NativeProbeJson =
     Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Uint16, Pointer<Utf8>);
 typedef _DartProbeJson =
     Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, int, Pointer<Utf8>);
+
+typedef _NativeAdaptWrongsv =
+    Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Uint16);
+typedef _DartAdaptWrongsv =
+    Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, int);
 
 typedef _NativeFree = Void Function(Pointer<Utf8>);
 typedef _DartFree = void Function(Pointer<Utf8>);
@@ -344,6 +516,25 @@ class NativeWrongclClient implements WrongclClient {
     _stackJson = _library.lookupFunction<_NativeJsonOnly, _DartJsonOnly>(
       'wrongcl_stack_summary_json',
     );
+    _validateConfigJson = _library
+        .lookupFunction<_NativeJsonOnly, _DartJsonOnly>(
+          'wrongcl_validate_config_json',
+        );
+    _loadConfigFileJson = _library
+        .lookupFunction<_NativeJsonOnly, _DartJsonOnly>(
+          'wrongcl_load_config_file_json',
+        );
+    _exportConfigTomlJson = _library
+        .lookupFunction<_NativeJsonOnly, _DartJsonOnly>(
+          'wrongcl_export_config_toml_json',
+        );
+    _capabilitiesJson = _library.lookupFunction<_NativeJsonOnly, _DartJsonOnly>(
+      'wrongcl_capabilities_json',
+    );
+    _adaptWrongsvJson = _library
+        .lookupFunction<_NativeAdaptWrongsv, _DartAdaptWrongsv>(
+          'wrongcl_adapt_wrongsv_config_json',
+        );
     _free = _library.lookupFunction<_NativeFree, _DartFree>(
       'wrongcl_free_string',
     );
@@ -356,13 +547,47 @@ class NativeWrongclClient implements WrongclClient {
   late final _DartNoArg _status;
   late final _DartProbeJson _probeJson;
   late final _DartJsonOnly _stackJson;
+  late final _DartJsonOnly _validateConfigJson;
+  late final _DartJsonOnly _loadConfigFileJson;
+  late final _DartJsonOnly _exportConfigTomlJson;
+  late final _DartJsonOnly _capabilitiesJson;
+  late final _DartAdaptWrongsv _adaptWrongsvJson;
   late final _DartFree _free;
 
   static DynamicLibrary _openLibrary() {
     if (Platform.isLinux) {
-      return DynamicLibrary.open('libwrongcl_native.so');
+      return _openFromCandidates(['libwrongcl_native.so']);
     }
-    throw UnsupportedError('wrongcl native library is only bundled for Linux');
+    if (Platform.isMacOS) {
+      return _openFromCandidates([
+        'libwrongcl_native.dylib',
+        '${File(Platform.resolvedExecutable).parent.path}/libwrongcl_native.dylib',
+        '${File(Platform.resolvedExecutable).parent.parent.path}/Frameworks/libwrongcl_native.dylib',
+      ]);
+    }
+    if (Platform.isWindows) {
+      return _openFromCandidates([
+        'wrongcl_native.dll',
+        '${File(Platform.resolvedExecutable).parent.path}\\wrongcl_native.dll',
+      ]);
+    }
+    throw UnsupportedError(
+      'wrongcl native library is not bundled for this platform',
+    );
+  }
+
+  static DynamicLibrary _openFromCandidates(List<String> candidates) {
+    Object? lastError;
+    for (final candidate in candidates) {
+      try {
+        return DynamicLibrary.open(candidate);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw UnsupportedError(
+      'failed to load wrongcl native library from ${candidates.join(', ')}: $lastError',
+    );
   }
 
   @override
@@ -370,10 +595,7 @@ class NativeWrongclClient implements WrongclClient {
 
   @override
   NativeResponse startProxy(ClientConfigInput config) {
-    return _withJson(
-      config.toJsonString(),
-      (ptr) => _take(_startJson(ptr)),
-    );
+    return _withJson(config.toJsonString(), (ptr) => _take(_startJson(ptr)));
   }
 
   @override
@@ -400,10 +622,59 @@ class NativeWrongclClient implements WrongclClient {
 
   @override
   NativeResponse stackSummary(ClientConfigInput config) {
+    return _withJson(config.toJsonString(), (ptr) => _take(_stackJson(ptr)));
+  }
+
+  @override
+  NativeResponse validateConfig(ClientConfigInput config) {
     return _withJson(
       config.toJsonString(),
-      (ptr) => _take(_stackJson(ptr)),
+      (ptr) => _take(_validateConfigJson(ptr)),
     );
+  }
+
+  @override
+  NativeResponse loadClientConfigFile(String path) {
+    final ptr = path.toNativeUtf8();
+    try {
+      return _take(_loadConfigFileJson(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  @override
+  NativeResponse exportConfigToml(ClientConfigInput config) {
+    return _withJson(
+      config.toJsonString(),
+      (ptr) => _take(_exportConfigTomlJson(ptr)),
+    );
+  }
+
+  @override
+  NativeResponse inspectWrongsvConfig(String path) {
+    final ptr = path.toNativeUtf8();
+    try {
+      return _take(_capabilitiesJson(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  @override
+  NativeResponse adaptWrongsvConfig(WrongsvAdaptRequest request) {
+    final pathPtr = request.path.toNativeUtf8();
+    final serverPtr = request.serverHost.toNativeUtf8();
+    final listenPtr = request.listenHost.toNativeUtf8();
+    try {
+      return _take(
+        _adaptWrongsvJson(pathPtr, serverPtr, listenPtr, request.listenPort),
+      );
+    } finally {
+      calloc.free(pathPtr);
+      calloc.free(serverPtr);
+      calloc.free(listenPtr);
+    }
   }
 
   NativeResponse _take(Pointer<Utf8> ptr) {

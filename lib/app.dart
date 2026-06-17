@@ -1,12 +1,31 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
+import 'autostart_manager.dart';
+import 'health_view.dart';
+import 'profile_store.dart';
+import 'system_proxy_manager.dart';
 import 'wrongcl_client.dart';
 
 class WrongclApp extends StatelessWidget {
-  WrongclApp({super.key, WrongclClient? client})
-    : client = client ?? NativeWrongclClient();
+  WrongclApp({
+    super.key,
+    WrongclClient? client,
+    ProfileStore? profileStore,
+    AutostartManager? autostartManager,
+    SystemProxyManager? systemProxyManager,
+  })
+    : client = client ?? NativeWrongclClient(),
+      profileStore = profileStore ?? ProfileStore(),
+      autostartManager = autostartManager ?? AutostartManager(),
+      systemProxyManager = systemProxyManager ?? SystemProxyManager();
 
   final WrongclClient client;
+  final ProfileStore profileStore;
+  final AutostartManager autostartManager;
+  final SystemProxyManager systemProxyManager;
 
   @override
   Widget build(BuildContext context) {
@@ -25,21 +44,42 @@ class WrongclApp extends StatelessWidget {
           ),
         ),
       ),
-      home: ClientHome(client: client),
+      home: ClientHome(
+        client: client,
+        profileStore: profileStore,
+        autostartManager: autostartManager,
+        systemProxyManager: systemProxyManager,
+      ),
     );
   }
 }
 
 class ClientHome extends StatefulWidget {
-  const ClientHome({super.key, required this.client});
+  const ClientHome({
+    super.key,
+    required this.client,
+    required this.profileStore,
+    required this.autostartManager,
+    required this.systemProxyManager,
+  });
 
   final WrongclClient client;
+  final ProfileStore profileStore;
+  final AutostartManager autostartManager;
+  final SystemProxyManager systemProxyManager;
 
   @override
   State<ClientHome> createState() => _ClientHomeState();
 }
 
 class _ClientHomeState extends State<ClientHome> {
+  final _profileName = TextEditingController(text: 'default');
+  final _clientConfigPath = TextEditingController();
+  final _wrongsvConfigPath = TextEditingController();
+  final _wrongsvServerHost = TextEditingController(text: '127.0.0.1');
+  final _wrongsvListenHost = TextEditingController(text: '127.0.0.1');
+  final _wrongsvListenPort = TextEditingController(text: '1080');
+
   final _serverHost = TextEditingController(text: '127.0.0.1');
   final _serverPort = TextEditingController(text: '443');
   final _uuid = TextEditingController(
@@ -85,25 +125,42 @@ class _ClientHomeState extends State<ClientHome> {
   bool _running = false;
   String _stackSummary = '';
   String _nativeInfo = 'Native Rust client not checked';
+  String _profilesStatus = '';
   String _status = 'Stopped';
   Map<String, Object?> _stats = const {};
+  List<SavedProfile> _savedProfiles = const [];
+  List<_ActivityEntry> _activityLog = const [];
+  String? _selectedProfileId;
+  AutostartStatus? _autostartStatus;
+  SystemProxyStatus? _systemProxyStatus;
+  WrongsvCapabilityReport? _wrongsvReport;
+  WrongsvAdaptResult? _wrongsvAdaptResult;
   NativeResponse? _lastResponse;
+  HealthProbeSnapshot? _lastProbe;
+  HealthErrorSnapshot? _lastError;
 
   @override
   void initState() {
     super.initState();
     final version = widget.client.version();
-    _nativeInfo = version.ok
-        ? _formatVersion(version.data)
-        : version.message;
+    _nativeInfo = version.ok ? _formatVersion(version.data) : version.message;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refreshStack();
       _run('status', () => widget.client.status());
     });
+    _loadProfiles();
+    _loadAutostartStatus();
+    _loadSystemProxyStatus();
   }
 
   @override
   void dispose() {
+    _profileName.dispose();
+    _clientConfigPath.dispose();
+    _wrongsvConfigPath.dispose();
+    _wrongsvServerHost.dispose();
+    _wrongsvListenHost.dispose();
+    _wrongsvListenPort.dispose();
     _serverHost.dispose();
     _serverPort.dispose();
     _uuid.dispose();
@@ -251,6 +308,312 @@ class _ClientHomeState extends State<ClientHome> {
     );
   }
 
+  WrongsvAdaptRequest _buildWrongsvAdaptRequest() {
+    return WrongsvAdaptRequest(
+      path: _wrongsvConfigPath.text,
+      serverHost: _wrongsvServerHost.text,
+      listenHost: _wrongsvListenHost.text,
+      listenPort: int.tryParse(_wrongsvListenPort.text) ?? 1080,
+    );
+  }
+
+  Future<void> _loadProfiles() async {
+    try {
+      final profiles = await widget.profileStore.loadProfiles();
+      if (!mounted) return;
+      setState(() {
+        _savedProfiles = profiles;
+        if (_selectedProfileId != null &&
+            !_savedProfiles.any(
+              (profile) => profile.id == _selectedProfileId,
+            )) {
+          _selectedProfileId = null;
+        }
+        _profilesStatus = profiles.isEmpty ? 'No saved profiles yet' : '';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _profilesStatus = 'Failed to load profiles: $e';
+      });
+    }
+  }
+
+  Future<void> _loadAutostartStatus() async {
+    try {
+      final status = await widget.autostartManager.loadStatus();
+      if (!mounted) return;
+      setState(() {
+        _autostartStatus = status;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _autostartStatus = AutostartStatus(
+          supported: false,
+          enabled: false,
+          path: '',
+          message: 'Failed to inspect autostart: $e',
+        );
+      });
+    }
+  }
+
+  Future<void> _loadSystemProxyStatus() async {
+    try {
+      final status = await widget.systemProxyManager.loadStatus();
+      if (!mounted) return;
+      setState(() {
+        _systemProxyStatus = status;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _systemProxyStatus = SystemProxyStatus(
+          supported: false,
+          enabled: false,
+          mode: 'error',
+          message: 'Failed to inspect system proxy: $e',
+        );
+      });
+    }
+  }
+
+  Future<void> _loadClientConfigFile() async {
+    final response = widget.client.loadClientConfigFile(_clientConfigPath.text);
+    if (!response.ok) {
+      throw Exception(response.message);
+    }
+    final config = response.data['config'];
+    if (config is! Map) {
+      throw const FormatException('native config payload was not a map');
+    }
+    _applyConfigMap(Map<String, Object?>.from(config));
+    _stackSummary = response.data['stack'] as String? ?? _stackSummary;
+    if (!mounted) return;
+    setState(() {
+      _wrongsvReport = null;
+      _wrongsvAdaptResult = null;
+      _selectedProfileId = null;
+      _profilesStatus = 'Loaded client config from ${_clientConfigPath.text}';
+    });
+    _refreshStack();
+  }
+
+  Future<void> _exportCurrentConfigJson() async {
+    final path = _clientConfigPath.text.trim();
+    if (path.isEmpty) {
+      throw const FormatException('config file path is required');
+    }
+    final file = File(path);
+    file.parent.createSync(recursive: true);
+    const encoder = JsonEncoder.withIndent('  ');
+    final payload = encoder.convert(_buildConfig().toJson());
+    file.writeAsStringSync('$payload\n');
+    if (!mounted) return;
+    setState(() {
+      _profilesStatus = 'Exported current config to $path';
+    });
+  }
+
+  Future<void> _exportCurrentConfigToml() async {
+    final path = _clientConfigPath.text.trim();
+    if (path.isEmpty) {
+      throw const FormatException('config file path is required');
+    }
+    final response = widget.client.exportConfigToml(_buildConfig());
+    if (!response.ok) {
+      throw Exception(response.message);
+    }
+    final toml = response.data['toml'] as String? ?? '';
+    final file = File(path);
+    file.parent.createSync(recursive: true);
+    file.writeAsStringSync(toml);
+    if (!mounted) return;
+    setState(() {
+      _profilesStatus = 'Exported current TOML to $path';
+    });
+  }
+
+  String _formatProfileSubtitle(SavedProfile profile) {
+    final parts = <String>[];
+    if (profile.stackSummary.isNotEmpty) {
+      parts.add(profile.stackSummary);
+    }
+    if (profile.activeProfile != null && profile.activeProfile!.isNotEmpty) {
+      parts.add(profile.activeProfile!);
+    }
+    if (profile.supportState != null && profile.supportState!.isNotEmpty) {
+      parts.add(profile.supportState!);
+    }
+    parts.add(profile.source);
+    parts.add(_formatTimestamp(profile.updatedAt));
+    return parts.join(' · ');
+  }
+
+  String _profileSupportBadge(SavedProfile profile) {
+    return profile.supportState?.toUpperCase() ?? profile.source.toUpperCase();
+  }
+
+  String _wrongsvStatusMessage(WrongsvCapabilityReport report) {
+    if (report.missingFields.isNotEmpty) {
+      return 'missing fields: ${report.missingFields.map((field) => field.field).join(', ')}';
+    }
+    return '${report.activeProfile} is ${report.activeSupport}';
+  }
+
+  void _resetToBlankProfile() {
+    _profileName.text = 'default';
+    _clientConfigPath.text = '';
+    _wrongsvConfigPath.text = '';
+    _wrongsvServerHost.text = '127.0.0.1';
+    _wrongsvListenHost.text = '127.0.0.1';
+    _wrongsvListenPort.text = '1080';
+
+    _serverHost.text = '127.0.0.1';
+    _serverPort.text = '443';
+    _uuid.text = '12345678-1234-1234-1234-123456789abc';
+    _trojanPassword.clear();
+    _mixedUsername.clear();
+    _mixedPassword.clear();
+    _shadowsocksPassword.clear();
+    _shadowsocksMethod = 'chacha20-ietf-poly1305';
+    _wsPath.text = '/ws';
+    _wsHost.clear();
+    _huPath.text = '/up';
+    _huHost.clear();
+    _xhttpPath.text = '/xhttp';
+    _xhttpHost.clear();
+    _grpcServiceName.text = 'GunService';
+    _tlsServerName.clear();
+    _tlsAlpn.text = 'h2, http/1.1';
+    _tlsInsecure = false;
+    _vlessVisionFlow = false;
+    _realityServerName.text = 'www.microsoft.com';
+    _realityPublicKey.clear();
+    _realityShortId.clear();
+    _realityRawPubkey.clear();
+    _anytlsServerName.clear();
+    _anytlsPassword.clear();
+    _anytlsInsecureSkipVerify = true;
+
+    _localHost.text = '127.0.0.1';
+    _localPort.text = '1080';
+    _targetHost.text = 'example.com';
+    _targetPort.text = '80';
+    _payload.text =
+        'HEAD / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n';
+
+    _proxyKind = ProxyKind.vless;
+    _transportKind = TransportKind.raw;
+    _outerSecurityKind = OuterSecurityKind.none;
+    _selectedProfileId = null;
+    _wrongsvReport = null;
+    _wrongsvAdaptResult = null;
+    _stackSummary = '';
+  }
+
+  TextEditingController? _controllerForMissingField(String field) {
+    switch (field) {
+      case 'reality.public-key':
+        return _realityPublicKey;
+      case 'reality.short-id':
+        return _realityShortId;
+      case 'reality.raw-pubkey':
+        return _realityRawPubkey;
+      case 'trojan.password':
+        return _trojanPassword;
+      case 'anytls.password':
+        return _anytlsPassword;
+      default:
+        return null;
+    }
+  }
+
+  String _labelForMissingField(String field) {
+    switch (field) {
+      case 'reality.public-key':
+        return 'REALITY public-key (required)';
+      case 'reality.short-id':
+        return 'REALITY short-id (required)';
+      case 'reality.raw-pubkey':
+        return 'REALITY raw-pubkey (optional verify helper)';
+      case 'trojan.password':
+        return 'Trojan password (required)';
+      case 'anytls.password':
+        return 'AnyTLS password (required)';
+      default:
+        return field;
+    }
+  }
+
+  List<Widget> _wrongsvMissingFieldEditors() {
+    final report = _wrongsvReport;
+    if (report == null || report.missingFields.isEmpty) {
+      return const [];
+    }
+
+    final editors = <Widget>[];
+    final seen = <String>{};
+    for (final field in report.missingFields) {
+      if (!seen.add(field.field)) {
+        continue;
+      }
+      final controller = _controllerForMissingField(field.field);
+      if (controller == null) {
+        editors.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              '${field.field}: ${field.reason}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        );
+        continue;
+      }
+      editors.add(
+        _field(
+          controller,
+          _labelForMissingField(field.field),
+          520,
+          key: ValueKey('missing-${field.field}'),
+        ),
+      );
+      editors.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 8),
+          child: Text(
+            field.reason,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+      );
+    }
+    return editors;
+  }
+
+  String _formatTimestamp(DateTime value) {
+    final local = value.toLocal();
+    final month = local.month.toString().padLeft(2, '0');
+    final day = local.day.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '${local.year}-$month-$day $hour:$minute';
+  }
+
+  void _recordActivity(String title, String detail, {required bool success}) {
+    final entry = _ActivityEntry(
+      title: title,
+      detail: detail,
+      success: success,
+      timestamp: DateTime.now(),
+    );
+    setState(() {
+      _activityLog = [entry, ..._activityLog].take(20).toList();
+    });
+  }
+
   void _refreshStack() {
     try {
       final response = widget.client.stackSummary(_buildConfig());
@@ -283,9 +646,7 @@ class _ClientHomeState extends State<ClientHome> {
 
     final proxyData = response.data['proxy'];
     final summary = response.data['stack'] as String?;
-    final stats = proxyData is Map<String, Object?>
-        ? proxyData
-        : response.data;
+    final stats = proxyData is Map<String, Object?> ? proxyData : response.data;
     final running = stats['running'];
     final localHost = stats['local_host'];
     final localPort = stats['local_port'];
@@ -298,6 +659,23 @@ class _ClientHomeState extends State<ClientHome> {
         if (summary != null && summary.isNotEmpty) {
           _stackSummary = summary;
         }
+        if (action == 'probe') {
+          final probe = response.data['probe'];
+          if (probe is Map) {
+            final payload = Map<String, Object?>.from(probe);
+            _lastProbe = HealthProbeSnapshot(
+              bytesRead: (payload['bytes_read'] as num?)?.toInt() ?? 0,
+              preview: payload['preview'] as String? ?? '',
+              timestamp: DateTime.now(),
+            );
+          }
+        }
+      } else {
+        _lastError = HealthErrorSnapshot(
+          action: action,
+          message: response.message,
+          timestamp: DateTime.now(),
+        );
       }
       if (running is bool) {
         _running = running;
@@ -306,6 +684,374 @@ class _ClientHomeState extends State<ClientHome> {
         _status = '$action failed';
       }
     });
+    _recordActivity(action, response.message, success: response.ok);
+  }
+
+  Future<void> _runUtility(
+    String action,
+    NativeResponse Function() call, {
+    void Function(NativeResponse response)? onSuccess,
+  }) async {
+    setState(() {
+      _busy = true;
+      _lastResponse = null;
+    });
+
+    final response = await Future<NativeResponse>(call);
+    if (!mounted) {
+      return;
+    }
+
+    if (response.ok) {
+      onSuccess?.call(response);
+    }
+
+    setState(() {
+      _busy = false;
+      _lastResponse = response;
+      _status = response.ok ? '$action complete' : '$action failed';
+      if (!response.ok) {
+        _lastError = HealthErrorSnapshot(
+          action: action,
+          message: response.message,
+          timestamp: DateTime.now(),
+        );
+      }
+    });
+    _recordActivity(action, response.message, success: response.ok);
+  }
+
+  Future<void> _runTask(String action, Future<void> Function() task) async {
+    setState(() {
+      _busy = true;
+      _lastResponse = null;
+    });
+
+    try {
+      await task();
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _status = '$action complete';
+      });
+      _recordActivity(action, 'completed', success: true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _status = '$action failed';
+        _lastResponse = NativeResponse(
+          ok: false,
+          message: '$action failed: $e',
+          data: const {},
+        );
+        _lastError = HealthErrorSnapshot(
+          action: action,
+          message: '$e',
+          timestamp: DateTime.now(),
+        );
+      });
+      _recordActivity(action, '$e', success: false);
+    }
+  }
+
+  Future<void> _saveCurrentProfile() async {
+    final existingIndex = _savedProfiles.indexWhere(
+      (profile) => profile.id == _selectedProfileId,
+    );
+    final saved = SavedProfile(
+      id: existingIndex >= 0
+          ? _savedProfiles[existingIndex].id
+          : DateTime.now().microsecondsSinceEpoch.toString(),
+      name: _profileName.text.trim().isEmpty
+          ? 'Profile ${_savedProfiles.length + 1}'
+          : _profileName.text.trim(),
+      config: _buildConfig().toJson(),
+      stackSummary: _stackSummary,
+      updatedAt: DateTime.now(),
+      source: _wrongsvConfigPath.text.trim().isEmpty ? 'manual' : 'wrongsv',
+      sourcePath: _wrongsvConfigPath.text.trim().isEmpty
+          ? null
+          : _wrongsvConfigPath.text.trim(),
+      activeProfile: _wrongsvReport?.activeProfile,
+      supportState: _wrongsvReport?.activeSupport,
+      supportReason: _wrongsvReport?.activeReason,
+      importReport: _wrongsvReport?.toMap(),
+    );
+    final profiles = [..._savedProfiles];
+    if (existingIndex >= 0) {
+      profiles[existingIndex] = saved;
+    } else {
+      profiles.add(saved);
+    }
+    await widget.profileStore.saveProfiles(profiles);
+    if (!mounted) return;
+    setState(() {
+      _savedProfiles = [...profiles]
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      _selectedProfileId = saved.id;
+      _profileName.text = saved.name;
+      _wrongsvConfigPath.text = saved.sourcePath ?? '';
+      _profilesStatus = 'Saved profile ${saved.name}';
+    });
+  }
+
+  SavedProfile? _selectedProfile() {
+    final selectedId = _selectedProfileId;
+    if (selectedId == null) {
+      return null;
+    }
+    for (final profile in _savedProfiles) {
+      if (profile.id == selectedId) {
+        return profile;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _confirmDeleteSelectedProfile() async {
+    final selected = _selectedProfile();
+    if (selected == null) {
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Delete saved profile?'),
+          content: Text(
+            'Delete "${selected.name}" from the local profile list? This does not change the remote wrongsv server.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Delete profile'),
+            ),
+          ],
+        );
+      },
+    );
+    if (!mounted || confirmed != true) {
+      return;
+    }
+    await _runTask('delete profile', _deleteSelectedProfile);
+  }
+
+  Future<void> _deleteSelectedProfile() async {
+    final selected = _selectedProfile();
+    if (selected == null) {
+      return;
+    }
+    final profiles = _savedProfiles
+        .where((profile) => profile.id != selected.id)
+        .toList();
+    await widget.profileStore.saveProfiles(profiles);
+    if (!mounted) return;
+    setState(() {
+      _savedProfiles = profiles;
+      _selectedProfileId = null;
+      _profilesStatus = 'Deleted profile ${selected.name}';
+    });
+  }
+
+  Future<void> _enableAutostart() async {
+    await widget.autostartManager.enable();
+    await _loadAutostartStatus();
+  }
+
+  Future<void> _disableAutostart() async {
+    await widget.autostartManager.disable();
+    await _loadAutostartStatus();
+  }
+
+  Future<void> _enableSystemProxy() async {
+    await widget.systemProxyManager.enableSocks(
+      _localHost.text,
+      int.tryParse(_localPort.text) ?? 1080,
+    );
+    await _loadSystemProxyStatus();
+  }
+
+  Future<void> _disableSystemProxy() async {
+    await widget.systemProxyManager.disable();
+    await _loadSystemProxyStatus();
+  }
+
+  void _newBlankProfile() {
+    setState(() {
+      _resetToBlankProfile();
+      _profilesStatus = 'Started new profile';
+    });
+    _refreshStack();
+  }
+
+  Future<void> _duplicateSelectedProfile() async {
+    final selected = _selectedProfile();
+    if (selected == null) {
+      return;
+    }
+    final duplicate = selected.copyWith(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      name: '${selected.name} copy',
+      updatedAt: DateTime.now(),
+    );
+    final profiles = [..._savedProfiles, duplicate]
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    await widget.profileStore.saveProfiles(profiles);
+    if (!mounted) return;
+    setState(() {
+      _savedProfiles = profiles;
+      _selectedProfileId = duplicate.id;
+      _profileName.text = duplicate.name;
+      _profilesStatus = 'Duplicated profile ${selected.name}';
+    });
+  }
+
+  void _loadSelectedProfile() {
+    SavedProfile? profile;
+    for (final candidate in _savedProfiles) {
+      if (candidate.id == _selectedProfileId) {
+        profile = candidate;
+        break;
+      }
+    }
+    if (profile == null) {
+      return;
+    }
+    final selected = profile;
+    _profileName.text = selected.name;
+    _wrongsvConfigPath.text = selected.sourcePath ?? '';
+    _applyConfigMap(selected.config);
+    _stackSummary = selected.stackSummary;
+    _refreshStack();
+    setState(() {
+      _wrongsvAdaptResult = null;
+      _wrongsvReport = selected.importReport == null
+          ? null
+          : WrongsvCapabilityReport.fromMap(selected.importReport!);
+      _profilesStatus = 'Loaded profile ${selected.name}';
+    });
+  }
+
+  void _selectProfile(SavedProfile profile) {
+    setState(() {
+      _selectedProfileId = profile.id;
+      _profileName.text = profile.name;
+    });
+  }
+
+  void _applyAdaptedConfig(Map<String, Object?> data) {
+    final result = WrongsvAdaptResult.fromMap(data);
+    final config = result.effectiveConfig;
+    if (config == null) {
+      return;
+    }
+    _applyConfigMap(config);
+  }
+
+  void _applyConfigMap(Map<String, Object?> map) {
+    final server = Map<String, Object?>.from(map['server'] as Map? ?? const {});
+    final local = Map<String, Object?>.from(map['local'] as Map? ?? const {});
+    final proxy = Map<String, Object?>.from(
+      server['proxy'] as Map? ?? const {},
+    );
+    final transport = Map<String, Object?>.from(
+      server['transport'] as Map? ?? const {},
+    );
+    final outer = Map<String, Object?>.from(
+      server['outer-security'] as Map? ?? const {},
+    );
+
+    _serverHost.text = server['host'] as String? ?? _serverHost.text;
+    _serverPort.text = '${server['port'] ?? _serverPort.text}';
+    _localHost.text = local['host'] as String? ?? _localHost.text;
+    _localPort.text = '${local['port'] ?? _localPort.text}';
+
+    final proxyType = proxy['type'] as String? ?? 'vless';
+    _proxyKind = ProxyKind.fromId(proxyType);
+    switch (_proxyKind) {
+      case ProxyKind.vless:
+        _uuid.text = proxy['uuid'] as String? ?? _uuid.text;
+        _vlessVisionFlow =
+            (proxy['flow'] as String? ?? '') == 'xtls-rprx-vision';
+        break;
+      case ProxyKind.trojan:
+        _trojanPassword.text =
+            proxy['password'] as String? ?? _trojanPassword.text;
+        break;
+      case ProxyKind.mixed:
+        _mixedUsername.text =
+            proxy['username'] as String? ?? _mixedUsername.text;
+        _mixedPassword.text =
+            proxy['password'] as String? ?? _mixedPassword.text;
+        break;
+      case ProxyKind.shadowsocks:
+        _shadowsocksMethod = proxy['method'] as String? ?? _shadowsocksMethod;
+        _shadowsocksPassword.text =
+            proxy['password'] as String? ?? _shadowsocksPassword.text;
+        break;
+    }
+
+    final transportType = transport['type'] as String? ?? 'raw';
+    _transportKind = TransportKind.fromId(transportType);
+    switch (_transportKind) {
+      case TransportKind.raw:
+        break;
+      case TransportKind.websocket:
+        _wsPath.text = transport['path'] as String? ?? _wsPath.text;
+        _wsHost.text = transport['host'] as String? ?? '';
+        break;
+      case TransportKind.httpupgrade:
+        _huPath.text = transport['path'] as String? ?? _huPath.text;
+        _huHost.text = transport['host'] as String? ?? '';
+        break;
+      case TransportKind.xhttp:
+        _xhttpPath.text = transport['path'] as String? ?? _xhttpPath.text;
+        _xhttpHost.text = transport['host'] as String? ?? '';
+        break;
+      case TransportKind.grpc:
+        _grpcServiceName.text =
+            transport['service-name'] as String? ?? _grpcServiceName.text;
+        break;
+    }
+
+    final outerType = outer['type'] as String? ?? 'none';
+    _outerSecurityKind = OuterSecurityKind.fromId(outerType);
+    switch (_outerSecurityKind) {
+      case OuterSecurityKind.none:
+        break;
+      case OuterSecurityKind.tls:
+        _tlsServerName.text =
+            outer['server-name'] as String? ?? _tlsServerName.text;
+        _tlsInsecure = outer['insecure-skip-verify'] == true;
+        final alpn = (outer['alpn'] as List?)?.cast<Object?>() ?? const [];
+        _tlsAlpn.text = alpn.join(', ');
+        break;
+      case OuterSecurityKind.reality:
+        _realityServerName.text =
+            outer['server-name'] as String? ?? _realityServerName.text;
+        _realityPublicKey.text =
+            outer['public-key'] as String? ?? _realityPublicKey.text;
+        _realityShortId.text =
+            outer['short-id'] as String? ?? _realityShortId.text;
+        _realityRawPubkey.text =
+            outer['raw-pubkey'] as String? ?? _realityRawPubkey.text;
+        break;
+      case OuterSecurityKind.anytls:
+        _anytlsServerName.text =
+            outer['server-name'] as String? ?? _anytlsServerName.text;
+        _anytlsPassword.text =
+            outer['password'] as String? ?? _anytlsPassword.text;
+        _anytlsInsecureSkipVerify = outer['insecure-skip-verify'] != false;
+        break;
+    }
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
@@ -332,8 +1078,397 @@ class _ClientHomeState extends State<ClientHome> {
                       ),
                       const SizedBox(height: 16),
                       _Section(
+                        title: 'Health',
+                        child: HealthSummaryView(
+                          running: _running,
+                          stats: _stats,
+                          lastProbe: _lastProbe,
+                          lastError: _lastError,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _Section(
+                        title: 'Activity',
+                        child: _ActivityLogView(entries: _activityLog),
+                      ),
+                      const SizedBox(height: 16),
+                      _Section(
                         title: 'Connection Manager',
                         child: _StatsGrid(stats: _stats),
+                      ),
+                      const SizedBox(height: 16),
+                      _Section(
+                        title: 'Desktop Integration',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _autostartStatus == null
+                                  ? 'Autostart: loading...'
+                                  : 'Autostart: ${_autostartStatus!.message}',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                            if (_autostartStatus != null &&
+                                _autostartStatus!.path.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                _autostartStatus!.path,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 12,
+                              children: [
+                                FilledButton.icon(
+                                  onPressed: _busy ||
+                                          !(_autostartStatus?.supported ?? false)
+                                      ? null
+                                      : () => _runTask(
+                                          'enable autostart',
+                                          _enableAutostart,
+                                        ),
+                                  icon: const Icon(Icons.login),
+                                  label: const Text('Enable autostart'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: _busy ||
+                                          !(_autostartStatus?.supported ?? false)
+                                      ? null
+                                      : () => _runTask(
+                                          'disable autostart',
+                                          _disableAutostart,
+                                        ),
+                                  icon: const Icon(Icons.logout),
+                                  label: const Text('Disable autostart'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              _systemProxyStatus == null
+                                  ? 'System proxy: loading...'
+                                  : 'System proxy: ${_systemProxyStatus!.message}',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 12,
+                              children: [
+                                FilledButton.icon(
+                                  onPressed: _busy ||
+                                          !(_systemProxyStatus?.supported ?? false)
+                                      ? null
+                                      : () => _runTask(
+                                          'enable system proxy',
+                                          _enableSystemProxy,
+                                        ),
+                                  icon: const Icon(Icons.settings_ethernet),
+                                  label: const Text('Enable system proxy'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: _busy ||
+                                          !(_systemProxyStatus?.supported ?? false)
+                                      ? null
+                                      : () => _runTask(
+                                          'disable system proxy',
+                                          _disableSystemProxy,
+                                        ),
+                                  icon: const Icon(Icons.portable_wifi_off),
+                                  label: const Text('Disable system proxy'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _Section(
+                        title: 'Profiles',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _responsiveWrap([
+                              _field(
+                                _profileName,
+                                'Profile name',
+                                280,
+                                key: const ValueKey('profile-name'),
+                              ),
+                            ]),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 12,
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: _busy ? null : _newBlankProfile,
+                                  icon: const Icon(Icons.add_circle_outline),
+                                  label: const Text('New blank'),
+                                ),
+                                FilledButton.icon(
+                                  onPressed: _busy
+                                      ? null
+                                      : () => _runTask(
+                                          'save profile',
+                                          _saveCurrentProfile,
+                                        ),
+                                  icon: const Icon(Icons.save),
+                                  label: const Text('Save current'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: _busy || _selectedProfileId == null
+                                      ? null
+                                      : _loadSelectedProfile,
+                                  icon: const Icon(Icons.upload_file),
+                                  label: const Text('Load selected'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: _busy || _selectedProfileId == null
+                                      ? null
+                                      : () => _runTask(
+                                          'duplicate profile',
+                                          _duplicateSelectedProfile,
+                                        ),
+                                  icon: const Icon(Icons.copy_all),
+                                  label: const Text('Duplicate selected'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: _busy || _selectedProfileId == null
+                                      ? null
+                                      : _confirmDeleteSelectedProfile,
+                                  icon: const Icon(Icons.delete_outline),
+                                  label: const Text('Delete selected'),
+                                ),
+                              ],
+                            ),
+                            if (_profilesStatus.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                _profilesStatus,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            if (_savedProfiles.isEmpty)
+                              Text(
+                                'No saved profiles',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              )
+                            else
+                              Column(
+                                children: [
+                                  for (final profile in _savedProfiles)
+                                    ListTile(
+                                      dense: true,
+                                      contentPadding: EdgeInsets.zero,
+                                      title: Text(profile.name),
+                                      subtitle: Text(
+                                        _formatProfileSubtitle(profile),
+                                      ),
+                                      trailing: _selectedProfileId == profile.id
+                                          ? Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  _profileSupportBadge(profile),
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.labelSmall,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                const Icon(Icons.check_circle),
+                                              ],
+                                            )
+                                          : Text(
+                                              _profileSupportBadge(profile),
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.labelSmall,
+                                            ),
+                                      onTap: () => _selectProfile(profile),
+                                    ),
+                                ],
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _Section(
+                        title: 'Client Config',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _responsiveWrap([
+                              _field(
+                                _clientConfigPath,
+                                'wrongcl config file path',
+                                520,
+                                key: const ValueKey('client-config-path'),
+                              ),
+                            ]),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 12,
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: _busy
+                                      ? null
+                                      : () => _runTask(
+                                          'load client config',
+                                          _loadClientConfigFile,
+                                        ),
+                                  icon: const Icon(Icons.file_open),
+                                  label: const Text('Load client config'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: _busy
+                                      ? null
+                                      : () => _runTask(
+                                          'export current config',
+                                          _exportCurrentConfigJson,
+                                        ),
+                                  icon: const Icon(Icons.download),
+                                  label: const Text('Export current JSON'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: _busy
+                                      ? null
+                                      : () => _runTask(
+                                          'export current TOML',
+                                          _exportCurrentConfigToml,
+                                        ),
+                                  icon: const Icon(Icons.description_outlined),
+                                  label: const Text('Export current TOML'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _Section(
+                        title: 'wrongsv Import',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _responsiveWrap([
+                              _field(
+                                _wrongsvConfigPath,
+                                'wrongsv config path',
+                                520,
+                                key: const ValueKey('wrongsv-config-path'),
+                              ),
+                            ]),
+                            const SizedBox(height: 12),
+                            _responsiveWrap([
+                              _field(
+                                _wrongsvServerHost,
+                                'Adapt server host',
+                                240,
+                              ),
+                              _field(
+                                _wrongsvListenHost,
+                                'Adapt listen host',
+                                220,
+                              ),
+                              _field(
+                                _wrongsvListenPort,
+                                'Adapt listen port',
+                                150,
+                              ),
+                            ]),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 12,
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: _busy
+                                      ? null
+                                      : () => _runUtility(
+                                          'inspect wrongsv',
+                                          () => widget.client
+                                              .inspectWrongsvConfig(
+                                                _wrongsvConfigPath.text,
+                                              ),
+                                          onSuccess: (response) {
+                                            if (!mounted) {
+                                              return;
+                                            }
+                                            setState(() {
+                                              _wrongsvReport =
+                                                  WrongsvCapabilityReport.fromMap(
+                                                    response.data,
+                                                  );
+                                              _wrongsvAdaptResult = null;
+                                              _profilesStatus =
+                                                  _wrongsvStatusMessage(
+                                                    _wrongsvReport!,
+                                                  );
+                                            });
+                                          },
+                                        ),
+                                  icon: const Icon(Icons.rule),
+                                  label: const Text('Inspect wrongsv'),
+                                ),
+                                FilledButton.icon(
+                                  onPressed: _busy
+                                      ? null
+                                      : () => _runUtility(
+                                          'adapt wrongsv',
+                                          () =>
+                                              widget.client.adaptWrongsvConfig(
+                                                _buildWrongsvAdaptRequest(),
+                                              ),
+                                          onSuccess: (response) {
+                                            final result =
+                                                WrongsvAdaptResult.fromMap(
+                                                  response.data,
+                                                );
+                                            _wrongsvReport = result.report;
+                                            _wrongsvAdaptResult = result;
+                                            _applyAdaptedConfig(response.data);
+                                            if (mounted) {
+                                              setState(() {
+                                                _profilesStatus =
+                                                    result.effectiveConfig ==
+                                                        null
+                                                    ? 'Adapted report only: ${_wrongsvStatusMessage(result.report)}'
+                                                    : result.config == null
+                                                    ? 'Adapted draft config: ${_wrongsvStatusMessage(result.report)}'
+                                                    : 'Adapted wrongsv config into the current form';
+                                              });
+                                            }
+                                            _refreshStack();
+                                          },
+                                        ),
+                                  icon: const Icon(Icons.sync_alt),
+                                  label: const Text('Adapt into form'),
+                                ),
+                              ],
+                            ),
+                            if (_wrongsvReport != null) ...[
+                              const SizedBox(height: 16),
+                              _WrongsvReportView(
+                                report: _wrongsvReport!,
+                                stackSummary: _wrongsvAdaptResult?.stackSummary,
+                              ),
+                              if (_wrongsvReport!.missingFields.isNotEmpty) ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Fill required client-side fields',
+                                  style: Theme.of(context).textTheme.titleSmall,
+                                ),
+                                const SizedBox(height: 8),
+                                ..._wrongsvMissingFieldEditors(),
+                              ],
+                            ],
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 16),
                       _Section(
@@ -355,12 +1490,39 @@ class _ClientHomeState extends State<ClientHome> {
                             ..._proxyFields(),
                             ..._transportFields(),
                             ..._outerSecurityFields(),
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 12,
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: _busy
+                                      ? null
+                                      : () => _runUtility(
+                                          'validate config',
+                                          () => widget.client.validateConfig(
+                                            _buildConfig(),
+                                          ),
+                                          onSuccess: (response) {
+                                            final stack =
+                                                response.data['stack'] as String?;
+                                            if (stack != null && mounted) {
+                                              setState(() {
+                                                _stackSummary = stack;
+                                              });
+                                            }
+                                          },
+                                        ),
+                                  icon: const Icon(Icons.verified_outlined),
+                                  label: const Text('Validate current'),
+                                ),
+                              ],
+                            ),
                           ],
                         ),
                       ),
                       const SizedBox(height: 16),
                       _Section(
-                        title: 'Local SOCKS5',
+                        title: 'Local Proxy',
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -470,11 +1632,17 @@ class _ClientHomeState extends State<ClientHome> {
     return Wrap(spacing: 12, runSpacing: 12, children: children);
   }
 
-  Widget _field(TextEditingController controller, String label, double width) {
+  Widget _field(
+    TextEditingController controller,
+    String label,
+    double width, {
+    Key? key,
+  }) {
     final available = MediaQuery.sizeOf(context).width - 32;
     return SizedBox(
       width: available < width ? available : width,
       child: TextField(
+        key: key,
         controller: controller,
         decoration: InputDecoration(labelText: label),
         onChanged: (_) => _refreshStack(),
@@ -524,7 +1692,8 @@ class _ClientHomeState extends State<ClientHome> {
 
   Widget _transportDropdown() {
     final available = MediaQuery.sizeOf(context).width - 32;
-    final disabled = _busy ||
+    final disabled =
+        _busy ||
         _proxyKind == ProxyKind.mixed ||
         _proxyKind == ProxyKind.shadowsocks ||
         _outerSecurityKind == OuterSecurityKind.reality ||
@@ -552,7 +1721,8 @@ class _ClientHomeState extends State<ClientHome> {
 
   Widget _outerSecurityDropdown() {
     final available = MediaQuery.sizeOf(context).width - 32;
-    final disabled = _busy ||
+    final disabled =
+        _busy ||
         _proxyKind == ProxyKind.mixed ||
         _proxyKind == ProxyKind.shadowsocks ||
         _proxyKind == ProxyKind.trojan;
@@ -690,9 +1860,7 @@ class _ClientHomeState extends State<ClientHome> {
         ];
       case TransportKind.grpc:
         return [
-          _responsiveWrap([
-            _field(_grpcServiceName, 'gRPC service name', 260),
-          ]),
+          _responsiveWrap([_field(_grpcServiceName, 'gRPC service name', 260)]),
           const SizedBox(height: 12),
         ];
     }
@@ -733,11 +1901,19 @@ class _ClientHomeState extends State<ClientHome> {
           ]),
           const SizedBox(height: 8),
           _responsiveWrap([
-            _field(_realityPublicKey, 'public-key (server X25519, base64-url)', 520),
+            _field(
+              _realityPublicKey,
+              'public-key (server X25519, base64-url)',
+              520,
+            ),
           ]),
           const SizedBox(height: 8),
           _responsiveWrap([
-            _field(_realityRawPubkey, 'raw-pubkey for cert verify (hex, optional)', 520),
+            _field(
+              _realityRawPubkey,
+              'raw-pubkey for cert verify (hex, optional)',
+              520,
+            ),
           ]),
           const SizedBox(height: 12),
         ];
@@ -782,6 +1958,247 @@ class _ClientHomeState extends State<ClientHome> {
       }
     }
     return buffer.toString();
+  }
+}
+
+class _WrongsvReportView extends StatelessWidget {
+  const _WrongsvReportView({required this.report, this.stackSummary});
+
+  final WrongsvCapabilityReport report;
+  final String? stackSummary;
+
+  Color _supportColor(BuildContext context) {
+    switch (report.activeSupport) {
+      case 'supported':
+        return Colors.green.shade700;
+      case 'partial':
+        return Colors.orange.shade800;
+      default:
+        return Theme.of(context).colorScheme.error;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activeProfiles = report.profiles
+        .where((profile) => profile.active)
+        .toList();
+    final WrongsvProfileSupport? activeProfile = activeProfiles.isEmpty
+        ? null
+        : activeProfiles.first;
+    final previewProfiles = report.profiles.take(6).toList();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _ReportChip(
+                label: 'Active profile',
+                value: report.activeProfile,
+                color: Colors.blueGrey.shade700,
+              ),
+              _ReportChip(
+                label: 'Support',
+                value: report.activeSupport,
+                color: _supportColor(context),
+              ),
+              _ReportChip(
+                label: 'Payloads',
+                value: report.payloadNetworks.join(', '),
+                color: Colors.blue.shade700,
+              ),
+              _ReportChip(
+                label: 'Carrier',
+                value: report.baseCarriers.join(', '),
+                color: Colors.teal.shade700,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            report.activeReason,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          if (stackSummary != null && stackSummary!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Adapted stack: $stackSummary',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          if (report.missingFields.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Missing client-side fields',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 6),
+            for (final field in report.missingFields)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  '${field.field}: ${field.reason}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+          ],
+          if (activeProfile != null &&
+              activeProfile.reason.isNotEmpty &&
+              activeProfile.reason != report.activeReason) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Profile note: ${activeProfile.reason}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          if (previewProfiles.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Recognized profiles',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 6),
+            for (final profile in previewProfiles)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '${profile.displayName}: ${profile.support}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ReportChip extends StatelessWidget {
+  const _ReportChip({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withAlpha(20),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: RichText(
+        text: TextSpan(
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
+          children: [
+            TextSpan(text: '$label: '),
+            TextSpan(
+              text: value,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActivityEntry {
+  const _ActivityEntry({
+    required this.title,
+    required this.detail,
+    required this.success,
+    required this.timestamp,
+  });
+
+  final String title;
+  final String detail;
+  final bool success;
+  final DateTime timestamp;
+}
+
+class _ActivityLogView extends StatelessWidget {
+  const _ActivityLogView({required this.entries});
+
+  final List<_ActivityEntry> entries;
+
+  String _formatTime(DateTime value) {
+    final local = value.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    final second = local.second.toString().padLeft(2, '0');
+    return '$hour:$minute:$second';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (entries.isEmpty) {
+      return Text(
+        'No activity yet',
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+
+    return Column(
+      children: [
+        for (final entry in entries)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  entry.success
+                      ? Icons.check_circle_outline
+                      : Icons.error_outline,
+                  size: 18,
+                  color: entry.success
+                      ? Colors.green.shade700
+                      : Theme.of(context).colorScheme.error,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        entry.title,
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        entry.detail,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _formatTime(entry.timestamp),
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
   }
 }
 

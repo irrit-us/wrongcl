@@ -15,7 +15,7 @@ use rand::RngCore;
 use sha2::{Digest, Sha256};
 use x25519_dalek::{PublicKey, StaticSecret};
 
-use crate::client::Tunnel;
+use crate::client::{Tunnel, TunnelReader, TunnelWriter};
 use crate::endpoint::RealityOptions;
 use crate::error::{ClientError, Result};
 
@@ -478,55 +478,101 @@ struct RealityTunnel {
     residual: Vec<u8>,
 }
 
+struct RealityReadHalf {
+    sock: TcpStream,
+    decrypt: AeadState,
+    residual: Vec<u8>,
+}
+
+struct RealityWriteHalf {
+    sock: TcpStream,
+    encrypt: AeadState,
+}
+
 impl Read for RealityTunnel {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if !self.residual.is_empty() {
-            let n = self.residual.len().min(buf.len());
-            buf[..n].copy_from_slice(&self.residual[..n]);
-            self.residual.drain(..n);
-            return Ok(n);
-        }
-        loop {
-            let (ct, payload, hdr) = read_tls_record(&mut self.sock)?;
-            match ct {
-                0x17 => {
-                    let pt = self.decrypt.decrypt(&payload, &hdr)?;
-                    let n = pt.len().min(buf.len());
-                    buf[..n].copy_from_slice(&pt[..n]);
-                    if n < pt.len() {
-                        self.residual.extend_from_slice(&pt[n..]);
-                    }
-                    return Ok(n);
+        read_reality(&mut self.sock, &mut self.decrypt, &mut self.residual, buf)
+    }
+}
+
+impl Read for RealityReadHalf {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        read_reality(&mut self.sock, &mut self.decrypt, &mut self.residual, buf)
+    }
+}
+
+fn read_reality(
+    sock: &mut TcpStream,
+    decrypt: &mut AeadState,
+    residual: &mut Vec<u8>,
+    buf: &mut [u8],
+) -> io::Result<usize> {
+    if !residual.is_empty() {
+        let n = residual.len().min(buf.len());
+        buf[..n].copy_from_slice(&residual[..n]);
+        residual.drain(..n);
+        return Ok(n);
+    }
+    loop {
+        let (ct, payload, hdr) = read_tls_record(sock)?;
+        match ct {
+            0x17 => {
+                let pt = decrypt.decrypt(&payload, &hdr)?;
+                let n = pt.len().min(buf.len());
+                buf[..n].copy_from_slice(&pt[..n]);
+                if n < pt.len() {
+                    residual.extend_from_slice(&pt[n..]);
                 }
-                0x15 => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::ConnectionAborted,
-                        "TLS alert",
-                    ));
-                }
-                0x14 => continue,
-                _ => continue,
+                return Ok(n);
             }
+            0x15 => {
+                return Err(io::Error::new(
+                    io::ErrorKind::ConnectionAborted,
+                    "TLS alert",
+                ));
+            }
+            0x14 => continue,
+            _ => continue,
         }
     }
 }
 
 impl Write for RealityTunnel {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        const MAX_CHUNK: usize = 16384;
-        let mut written = 0;
-        while written < buf.len() {
-            let end = (written + MAX_CHUNK).min(buf.len());
-            let record = self.encrypt.encrypt(&buf[written..end], 0x17, 0x17)?;
-            self.sock.write_all(&record)?;
-            written = end;
-        }
-        self.sock.flush()?;
-        Ok(buf.len())
+        write_reality(&mut self.sock, &mut self.encrypt, buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
         self.sock.flush()
+    }
+}
+
+impl Write for RealityWriteHalf {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        write_reality(&mut self.sock, &mut self.encrypt, buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.sock.flush()
+    }
+}
+
+fn write_reality(sock: &mut TcpStream, encrypt: &mut AeadState, buf: &[u8]) -> io::Result<usize> {
+    const MAX_CHUNK: usize = 16384;
+    let mut written = 0;
+    while written < buf.len() {
+        let end = (written + MAX_CHUNK).min(buf.len());
+        let record = encrypt.encrypt(&buf[written..end], 0x17, 0x17)?;
+        sock.write_all(&record)?;
+        written = end;
+    }
+    sock.flush()?;
+    Ok(buf.len())
+}
+
+impl TunnelWriter for RealityWriteHalf {
+    fn shutdown_write(&mut self) -> io::Result<()> {
+        self.sock.shutdown(Shutdown::Write)
     }
 }
 
@@ -535,6 +581,24 @@ impl Tunnel for RealityTunnel {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "REALITY tunnel cannot be cloned (AEAD seq counters are single-owner)",
+        ))
+    }
+
+    fn split_box(self: Box<Self>) -> io::Result<(Box<dyn TunnelReader>, Box<dyn TunnelWriter>)> {
+        let RealityTunnel {
+            sock,
+            encrypt,
+            decrypt,
+            residual,
+        } = *self;
+        let read_sock = sock.try_clone()?;
+        Ok((
+            Box::new(RealityReadHalf {
+                sock: read_sock,
+                decrypt,
+                residual,
+            }),
+            Box::new(RealityWriteHalf { sock, encrypt }),
         ))
     }
 

@@ -7,7 +7,7 @@ use wrongsv_vless::vision::{
     CMD_PADDING_CONTINUE, CMD_PADDING_DIRECT, CMD_PADDING_END,
 };
 
-use crate::client::Tunnel;
+use crate::client::{Tunnel, TunnelReader, TunnelWriter};
 use crate::error::{ClientError, Result};
 
 const TLS_APP_DATA_START: [u8; 3] = [0x17, 0x03, 0x03];
@@ -46,134 +46,82 @@ impl VisionTunnel {
     }
 }
 
+struct VisionReadHalf {
+    inner: Box<dyn TunnelReader>,
+    read_state: TrafficState,
+    read_direct: bool,
+    raw_buf: Vec<u8>,
+    leftover: Vec<u8>,
+}
+
+struct VisionWriteHalf {
+    inner: Box<dyn TunnelWriter>,
+    write_state: TrafficState,
+    write_uuid: Option<[u8; 16]>,
+    write_direct: bool,
+}
+
 impl Read for VisionTunnel {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if buf.is_empty() {
-            return Ok(0);
-        }
+        read_vision(
+            self.inner.as_mut(),
+            &mut self.read_state,
+            &mut self.read_direct,
+            &mut self.raw_buf,
+            &mut self.leftover,
+            buf,
+        )
+    }
+}
 
-        if !self.leftover.is_empty() {
-            let n = self.leftover.len().min(buf.len());
-            buf[..n].copy_from_slice(&self.leftover[..n]);
-            self.leftover.drain(..n);
-            return Ok(n);
-        }
-
-        if self.raw_buf.len() < buf.len() {
-            self.raw_buf.resize(buf.len(), 0);
-        }
-
-        loop {
-            let n = self.inner.read(&mut self.raw_buf[..buf.len()])?;
-            if n == 0 {
-                return Ok(0);
-            }
-
-            if self.read_direct {
-                let copy_len = n.min(buf.len());
-                buf[..copy_len].copy_from_slice(&self.raw_buf[..copy_len]);
-                return Ok(copy_len);
-            }
-
-            let within = self.read_state.outbound.within_padding_buffers
-                || self.read_state.number_of_packet_to_filter > 0;
-            if !within {
-                let copy_len = n.min(buf.len());
-                buf[..copy_len].copy_from_slice(&self.raw_buf[..copy_len]);
-                return Ok(copy_len);
-            }
-
-            let unpadded = xtls_unpadding(&self.raw_buf[..n], &mut self.read_state, false);
-
-            {
-                let dir = &mut self.read_state.outbound;
-                if dir.remaining_content > 0
-                    || dir.remaining_padding > 0
-                    || dir.current_command == 0
-                {
-                    dir.within_padding_buffers = true;
-                } else if dir.current_command == 1 {
-                    dir.within_padding_buffers = false;
-                } else if dir.current_command == 2 {
-                    dir.within_padding_buffers = false;
-                    dir.direct_copy = true;
-                    self.read_direct = true;
-                }
-            }
-
-            if self.read_state.number_of_packet_to_filter > 0 {
-                xtls_filter_tls(&unpadded, &mut self.read_state);
-            }
-
-            if unpadded.is_empty() {
-                continue;
-            }
-
-            let copy_len = unpadded.len().min(buf.len());
-            buf[..copy_len].copy_from_slice(&unpadded[..copy_len]);
-            if copy_len < unpadded.len() {
-                self.leftover.extend_from_slice(&unpadded[copy_len..]);
-            }
-            return Ok(copy_len);
-        }
+impl Read for VisionReadHalf {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        read_vision(
+            self.inner.as_mut(),
+            &mut self.read_state,
+            &mut self.read_direct,
+            &mut self.raw_buf,
+            &mut self.leftover,
+            buf,
+        )
     }
 }
 
 impl Write for VisionTunnel {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if self.write_direct {
-            return self.inner.write(buf);
-        }
-        if buf.is_empty() {
-            return Ok(0);
-        }
-
-        if self.write_state.number_of_packet_to_filter > 0 {
-            xtls_filter_tls(buf, &mut self.write_state);
-        }
-
-        let is_padding = self.write_state.outbound.is_padding;
-        if !is_padding {
-            self.inner.write_all(buf)?;
-            return Ok(buf.len());
-        }
-
-        let is_complete = is_complete_record(buf);
-        let long_padding = self.write_state.is_tls;
-
-        if self.write_state.is_tls
-            && buf.len() >= 6
-            && buf[..3] == TLS_APP_DATA_START
-            && is_complete
-        {
-            let command = if self.write_state.enable_xtls {
-                CMD_PADDING_DIRECT
-            } else {
-                CMD_PADDING_END
-            };
-            if self.write_state.enable_xtls {
-                self.write_state.outbound.direct_copy = true;
-                self.write_direct = true;
-            }
-            let frame = xtls_padding(buf, command, &mut self.write_uuid, false, &DEFAULT_TESTSEED);
-            self.write_state.outbound.is_padding = false;
-            self.inner.write_all(&frame)?;
-        } else {
-            let frame = xtls_padding(
-                buf,
-                CMD_PADDING_CONTINUE,
-                &mut self.write_uuid,
-                long_padding,
-                &DEFAULT_TESTSEED,
-            );
-            self.inner.write_all(&frame)?;
-        }
-
-        Ok(buf.len())
+        write_vision(
+            self.inner.as_mut(),
+            &mut self.write_state,
+            &mut self.write_uuid,
+            &mut self.write_direct,
+            buf,
+        )
     }
 
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
+    }
+}
+
+impl Write for VisionWriteHalf {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        write_vision(
+            self.inner.as_mut(),
+            &mut self.write_state,
+            &mut self.write_uuid,
+            &mut self.write_direct,
+            buf,
+        )
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+impl TunnelWriter for VisionWriteHalf {
+    fn shutdown_write(&mut self) -> io::Result<()> {
+        self.inner.shutdown_write()
     }
 }
 
@@ -182,6 +130,35 @@ impl Tunnel for VisionTunnel {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "Vision tunnel cannot be cloned (TrafficState is single-owner)",
+        ))
+    }
+
+    fn split_box(self: Box<Self>) -> io::Result<(Box<dyn TunnelReader>, Box<dyn TunnelWriter>)> {
+        let VisionTunnel {
+            inner,
+            read_state,
+            write_state,
+            write_uuid,
+            read_direct,
+            write_direct,
+            raw_buf,
+            leftover,
+        } = *self;
+        let (inner_reader, inner_writer) = inner.split_box()?;
+        Ok((
+            Box::new(VisionReadHalf {
+                inner: inner_reader,
+                read_state,
+                read_direct,
+                raw_buf,
+                leftover,
+            }),
+            Box::new(VisionWriteHalf {
+                inner: inner_writer,
+                write_state,
+                write_uuid,
+                write_direct,
+            }),
         ))
     }
 
@@ -196,4 +173,133 @@ impl Tunnel for VisionTunnel {
     ) -> io::Result<()> {
         self.inner.set_socket_timeouts(read, write)
     }
+}
+
+fn read_vision(
+    inner: &mut dyn Read,
+    read_state: &mut TrafficState,
+    read_direct: &mut bool,
+    raw_buf: &mut Vec<u8>,
+    leftover: &mut Vec<u8>,
+    buf: &mut [u8],
+) -> io::Result<usize> {
+    if buf.is_empty() {
+        return Ok(0);
+    }
+
+    if !leftover.is_empty() {
+        let n = leftover.len().min(buf.len());
+        buf[..n].copy_from_slice(&leftover[..n]);
+        leftover.drain(..n);
+        return Ok(n);
+    }
+
+    if raw_buf.len() < buf.len() {
+        raw_buf.resize(buf.len(), 0);
+    }
+
+    loop {
+        let n = inner.read(&mut raw_buf[..buf.len()])?;
+        if n == 0 {
+            return Ok(0);
+        }
+
+        if *read_direct {
+            let copy_len = n.min(buf.len());
+            buf[..copy_len].copy_from_slice(&raw_buf[..copy_len]);
+            return Ok(copy_len);
+        }
+
+        let within =
+            read_state.outbound.within_padding_buffers || read_state.number_of_packet_to_filter > 0;
+        if !within {
+            let copy_len = n.min(buf.len());
+            buf[..copy_len].copy_from_slice(&raw_buf[..copy_len]);
+            return Ok(copy_len);
+        }
+
+        let unpadded = xtls_unpadding(&raw_buf[..n], read_state, false);
+
+        {
+            let dir = &mut read_state.outbound;
+            if dir.remaining_content > 0 || dir.remaining_padding > 0 || dir.current_command == 0 {
+                dir.within_padding_buffers = true;
+            } else if dir.current_command == 1 {
+                dir.within_padding_buffers = false;
+            } else if dir.current_command == 2 {
+                dir.within_padding_buffers = false;
+                dir.direct_copy = true;
+                *read_direct = true;
+            }
+        }
+
+        if read_state.number_of_packet_to_filter > 0 {
+            xtls_filter_tls(&unpadded, read_state);
+        }
+
+        if unpadded.is_empty() {
+            continue;
+        }
+
+        let copy_len = unpadded.len().min(buf.len());
+        buf[..copy_len].copy_from_slice(&unpadded[..copy_len]);
+        if copy_len < unpadded.len() {
+            leftover.extend_from_slice(&unpadded[copy_len..]);
+        }
+        return Ok(copy_len);
+    }
+}
+
+fn write_vision(
+    inner: &mut dyn Write,
+    write_state: &mut TrafficState,
+    write_uuid: &mut Option<[u8; 16]>,
+    write_direct: &mut bool,
+    buf: &[u8],
+) -> io::Result<usize> {
+    if *write_direct {
+        return inner.write(buf);
+    }
+    if buf.is_empty() {
+        return Ok(0);
+    }
+
+    if write_state.number_of_packet_to_filter > 0 {
+        xtls_filter_tls(buf, write_state);
+    }
+
+    let is_padding = write_state.outbound.is_padding;
+    if !is_padding {
+        inner.write_all(buf)?;
+        return Ok(buf.len());
+    }
+
+    let is_complete = is_complete_record(buf);
+    let long_padding = write_state.is_tls;
+
+    if write_state.is_tls && buf.len() >= 6 && buf[..3] == TLS_APP_DATA_START && is_complete {
+        let command = if write_state.enable_xtls {
+            CMD_PADDING_DIRECT
+        } else {
+            CMD_PADDING_END
+        };
+        if write_state.enable_xtls {
+            write_state.outbound.direct_copy = true;
+            *write_direct = true;
+        }
+        let frame = xtls_padding(buf, command, write_uuid, false, &DEFAULT_TESTSEED);
+        write_state.outbound.is_padding = false;
+        inner.write_all(&frame)?;
+    } else {
+        let frame = xtls_padding(
+            buf,
+            CMD_PADDING_CONTINUE,
+            write_uuid,
+            long_padding,
+            &DEFAULT_TESTSEED,
+        );
+        inner.write_all(&frame)?;
+    }
+
+    Ok(buf.len())
 }

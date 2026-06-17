@@ -58,6 +58,10 @@ impl ClientConfig {
 
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self> {
         let content = fs::read_to_string(path)?;
+        let trimmed = content.trim_start();
+        if trimmed.starts_with('{') {
+            return Self::from_json(&content);
+        }
         let config: Self = toml::from_str(&content)?;
         config.validate()?;
         Ok(config)
@@ -67,6 +71,12 @@ impl ClientConfig {
         let config: Self = serde_json::from_str(text)?;
         config.validate()?;
         Ok(config)
+    }
+
+    pub fn to_toml_string(&self) -> Result<String> {
+        self.validate()?;
+        toml::to_string_pretty(self)
+            .map_err(|e| ClientError::Config(format!("serialize config to TOML: {e}")))
     }
 
     pub fn validate(&self) -> Result<()> {
@@ -162,4 +172,52 @@ pub(crate) fn validate_port(value: u16, name: &str) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_temp_config(contents: &str, extension: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "wrongcl-config-test-{}-{}.{}",
+            std::process::id(),
+            rand::random::<u64>(),
+            extension,
+        ));
+        fs::write(&path, contents).unwrap();
+        path
+    }
+
+    #[test]
+    fn loads_json_config_from_file() {
+        let path = write_temp_config(
+            r#"{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 443,
+    "proxy": {
+      "type": "vless",
+      "uuid": "12345678-1234-1234-1234-123456789abc",
+      "flow": ""
+    },
+    "transport": {
+      "type": "raw"
+    },
+    "outer-security": {
+      "type": "none"
+    }
+  },
+  "local": {
+    "host": "127.0.0.1",
+    "port": 1080
+  }
+}"#,
+            "json",
+        );
+
+        let config = ClientConfig::from_file(path).unwrap();
+        assert_eq!(config.server.host, "127.0.0.1");
+        assert_eq!(config.local.port, 1080);
+    }
 }

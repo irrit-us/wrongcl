@@ -1,16 +1,15 @@
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
 use uuid::Uuid;
 use wrongcl_native::client::WrongsvClient;
-use wrongcl_native::config::ServerConfig;
-use wrongcl_native::endpoint::{
-    Endpoint, OuterSecurity, ProxyProtocol, Transport, VlessOptions,
-};
+use wrongcl_native::config::{ClientConfig, LocalProxyConfig, ServerConfig};
+use wrongcl_native::endpoint::{Endpoint, OuterSecurity, ProxyProtocol, Transport, VlessOptions};
 use wrongcl_native::protocol::Target;
+use wrongcl_native::proxy::ProxyHandle;
 use wrongsv_vless::vision::{TrafficState, VisionReader, VisionWriter};
 
 const TEST_UUID: &str = "12345678-1234-1234-1234-123456789abc";
@@ -86,12 +85,7 @@ fn handle_vless_vision_echo(mut stream: TcpStream) -> std::io::Result<()> {
     });
 
     let echo_out = thread::spawn(move || {
-        let mut writer = VisionWriter::new(
-            write_half,
-            down_state,
-            false,
-            vec![900, 500, 900, 256],
-        );
+        let mut writer = VisionWriter::new(write_half, down_state, false, vec![900, 500, 900, 256]);
         while let Ok(chunk) = rx.recv() {
             if writer.write(&chunk).is_err() {
                 return;
@@ -151,4 +145,72 @@ fn probe_works_against_vless_vision_echo_server() {
         .probe(&Target::new("example.com", 80).unwrap(), "ping-vision")
         .expect("probe over VLESS+Vision");
     assert_eq!(result.preview, "ping-vision");
+}
+
+#[test]
+fn socks_proxy_works_against_vless_vision_echo_server() {
+    let _ = Uuid::parse_str(TEST_UUID).unwrap();
+    let server = spawn_vision_echo_server();
+
+    let mut proxy = ProxyHandle::start(ClientConfig {
+        server: ServerConfig {
+            host: "127.0.0.1".into(),
+            port: server.port,
+            endpoint: Endpoint {
+                proxy: ProxyProtocol::Vless(VlessOptions {
+                    uuid: TEST_UUID.into(),
+                    flow: "xtls-rprx-vision".into(),
+                }),
+                transport: Transport::Raw,
+                outer_security: OuterSecurity::None,
+            },
+        },
+        local: LocalProxyConfig {
+            host: "127.0.0.1".into(),
+            port: 0,
+        },
+    })
+    .unwrap();
+
+    let response = run_socks_echo(proxy.snapshot().socket_addr()).unwrap();
+    proxy.stop().unwrap();
+
+    assert_eq!(response, b"hello-vision".to_vec());
+}
+
+fn run_socks_echo(local_addr: SocketAddr) -> std::io::Result<Vec<u8>> {
+    let mut stream = TcpStream::connect_timeout(&local_addr, Duration::from_secs(2))?;
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    stream.write_all(&[0x05, 0x01, 0x00])?;
+
+    let mut greeting = [0u8; 2];
+    stream.read_exact(&mut greeting)?;
+    assert_eq!(greeting, [0x05, 0x00]);
+
+    let host = b"example.com";
+    let mut request = vec![0x05, 0x01, 0x00, 0x03, host.len() as u8];
+    request.extend_from_slice(host);
+    request.extend_from_slice(&80u16.to_be_bytes());
+    stream.write_all(&request)?;
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply)?;
+    assert_eq!(reply[1], 0x00);
+
+    stream.write_all(b"hello-vision")?;
+    let mut response = [0u8; 12];
+    stream.read_exact(&mut response)?;
+    Ok(response.to_vec())
+}
+
+trait SnapshotAddr {
+    fn socket_addr(&self) -> SocketAddr;
+}
+
+impl SnapshotAddr for wrongcl_native::proxy::ProxySnapshot {
+    fn socket_addr(&self) -> SocketAddr {
+        format!("{}:{}", self.local_host, self.local_port)
+            .parse()
+            .unwrap()
+    }
 }

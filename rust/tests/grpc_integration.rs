@@ -1,3 +1,5 @@
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -10,11 +12,12 @@ use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 
 use wrongcl_native::client::WrongsvClient;
-use wrongcl_native::config::ServerConfig;
+use wrongcl_native::config::{ClientConfig, LocalProxyConfig, ServerConfig};
 use wrongcl_native::endpoint::{
     Endpoint, GrpcOptions, OuterSecurity, ProxyProtocol, TlsOptions, Transport, VlessOptions,
 };
 use wrongcl_native::protocol::Target;
+use wrongcl_native::proxy::ProxyHandle;
 
 const TEST_UUID: &str = "12345678-1234-1234-1234-123456789abc";
 
@@ -60,10 +63,53 @@ fn spawn_grpc_tls_server() -> u16 {
     port
 }
 
+fn spawn_grpc_server() -> u16 {
+    let (port_tx, port_rx) = std::sync::mpsc::channel::<u16>();
+
+    thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime");
+        rt.block_on(async move {
+            let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+            port_tx.send(listener.local_addr().unwrap().port()).unwrap();
+            loop {
+                let (tcp, _) = match listener.accept().await {
+                    Ok(v) => v,
+                    Err(_) => return,
+                };
+                tokio::spawn(async move {
+                    let _ = serve_one_plain(tcp).await;
+                });
+            }
+        });
+    });
+
+    let port = port_rx.recv().expect("server port");
+    thread::sleep(Duration::from_millis(50));
+    port
+}
+
 async fn serve_one(acceptor: TlsAcceptor, tcp: tokio::net::TcpStream) -> std::io::Result<()> {
     let _ = tcp.set_nodelay(true);
     let tls = acceptor.accept(tcp).await.map_err(std::io::Error::other)?;
     let mut h2 = h2::server::handshake(tls)
+        .await
+        .map_err(std::io::Error::other)?;
+
+    while let Some(req) = h2.accept().await {
+        let (request, respond) = req.map_err(std::io::Error::other)?;
+        tokio::spawn(async move {
+            let _ = handle_stream(request, respond).await;
+        });
+    }
+    Ok(())
+}
+
+async fn serve_one_plain(tcp: tokio::net::TcpStream) -> std::io::Result<()> {
+    let _ = tcp.set_nodelay(true);
+    let mut h2 = h2::server::handshake(tcp)
         .await
         .map_err(std::io::Error::other)?;
 
@@ -130,7 +176,8 @@ async fn handle_stream(
                 Ok(Some(payload)) => {
                     if !payload.is_empty() {
                         let frame = wrongsv_grpc::encode_hunk_frame(&payload);
-                        send.send_data(frame, false).map_err(std::io::Error::other)?;
+                        send.send_data(frame, false)
+                            .map_err(std::io::Error::other)?;
                     }
                 }
                 Ok(None) => break,
@@ -235,4 +282,181 @@ fn probe_works_against_vless_over_grpc_over_tls_server() {
         .probe(&Target::new("example.com", 80).unwrap(), "ping-grpc-tls")
         .expect("probe over VLESS+gRPC+TLS");
     assert_eq!(result.preview, "ping-grpc-tls");
+}
+
+#[test]
+fn socks_proxy_works_against_vless_over_grpc_over_tls_server() {
+    let port = spawn_grpc_tls_server();
+
+    let mut proxy = ProxyHandle::start(ClientConfig {
+        server: ServerConfig {
+            host: "127.0.0.1".into(),
+            port,
+            endpoint: Endpoint {
+                proxy: ProxyProtocol::Vless(VlessOptions {
+                    uuid: TEST_UUID.into(),
+                    flow: String::new(),
+                }),
+                transport: Transport::Grpc(GrpcOptions {
+                    service_name: "GunService".into(),
+                }),
+                outer_security: OuterSecurity::Tls(TlsOptions {
+                    server_name: "localhost".into(),
+                    insecure_skip_verify: true,
+                    alpn: vec![],
+                }),
+            },
+        },
+        local: LocalProxyConfig {
+            host: "127.0.0.1".into(),
+            port: 0,
+        },
+    })
+    .unwrap();
+
+    let response = run_socks_echo(proxy.snapshot().socket_addr()).unwrap();
+    proxy.stop().unwrap();
+
+    assert_eq!(response, b"hello-grpc".to_vec());
+}
+
+#[test]
+fn socks_proxy_works_against_vless_over_grpc_server() {
+    let port = spawn_grpc_server();
+
+    let mut proxy = ProxyHandle::start(ClientConfig {
+        server: ServerConfig {
+            host: "127.0.0.1".into(),
+            port,
+            endpoint: Endpoint {
+                proxy: ProxyProtocol::Vless(VlessOptions {
+                    uuid: TEST_UUID.into(),
+                    flow: String::new(),
+                }),
+                transport: Transport::Grpc(GrpcOptions {
+                    service_name: "GunService".into(),
+                }),
+                outer_security: OuterSecurity::None,
+            },
+        },
+        local: LocalProxyConfig {
+            host: "127.0.0.1".into(),
+            port: 0,
+        },
+    })
+    .unwrap();
+
+    let response = run_socks_echo(proxy.snapshot().socket_addr()).unwrap();
+    proxy.stop().unwrap();
+
+    assert_eq!(response, b"hello-grpc".to_vec());
+}
+
+#[test]
+fn socks_proxy_udp_works_against_vless_over_grpc_over_tls_server() {
+    let port = spawn_grpc_tls_server();
+
+    let client = WrongsvClient::new(ServerConfig {
+        host: "127.0.0.1".into(),
+        port,
+        endpoint: Endpoint {
+            proxy: ProxyProtocol::Vless(VlessOptions {
+                uuid: TEST_UUID.into(),
+                flow: String::new(),
+            }),
+            transport: Transport::Grpc(GrpcOptions {
+                service_name: "GunService".into(),
+            }),
+            outer_security: OuterSecurity::Tls(TlsOptions {
+                server_name: "localhost".into(),
+                insecure_skip_verify: true,
+                alpn: vec![],
+            }),
+        },
+    })
+    .unwrap();
+
+    let mut session = client
+        .connect_udp_session(&Target::new("example.com", 53).unwrap())
+        .unwrap();
+    session.send_packet(b"ping-udp").unwrap();
+    for _ in 0..20 {
+        if let Some(packet) = session.try_recv_packet().unwrap() {
+            assert_eq!(packet.payload, b"ping-udp");
+            return;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    panic!("no UDP response from gRPC session");
+}
+
+#[test]
+fn socks_proxy_udp_works_against_vless_over_grpc_server() {
+    let port = spawn_grpc_server();
+
+    let client = WrongsvClient::new(ServerConfig {
+        host: "127.0.0.1".into(),
+        port,
+        endpoint: Endpoint {
+            proxy: ProxyProtocol::Vless(VlessOptions {
+                uuid: TEST_UUID.into(),
+                flow: String::new(),
+            }),
+            transport: Transport::Grpc(GrpcOptions {
+                service_name: "GunService".into(),
+            }),
+            outer_security: OuterSecurity::None,
+        },
+    })
+    .unwrap();
+
+    let mut session = client
+        .connect_udp_session(&Target::new("example.com", 53).unwrap())
+        .unwrap();
+    session.send_packet(b"ping-udp").unwrap();
+    for _ in 0..20 {
+        if let Some(packet) = session.try_recv_packet().unwrap() {
+            assert_eq!(packet.payload, b"ping-udp");
+            return;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    panic!("no UDP response from raw gRPC session");
+}
+
+fn run_socks_echo(local_addr: SocketAddr) -> std::io::Result<Vec<u8>> {
+    let mut stream = TcpStream::connect_timeout(&local_addr, Duration::from_secs(2))?;
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    stream.write_all(&[0x05, 0x01, 0x00])?;
+
+    let mut greeting = [0u8; 2];
+    stream.read_exact(&mut greeting)?;
+    assert_eq!(greeting, [0x05, 0x00]);
+
+    let host = b"example.com";
+    let mut request = vec![0x05, 0x01, 0x00, 0x03, host.len() as u8];
+    request.extend_from_slice(host);
+    request.extend_from_slice(&80u16.to_be_bytes());
+    stream.write_all(&request)?;
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply)?;
+    assert_eq!(reply[1], 0x00);
+
+    stream.write_all(b"hello-grpc")?;
+    let mut response = [0u8; 10];
+    stream.read_exact(&mut response)?;
+    Ok(response.to_vec())
+}
+
+trait SnapshotAddr {
+    fn socket_addr(&self) -> SocketAddr;
+}
+
+impl SnapshotAddr for wrongcl_native::proxy::ProxySnapshot {
+    fn socket_addr(&self) -> SocketAddr {
+        format!("{}:{}", self.local_host, self.local_port)
+            .parse()
+            .unwrap()
+    }
 }

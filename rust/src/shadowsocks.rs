@@ -5,7 +5,7 @@ use std::time::Duration;
 use wrongsv_net_types::{Address, Port};
 use wrongsv_shadowsocks::{ServerConfig, ShadowsocksReader, ShadowsocksWriter};
 
-use crate::client::Tunnel;
+use crate::client::{Tunnel, TunnelReader, TunnelWriter};
 use crate::endpoint::ShadowsocksOptions;
 use crate::error::{ClientError, Result};
 use crate::protocol::Target;
@@ -17,11 +17,11 @@ pub(crate) fn open_tunnel(
 ) -> Result<Box<dyn Tunnel>> {
     let config = ServerConfig::new(&opts.method, opts.password.clone())
         .map_err(|e| ClientError::Config(format!("Shadowsocks: {e}")))?;
-    let read_inner = inner.try_clone_box()?;
+    let (read_inner, write_inner) = inner.split_box()?;
     let address = address_from_host(&target.host);
     let port = Port(target.port);
     let (writer, request_salt) =
-        ShadowsocksWriter::new_request(inner, &config, &address, port, b"")
+        ShadowsocksWriter::new_request(write_inner, &config, &address, port, b"")
             .map_err(|e| ClientError::Config(format!("Shadowsocks request: {e}")))?;
     Ok(Box::new(ShadowsocksTunnel {
         reader: ReaderState::Pending {
@@ -40,93 +40,142 @@ fn address_from_host(host: &str) -> Address {
 
 enum ReaderState {
     Pending {
-        inner: Option<Box<dyn Tunnel>>,
+        inner: Option<Box<dyn TunnelReader>>,
         config: ServerConfig,
         request_salt: Vec<u8>,
     },
-    Active(ShadowsocksReader<Box<dyn Tunnel>>),
+    Active(ShadowsocksReader<Box<dyn TunnelReader>>),
 }
 
 struct ShadowsocksTunnel {
     reader: ReaderState,
-    writer: Option<ShadowsocksWriter<Box<dyn Tunnel>>>,
+    writer: Option<ShadowsocksWriter<Box<dyn TunnelWriter>>>,
     residual: VecDeque<u8>,
 }
 
-impl ShadowsocksTunnel {
-    fn activate_reader(&mut self) -> io::Result<&mut ShadowsocksReader<Box<dyn Tunnel>>> {
-        if let ReaderState::Pending {
-            inner,
-            config,
-            request_salt,
-        } = &mut self.reader
-        {
-            let stream = inner.take().expect("pending reader inner");
-            let salt = if request_salt.is_empty() {
-                None
-            } else {
-                Some(request_salt.as_slice())
-            };
-            let reader = ShadowsocksReader::new_response(stream, config, salt)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-            self.reader = ReaderState::Active(reader);
-        }
-        match &mut self.reader {
-            ReaderState::Active(reader) => Ok(reader),
-            ReaderState::Pending { .. } => unreachable!("activated above"),
-        }
+struct ShadowsocksReadHalf {
+    reader: ReaderState,
+    residual: VecDeque<u8>,
+}
+
+struct ShadowsocksWriteHalf {
+    writer: Option<ShadowsocksWriter<Box<dyn TunnelWriter>>>,
+}
+
+fn activate_reader(
+    reader_state: &mut ReaderState,
+) -> io::Result<&mut ShadowsocksReader<Box<dyn TunnelReader>>> {
+    if let ReaderState::Pending {
+        inner,
+        config,
+        request_salt,
+    } = reader_state
+    {
+        let stream = inner.take().expect("pending reader inner");
+        let salt = if request_salt.is_empty() {
+            None
+        } else {
+            Some(request_salt.as_slice())
+        };
+        let reader = ShadowsocksReader::new_response(stream, config, salt)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+        *reader_state = ReaderState::Active(reader);
     }
+    match reader_state {
+        ReaderState::Active(reader) => Ok(reader),
+        ReaderState::Pending { .. } => unreachable!("activated above"),
+    }
+}
+
+fn read_shadowsocks(
+    reader_state: &mut ReaderState,
+    residual: &mut VecDeque<u8>,
+    buf: &mut [u8],
+) -> io::Result<usize> {
+    if !residual.is_empty() {
+        let n = residual.len().min(buf.len());
+        for slot in buf.iter_mut().take(n) {
+            *slot = residual.pop_front().expect("residual non-empty");
+        }
+        return Ok(n);
+    }
+    let reader = activate_reader(reader_state)?;
+    let chunk = match reader.read_chunk() {
+        Ok(chunk) => chunk,
+        Err(e) => {
+            let io_err = io_from_ss(e);
+            if io_err.kind() == io::ErrorKind::UnexpectedEof {
+                return Ok(0);
+            }
+            return Err(io_err);
+        }
+    };
+    if chunk.is_empty() {
+        return Ok(0);
+    }
+    let n = chunk.len().min(buf.len());
+    buf[..n].copy_from_slice(&chunk[..n]);
+    if n < chunk.len() {
+        residual.extend(&chunk[n..]);
+    }
+    Ok(n)
+}
+
+fn write_shadowsocks(
+    writer: &mut Option<ShadowsocksWriter<Box<dyn TunnelWriter>>>,
+    buf: &[u8],
+) -> io::Result<usize> {
+    if buf.is_empty() {
+        return Ok(0);
+    }
+    let writer = writer
+        .as_mut()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "writer closed"))?;
+    writer
+        .write_chunk(buf)
+        .map_err(io_from_ss)
+        .map(|()| buf.len())
 }
 
 impl Read for ShadowsocksTunnel {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if !self.residual.is_empty() {
-            let n = self.residual.len().min(buf.len());
-            for slot in buf.iter_mut().take(n) {
-                *slot = self.residual.pop_front().expect("residual non-empty");
-            }
-            return Ok(n);
-        }
-        let reader = self.activate_reader()?;
-        let chunk = match reader.read_chunk() {
-            Ok(chunk) => chunk,
-            Err(e) => {
-                let io_err = io_from_ss(e);
-                if io_err.kind() == io::ErrorKind::UnexpectedEof {
-                    return Ok(0);
-                }
-                return Err(io_err);
-            }
-        };
-        if chunk.is_empty() {
-            return Ok(0);
-        }
-        let n = chunk.len().min(buf.len());
-        buf[..n].copy_from_slice(&chunk[..n]);
-        if n < chunk.len() {
-            self.residual.extend(&chunk[n..]);
-        }
-        Ok(n)
+        read_shadowsocks(&mut self.reader, &mut self.residual, buf)
+    }
+}
+
+impl Read for ShadowsocksReadHalf {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        read_shadowsocks(&mut self.reader, &mut self.residual, buf)
     }
 }
 
 impl Write for ShadowsocksTunnel {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if buf.is_empty() {
-            return Ok(0);
-        }
-        let writer = self
-            .writer
-            .as_mut()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "writer closed"))?;
-        writer
-            .write_chunk(buf)
-            .map_err(io_from_ss)
-            .map(|()| buf.len())
+        write_shadowsocks(&mut self.writer, buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+impl Write for ShadowsocksWriteHalf {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        write_shadowsocks(&mut self.writer, buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl TunnelWriter for ShadowsocksWriteHalf {
+    fn shutdown_write(&mut self) -> io::Result<()> {
+        if let Some(writer) = self.writer.as_mut() {
+            writer.get_mut().shutdown_write()
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -135,6 +184,18 @@ impl Tunnel for ShadowsocksTunnel {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "Shadowsocks tunnel cannot be cloned (cipher state is single-threaded)",
+        ))
+    }
+
+    fn split_box(self: Box<Self>) -> io::Result<(Box<dyn TunnelReader>, Box<dyn TunnelWriter>)> {
+        let ShadowsocksTunnel {
+            reader,
+            writer,
+            residual,
+        } = *self;
+        Ok((
+            Box::new(ShadowsocksReadHalf { reader, residual }),
+            Box::new(ShadowsocksWriteHalf { writer }),
         ))
     }
 
@@ -148,14 +209,9 @@ impl Tunnel for ShadowsocksTunnel {
 
     fn set_socket_timeouts(
         &self,
-        read: Option<Duration>,
-        write: Option<Duration>,
+        _read: Option<Duration>,
+        _write: Option<Duration>,
     ) -> io::Result<()> {
-        if let ReaderState::Pending { inner, .. } = &self.reader {
-            if let Some(inner) = inner.as_deref() {
-                inner.set_socket_timeouts(read, write)?;
-            }
-        }
         Ok(())
     }
 }

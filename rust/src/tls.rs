@@ -10,7 +10,7 @@ use rustls::{
     ClientConfig, ClientConnection, DigitallySignedStruct, RootCertStore, SignatureScheme,
 };
 
-use crate::client::Tunnel;
+use crate::client::{split_cloneable_tunnel, Tunnel};
 use crate::endpoint::TlsOptions;
 use crate::error::{ClientError, Result};
 
@@ -170,7 +170,7 @@ impl Write for TlsTunnel {
         let _guard = self
             .write_lock
             .lock()
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "TLS write lock poisoned"))?;
+            .map_err(|_| io::Error::other("TLS write lock poisoned"))?;
         self.socket.flush()
     }
 }
@@ -183,7 +183,7 @@ impl TlsTunnel {
         let _guard = self
             .write_lock
             .lock()
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "TLS write lock poisoned"))?;
+            .map_err(|_| io::Error::other("TLS write lock poisoned"))?;
         self.socket.write_all(bytes)
     }
 }
@@ -195,6 +195,15 @@ impl Tunnel for TlsTunnel {
             write_lock: Arc::clone(&self.write_lock),
             socket: self.socket.try_clone()?,
         }))
+    }
+
+    fn split_box(
+        self: Box<Self>,
+    ) -> io::Result<(
+        Box<dyn crate::client::TunnelReader>,
+        Box<dyn crate::client::TunnelWriter>,
+    )> {
+        split_cloneable_tunnel(self)
     }
 
     fn shutdown_write(&mut self) -> io::Result<()> {
@@ -221,7 +230,7 @@ impl Tunnel for TlsTunnel {
 fn lock_state(state: &Arc<Mutex<TlsState>>) -> io::Result<std::sync::MutexGuard<'_, TlsState>> {
     state
         .lock()
-        .map_err(|_| io::Error::new(io::ErrorKind::Other, "TLS connection lock poisoned"))
+        .map_err(|_| io::Error::other("TLS connection lock poisoned"))
 }
 
 fn drain_writes(conn: &mut ClientConnection) -> io::Result<Vec<u8>> {

@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::config::validate_port;
 use crate::error::{ClientError, Result};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Target {
     pub host: String,
     pub port: u16,
@@ -86,6 +86,14 @@ impl VlessAddress {
 }
 
 pub fn encode_raw_vless_header(uuid: &str, target: &Target, flow: &str) -> Result<Vec<u8>> {
+    encode_vless_header(uuid, target, flow, 0x01)
+}
+
+pub fn encode_udp_vless_header(uuid: &str, target: &Target, flow: &str) -> Result<Vec<u8>> {
+    encode_vless_header(uuid, target, flow, 0x02)
+}
+
+fn encode_vless_header(uuid: &str, target: &Target, flow: &str, command: u8) -> Result<Vec<u8>> {
     target.validate()?;
     let parsed_uuid = Uuid::parse_str(uuid.trim())
         .map_err(|e| ClientError::Config(format!("invalid UUID '{uuid}': {e}")))?;
@@ -112,7 +120,7 @@ pub fn encode_raw_vless_header(uuid: &str, target: &Target, flow: &str) -> Resul
         header.extend_from_slice(flow.as_bytes());
     }
 
-    header.push(0x01);
+    header.push(command);
     header.extend_from_slice(&target.port.to_be_bytes());
     address.write_to(&mut header)?;
     Ok(header)

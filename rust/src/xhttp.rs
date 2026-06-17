@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use crate::client::Tunnel;
+use crate::client::{Tunnel, TunnelReader, TunnelWriter};
 use crate::endpoint::{OuterSecurity, TlsOptions, XhttpOptions};
 use crate::error::{ClientError, Result};
 use crate::tls;
@@ -272,34 +272,26 @@ struct XhttpTunnel {
     _handle: JoinHandle<()>,
 }
 
+struct XhttpReadHalf {
+    read_rx: Receiver<Vec<u8>>,
+    read_buf: Vec<u8>,
+    eof: bool,
+    _handle: JoinHandle<()>,
+}
+
+struct XhttpWriteHalf {
+    write_tx: SyncSender<Vec<u8>>,
+}
+
 impl Read for XhttpTunnel {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if !self.read_buf.is_empty() {
-            let n = self.read_buf.len().min(buf.len());
-            buf[..n].copy_from_slice(&self.read_buf[..n]);
-            self.read_buf.drain(..n);
-            return Ok(n);
-        }
-        if self.eof {
-            return Ok(0);
-        }
-        let data = match self.read_rx.recv() {
-            Ok(d) => d,
-            Err(_) => {
-                self.eof = true;
-                return Ok(0);
-            }
-        };
-        if data.is_empty() {
-            self.eof = true;
-            return Ok(0);
-        }
-        let n = data.len().min(buf.len());
-        buf[..n].copy_from_slice(&data[..n]);
-        if n < data.len() {
-            self.read_buf.extend_from_slice(&data[n..]);
-        }
-        Ok(n)
+        read_channel(&self.read_rx, &mut self.read_buf, &mut self.eof, buf)
+    }
+}
+
+impl Read for XhttpReadHalf {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        read_channel(&self.read_rx, &mut self.read_buf, &mut self.eof, buf)
     }
 }
 
@@ -319,11 +311,52 @@ impl Write for XhttpTunnel {
     }
 }
 
+impl Write for XhttpWriteHalf {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        self.write_tx
+            .send(buf.to_vec())
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "XHTTP write channel closed"))?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl TunnelWriter for XhttpWriteHalf {
+    fn shutdown_write(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 impl Tunnel for XhttpTunnel {
     fn try_clone_box(&self) -> io::Result<Box<dyn Tunnel>> {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "XHTTP tunnel cannot be cloned (single h2 stream)",
+        ))
+    }
+
+    fn split_box(self: Box<Self>) -> io::Result<(Box<dyn TunnelReader>, Box<dyn TunnelWriter>)> {
+        let XhttpTunnel {
+            read_rx,
+            write_tx,
+            read_buf,
+            eof,
+            _handle,
+        } = *self;
+        Ok((
+            Box::new(XhttpReadHalf {
+                read_rx,
+                read_buf,
+                eof,
+                _handle,
+            }),
+            Box::new(XhttpWriteHalf { write_tx }),
         ))
     }
 
@@ -338,4 +371,38 @@ impl Tunnel for XhttpTunnel {
     ) -> io::Result<()> {
         Ok(())
     }
+}
+
+fn read_channel(
+    read_rx: &Receiver<Vec<u8>>,
+    read_buf: &mut Vec<u8>,
+    eof: &mut bool,
+    buf: &mut [u8],
+) -> io::Result<usize> {
+    if !read_buf.is_empty() {
+        let n = read_buf.len().min(buf.len());
+        buf[..n].copy_from_slice(&read_buf[..n]);
+        read_buf.drain(..n);
+        return Ok(n);
+    }
+    if *eof {
+        return Ok(0);
+    }
+    let data = match read_rx.recv() {
+        Ok(d) => d,
+        Err(_) => {
+            *eof = true;
+            return Ok(0);
+        }
+    };
+    if data.is_empty() {
+        *eof = true;
+        return Ok(0);
+    }
+    let n = data.len().min(buf.len());
+    buf[..n].copy_from_slice(&data[..n]);
+    if n < data.len() {
+        read_buf.extend_from_slice(&data[n..]);
+    }
+    Ok(n)
 }

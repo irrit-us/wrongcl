@@ -1,5 +1,5 @@
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -9,11 +9,12 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::{ServerConfig as RustlsServerConfig, ServerConnection, StreamOwned};
 
 use wrongcl_native::client::WrongsvClient;
-use wrongcl_native::config::ServerConfig;
+use wrongcl_native::config::{ClientConfig, LocalProxyConfig, ServerConfig};
 use wrongcl_native::endpoint::{
     Endpoint, OuterSecurity, ProxyProtocol, TlsOptions, Transport, VlessOptions, WsOptions,
 };
 use wrongcl_native::protocol::Target;
+use wrongcl_native::proxy::{ProxyHandle, ProxySnapshot};
 
 const TEST_UUID: &str = "12345678-1234-1234-1234-123456789abc";
 
@@ -53,9 +54,7 @@ fn spawn_ws_tls_server() -> WsTlsServer {
     WsTlsServer { port }
 }
 
-fn handle_ws_vless_echo(
-    tls: &mut StreamOwned<ServerConnection, TcpStream>,
-) -> std::io::Result<()> {
+fn handle_ws_vless_echo(tls: &mut StreamOwned<ServerConnection, TcpStream>) -> std::io::Result<()> {
     read_http_request(tls)?;
     tls.write_all(
         b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n",
@@ -205,4 +204,117 @@ fn probe_works_against_vless_over_websocket_over_tls_server() {
         .probe(&Target::new("example.com", 80).unwrap(), "ping-ws-tls")
         .expect("probe over VLESS+WS+TLS");
     assert_eq!(result.preview, "ping-ws-tls");
+}
+
+#[test]
+fn socks_proxy_works_against_vless_over_websocket_over_tls_server() {
+    let server = spawn_ws_tls_server();
+
+    let mut proxy = ProxyHandle::start(ClientConfig {
+        server: ServerConfig {
+            host: "127.0.0.1".into(),
+            port: server.port,
+            endpoint: Endpoint {
+                proxy: ProxyProtocol::Vless(VlessOptions {
+                    uuid: TEST_UUID.into(),
+                    flow: String::new(),
+                }),
+                transport: Transport::Websocket(WsOptions {
+                    path: "/ws".into(),
+                    host: None,
+                }),
+                outer_security: OuterSecurity::Tls(TlsOptions {
+                    server_name: "localhost".into(),
+                    insecure_skip_verify: true,
+                    alpn: vec![],
+                }),
+            },
+        },
+        local: LocalProxyConfig {
+            host: "127.0.0.1".into(),
+            port: 0,
+        },
+    })
+    .unwrap();
+
+    let response = run_socks_echo(proxy.snapshot().socket_addr()).unwrap();
+    proxy.stop().unwrap();
+
+    assert_eq!(response, b"hello-ws-tls".to_vec());
+}
+
+#[test]
+fn socks_proxy_udp_works_against_vless_over_websocket_over_tls_server() {
+    let server = spawn_ws_tls_server();
+
+    let client = WrongsvClient::new(ServerConfig {
+        host: "127.0.0.1".into(),
+        port: server.port,
+        endpoint: Endpoint {
+            proxy: ProxyProtocol::Vless(VlessOptions {
+                uuid: TEST_UUID.into(),
+                flow: String::new(),
+            }),
+            transport: Transport::Websocket(WsOptions {
+                path: "/ws".into(),
+                host: None,
+            }),
+            outer_security: OuterSecurity::Tls(TlsOptions {
+                server_name: "localhost".into(),
+                insecure_skip_verify: true,
+                alpn: vec![],
+            }),
+        },
+    })
+    .unwrap();
+
+    let mut session = client
+        .connect_udp_session(&Target::new("example.com", 53).unwrap())
+        .unwrap();
+    session.send_packet(b"ping-udp").unwrap();
+    for _ in 0..20 {
+        if let Some(packet) = session.try_recv_packet().unwrap() {
+            assert_eq!(packet.payload, b"ping-udp");
+            return;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    panic!("no UDP response from WS+TLS session");
+}
+
+fn run_socks_echo(local_addr: SocketAddr) -> std::io::Result<Vec<u8>> {
+    let mut stream = TcpStream::connect_timeout(&local_addr, Duration::from_secs(2))?;
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    stream.write_all(&[0x05, 0x01, 0x00])?;
+
+    let mut greeting = [0u8; 2];
+    stream.read_exact(&mut greeting)?;
+    assert_eq!(greeting, [0x05, 0x00]);
+
+    let host = b"example.com";
+    let mut request = vec![0x05, 0x01, 0x00, 0x03, host.len() as u8];
+    request.extend_from_slice(host);
+    request.extend_from_slice(&80u16.to_be_bytes());
+    stream.write_all(&request)?;
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply)?;
+    assert_eq!(reply[1], 0x00);
+
+    stream.write_all(b"hello-ws-tls")?;
+    let mut response = [0u8; 12];
+    stream.read_exact(&mut response)?;
+    Ok(response.to_vec())
+}
+
+trait SnapshotAddr {
+    fn socket_addr(&self) -> SocketAddr;
+}
+
+impl SnapshotAddr for ProxySnapshot {
+    fn socket_addr(&self) -> SocketAddr {
+        format!("{}:{}", self.local_host, self.local_port)
+            .parse()
+            .unwrap()
+    }
 }

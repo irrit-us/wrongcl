@@ -1,0 +1,107 @@
+name: wrongcl-ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: wrongcl
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.2'
+          channel: stable
+          cache: true
+
+      - name: Install Linux desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+
+      - name: Verify Linux workflow
+        run: bash scripts/verify-local.sh linux
+
+      - name: Package Linux release bundle
+        run: bash scripts/package-linux-release.sh
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrongcl-linux-x64
+          path: |
+            wrongcl/dist/*.tar.gz
+            wrongcl/dist/*.sha256
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: wrongcl
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.2'
+          channel: stable
+          cache: true
+
+      - name: Verify Windows workflow
+        run: powershell -ExecutionPolicy Bypass -File scripts/verify-windows-host.ps1
+
+      - name: Package Windows release bundle
+        run: powershell -ExecutionPolicy Bypass -File scripts/package-windows-release.ps1
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrongcl-windows-x64
+          path: |
+            wrongcl/dist/*.zip
+            wrongcl/dist/*.sha256
+
+  macos:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: wrongcl
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.2'
+          channel: stable
+          cache: true
+
+      - name: Verify macOS workflow
+        run: bash scripts/verify-macos-host.sh
+
+      - name: Package macOS release bundle
+        run: bash scripts/package-macos-release.sh
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrongcl-macos-universal
+          path: |
+            wrongcl/dist/*.zip
+            wrongcl/dist/*.sha256

@@ -31,11 +31,13 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["loggin
 toml = "0.8"
 uuid = "1"
 webpki-roots = "0.26"
+wrongsv = { path = "../../wrongsv" }
 wrongsv-grpc = { path = "../../wrongsv/crates/grpc" }
 wrongsv-net-types = { path = "../../wrongsv/crates/net-types" }
 wrongsv-reality = { path = "../../wrongsv/crates/reality" }
 wrongsv-shadowsocks = { path = "../../wrongsv/crates/shadowsocks" }
 wrongsv-vless = { path = "../../wrongsv/crates/vless" }
+wrongsv-vless-encoding = { path = "../../wrongsv/crates/vless-encoding" }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 
 [dev-dependencies]
