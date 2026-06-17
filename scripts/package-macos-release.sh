@@ -17,6 +17,8 @@ CHECKSUM_PATH="$ARCHIVE_PATH.sha256"
 
 mkdir -p "$OUTPUT_DIR"
 
+bash "$ROOT_DIR/scripts/ensure-wrongsv-sibling.sh"
+
 if [[ ! -d "$APP_BUNDLE" ]]; then
   "$FLUTTER_BIN" build macos
 fi

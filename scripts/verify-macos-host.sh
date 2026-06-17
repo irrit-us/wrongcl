@@ -6,6 +6,7 @@ FLUTTER_BIN="${FLUTTER_BIN:-flutter}"
 
 cd "$ROOT_DIR"
 
+bash scripts/ensure-wrongsv-sibling.sh
 "$FLUTTER_BIN" pub get
 cargo fmt --manifest-path rust/Cargo.toml --all -- --check
 cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
