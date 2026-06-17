@@ -7,9 +7,6 @@ on:
 jobs:
   linux:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: wrongcl
     steps:
       - uses: actions/checkout@v4
 
@@ -39,14 +36,11 @@ jobs:
         with:
           name: wrongcl-linux-x64
           path: |
-            wrongcl/dist/*.tar.gz
-            wrongcl/dist/*.sha256
+            dist/*.tar.gz
+            dist/*.sha256
 
   windows:
     runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: wrongcl
     steps:
       - uses: actions/checkout@v4
 
@@ -71,14 +65,11 @@ jobs:
         with:
           name: wrongcl-windows-x64
           path: |
-            wrongcl/dist/*.zip
-            wrongcl/dist/*.sha256
+            dist/*.zip
+            dist/*.sha256
 
   macos:
     runs-on: macos-latest
-    defaults:
-      run:
-        working-directory: wrongcl
     steps:
       - uses: actions/checkout@v4
 
@@ -103,5 +94,5 @@ jobs:
         with:
           name: wrongcl-macos-universal
           path: |
-            wrongcl/dist/*.zip
-            wrongcl/dist/*.sha256
+            dist/*.zip
+            dist/*.sha256
