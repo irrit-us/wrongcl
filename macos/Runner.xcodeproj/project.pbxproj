@@ -318,7 +318,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nif [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  CARGO_FLAGS=\"\"\n  PROFILE_DIR=\"debug\"\nelse\n  CARGO_FLAGS=\"--release\"\n  PROFILE_DIR=\"release\"\nfi\nCARGO_TARGET_DIR=\"$PROJECT_DIR/../build/macos/wrongcl_native\"\ncargo build --manifest-path \"$PROJECT_DIR/../rust/Cargo.toml\" $CARGO_FLAGS\ncp \"$CARGO_TARGET_DIR/$PROFILE_DIR/libwrongcl_native.dylib\" \"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/libwrongcl_native.dylib\"\nif [ -n \"$EXPANDED_CODE_SIGN_IDENTITY\" ]; then\n  codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/libwrongcl_native.dylib\"\nfi\n";
+			shellScript = "set -e\nif [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  CARGO_FLAGS=\"\"\n  PROFILE_DIR=\"debug\"\nelse\n  CARGO_FLAGS=\"--release\"\n  PROFILE_DIR=\"release\"\nfi\nexport CARGO_TARGET_DIR=\"$PROJECT_DIR/../build/macos/wrongcl_native\"\ncargo build --manifest-path \"$PROJECT_DIR/../rust/Cargo.toml\" $CARGO_FLAGS\ncp \"$CARGO_TARGET_DIR/$PROFILE_DIR/libwrongcl_native.dylib\" \"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/libwrongcl_native.dylib\"\nif [ -n \"$EXPANDED_CODE_SIGN_IDENTITY\" ]; then\n  codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/libwrongcl_native.dylib\"\nfi\n";
 		};
 		3399D490228B24CF009A79C7 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
