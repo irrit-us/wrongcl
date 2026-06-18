@@ -1,6 +1,6 @@
 # wrongcl
 
-Flutter desktop client for wrongsv-supported proxy stacks.
+Flutter and headless client for wrongsv-supported proxy stacks.
 
 The Rust core is also a headless client. The Flutter UI calls the same Rust
 library through Dart FFI. The native layer can:
@@ -17,11 +17,11 @@ library through Dart FFI. The native layer can:
 - run a direct probe through wrongsv and show the first response bytes
 - report connection-manager state and byte counters
 
-Current verified scope is Linux desktop.
-
-Windows and macOS project scaffolding now exist in-tree, and the Dart native
-loader plus platform build files are partially wired for those platforms, but
-only the Linux desktop build is verified in this environment.
+Current verified scope in this workspace is Linux desktop plus the headless
+Rust client. Desktop release-gate verification also exists in CI for Linux,
+macOS, and Windows. Android and iOS project/build wiring now exist in-tree,
+and FreeBSD support is currently scoped to the headless client rather than a
+Flutter UI target.
 
 Verified local proxy coverage currently includes:
 
@@ -92,12 +92,21 @@ Host-specific verification entry points:
 
 - macOS host: `bash scripts/verify-macos-host.sh`
 - Windows host: `powershell -ExecutionPolicy Bypass -File scripts/verify-windows-host.ps1`
+- Android host/CI: `bash scripts/verify-android-host.sh`
+- iOS host/CI: `bash scripts/verify-ios-host.sh`
+- FreeBSD host: `sh scripts/verify-freebsd-headless.sh`
 
 Release bundle entry points:
 
 - Linux: `bash scripts/package-linux-release.sh`
 - macOS host: `bash scripts/package-macos-release.sh`
 - Windows host: `powershell -ExecutionPolicy Bypass -File scripts/package-windows-release.ps1`
+- Android: `bash scripts/package-android-release.sh`
+- iOS host: `bash scripts/package-ios-release.sh`
+- Linux headless: `bash scripts/package-headless-linux-release.sh`
+- macOS headless: `bash scripts/package-headless-macos-release.sh`
+- Windows headless: `powershell -ExecutionPolicy Bypass -File scripts/package-headless-windows-release.ps1`
+- FreeBSD headless: `sh scripts/package-freebsd-headless.sh`
 
 Current limitations:
 
@@ -115,7 +124,7 @@ Build the headless Rust client:
 cargo build --manifest-path rust/Cargo.toml --bin wrongcl-headless
 ```
 
-Install Flutter, then build the desktop app:
+Install Flutter, then build the UI app:
 
 ```bash
 sudo apt-get install -y libayatana-appindicator3-dev
@@ -123,8 +132,9 @@ flutter pub get
 flutter build linux
 ```
 
-The Linux CMake build compiles `rust/Cargo.toml` and bundles
-`libwrongcl_native.so` into the Flutter app.
+The desktop targets compile `rust/Cargo.toml` and bundle `wrongcl_native`
+through their host build files. Android and iOS now have corresponding native
+build hooks in their Gradle/Xcode projects.
 
 ## Test
 

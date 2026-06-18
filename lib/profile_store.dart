@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:path_provider/path_provider.dart';
+
 const _profileStoreVersion = 1;
 
 class SavedProfile {
@@ -94,15 +96,16 @@ class SavedProfile {
 }
 
 class ProfileStore {
-  ProfileStore({File? file}) : _file = file ?? File(_defaultProfilePath());
+  ProfileStore({this.file});
 
-  final File _file;
+  final File? file;
 
   Future<List<SavedProfile>> loadProfiles() async {
-    if (!await _file.exists()) {
+    final file = await _resolveFile();
+    if (!await file.exists()) {
       return const [];
     }
-    final raw = await _file.readAsString();
+    final raw = await file.readAsString();
     if (raw.trim().isEmpty) {
       return const [];
     }
@@ -131,12 +134,13 @@ class ProfileStore {
   }
 
   Future<void> saveProfiles(List<SavedProfile> profiles) async {
-    await _file.parent.create(recursive: true);
+    final file = await _resolveFile();
+    await file.parent.create(recursive: true);
     final payload = jsonEncode({
       'version': _profileStoreVersion,
       'profiles': [for (final profile in profiles) profile.toJson()],
     });
-    await _file.writeAsString(payload);
+    await file.writeAsString(payload);
   }
 
   List<SavedProfile> _decodeProfiles(Object? rawProfiles) {
@@ -156,7 +160,14 @@ class ProfileStore {
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
   }
 
-  static String _defaultProfilePath() {
+  Future<File> _resolveFile() async {
+    if (file != null) {
+      return file!;
+    }
+    return File(await _defaultProfilePath());
+  }
+
+  static Future<String> _defaultProfilePath() async {
     if (Platform.isWindows) {
       final base = Platform.environment['APPDATA'] ?? '.';
       return '$base\\wrongcl\\profiles.json';
@@ -168,6 +179,10 @@ class ProfileStore {
     final xdg = Platform.environment['XDG_CONFIG_HOME'];
     if (xdg != null && xdg.isNotEmpty) {
       return '$xdg/wrongcl/profiles.json';
+    }
+    if (Platform.isAndroid || Platform.isIOS) {
+      final base = await getApplicationSupportDirectory();
+      return '${base.path}/profiles.json';
     }
     final home = Platform.environment['HOME'] ?? '.';
     return '$home/.config/wrongcl/profiles.json';

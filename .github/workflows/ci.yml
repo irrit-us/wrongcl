@@ -35,12 +35,54 @@ jobs:
       - name: Package Linux release bundle
         run: bash scripts/package-linux-release.sh
 
+      - name: Package Linux headless release bundle
+        run: bash scripts/package-headless-linux-release.sh
+
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
           name: wrongcl-linux-x64
           path: |
             dist/*.tar.gz
+            dist/*.sha256
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.2'
+          channel: stable
+          cache: true
+
+      - name: Install Android build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config protobuf-compiler
+          cargo install cargo-ndk --locked
+
+      - name: Verify Android workflow
+        run: bash scripts/verify-android-host.sh
+
+      - name: Package Android release bundle
+        run: bash scripts/package-android-release.sh
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrongcl-android
+          path: |
+            dist/*.apk
             dist/*.sha256
 
   windows:
@@ -70,6 +112,9 @@ jobs:
 
       - name: Package Windows release bundle
         run: powershell -ExecutionPolicy Bypass -File scripts/package-windows-release.ps1
+
+      - name: Package Windows headless release bundle
+        run: powershell -ExecutionPolicy Bypass -File scripts/package-headless-windows-release.ps1
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -107,10 +152,49 @@ jobs:
       - name: Package macOS release bundle
         run: bash scripts/package-macos-release.sh
 
+      - name: Package macOS headless release bundle
+        run: bash scripts/package-headless-macos-release.sh
+
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: wrongcl-macos-universal
+          path: |
+            dist/*.zip
+            dist/*.sha256
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.2'
+          channel: stable
+          cache: true
+
+      - name: Install iOS build dependencies
+        run: brew install protobuf
+
+      - name: Verify iOS workflow
+        run: bash scripts/verify-ios-host.sh
+
+      - name: Package iOS release bundle
+        run: bash scripts/package-ios-release.sh
+
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrongcl-ios-arm64
           path: |
             dist/*.zip
             dist/*.sha256

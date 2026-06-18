@@ -732,7 +732,13 @@ class NativeWrongclClient implements WrongclClient {
   late final _DartFree _free;
 
   static DynamicLibrary _openLibrary() {
-    if (Platform.isLinux) {
+    if (Platform.isAndroid) {
+      return _openFromCandidates(['libwrongcl_native.so']);
+    }
+    if (Platform.isIOS) {
+      return DynamicLibrary.process();
+    }
+    if (Platform.isLinux || Platform.operatingSystem == 'freebsd') {
       return _openFromCandidates(['libwrongcl_native.so']);
     }
     if (Platform.isMacOS) {
