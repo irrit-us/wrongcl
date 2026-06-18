@@ -21,6 +21,7 @@ use crate::gdocsviewer;
 use crate::hysteria2;
 use crate::kcp;
 use crate::meek;
+use crate::naive;
 use crate::protocol::{
     encode_raw_vless_header, encode_udp_vless_header, read_raw_vless_response, Target,
 };
@@ -157,6 +158,7 @@ impl WrongsvClient {
     pub fn connect(&self, target: &Target) -> Result<Box<dyn Tunnel>> {
         match self.server.endpoint.proxy.clone() {
             ProxyProtocol::Vless(opts) => self.connect_vless(target, &opts),
+            ProxyProtocol::Naive(opts) => self.connect_naive(target, &opts),
             ProxyProtocol::Hysteria2(opts) => self.connect_hysteria2(target, &opts),
             ProxyProtocol::Tuic(opts) => self.connect_tuic(target, &opts),
             ProxyProtocol::Trojan(opts) => self.connect_trojan(target, &opts),
@@ -180,6 +182,7 @@ impl WrongsvClient {
                 }
             }
             ProxyProtocol::Hysteria2(opts) => opts.udp_enabled,
+            ProxyProtocol::Naive(_) => false,
             ProxyProtocol::Tuic(_)
             | ProxyProtocol::Trojan(_)
             | ProxyProtocol::Shadowsocks(_)
@@ -191,6 +194,7 @@ impl WrongsvClient {
     pub fn connect_udp_session(&self, target: &Target) -> Result<Box<dyn UdpSession>> {
         match self.server.endpoint.proxy.clone() {
             ProxyProtocol::Vless(opts) => self.connect_vless_udp(target, &opts),
+            ProxyProtocol::Naive(opts) => self.connect_naive_udp(target, &opts),
             ProxyProtocol::Hysteria2(opts) => self.connect_hysteria2_udp(target, &opts),
             ProxyProtocol::Tuic(opts) => self.connect_tuic_udp(target, &opts),
             ProxyProtocol::Trojan(opts) => self.connect_trojan_udp(target, &opts),
@@ -411,6 +415,39 @@ impl WrongsvClient {
             clear_timeouts(&handle)?;
         }
         open_stream_udp_session(stream, target.clone())
+    }
+
+    fn connect_naive(
+        &self,
+        target: &Target,
+        opts: &crate::endpoint::NaiveOptions,
+    ) -> Result<Box<dyn Tunnel>> {
+        let tls_opts = match &self.server.endpoint.outer_security {
+            OuterSecurity::Tls(opts) => opts,
+            _ => {
+                return Err(ClientError::Config(
+                    "Naive requires TLS as outer security".into(),
+                ))
+            }
+        };
+        naive::connect_naive(
+            &self.server.host,
+            self.server.port,
+            opts,
+            tls_opts,
+            &target.host,
+            target.port,
+        )
+    }
+
+    fn connect_naive_udp(
+        &self,
+        _target: &Target,
+        _opts: &crate::endpoint::NaiveOptions,
+    ) -> Result<Box<dyn UdpSession>> {
+        Err(ClientError::UnsupportedProtocol(
+            "Naive does not support UDP relay".into(),
+        ))
     }
 
     fn connect_hysteria2(

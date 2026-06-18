@@ -665,6 +665,7 @@ class FakeWrongclClient implements WrongclClient {
         'version': 'test',
         'proxies': [
           'vless',
+          'naive',
           'hysteria2',
           'tuic',
           'trojan',

@@ -28,6 +28,7 @@ impl Default for Endpoint {
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum ProxyProtocol {
     Vless(VlessOptions),
+    Naive(NaiveOptions),
     Hysteria2(Hysteria2Options),
     Tuic(TuicOptions),
     Trojan(TrojanOptions),
@@ -40,6 +41,7 @@ impl ProxyProtocol {
     pub fn id(&self) -> &'static str {
         match self {
             ProxyProtocol::Vless(_) => "vless",
+            ProxyProtocol::Naive(_) => "naive",
             ProxyProtocol::Hysteria2(_) => "hysteria2",
             ProxyProtocol::Tuic(_) => "tuic",
             ProxyProtocol::Trojan(_) => "trojan",
@@ -52,6 +54,7 @@ impl ProxyProtocol {
     pub fn display_name(&self) -> &'static str {
         match self {
             ProxyProtocol::Vless(_) => "VLESS",
+            ProxyProtocol::Naive(_) => "Naive",
             ProxyProtocol::Hysteria2(_) => "Hysteria2",
             ProxyProtocol::Tuic(_) => "TUIC",
             ProxyProtocol::Trojan(_) => "Trojan",
@@ -76,6 +79,21 @@ impl Default for VlessOptions {
             flow: String::new(),
         }
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NaiveOptions {
+    pub username: String,
+    pub password: String,
+    #[serde(
+        default = "default_naive_padding_header",
+        rename = "padding-header-name"
+    )]
+    pub padding_header_name: String,
+}
+
+fn default_naive_padding_header() -> String {
+    "Padding".into()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -416,6 +434,40 @@ impl Endpoint {
                         opts.flow
                     )));
                 }
+            }
+            ProxyProtocol::Naive(opts) => {
+                if !matches!(self.transport, Transport::Raw) {
+                    return Err(ClientError::Config(
+                        "Naive owns its HTTP/2 CONNECT transport and must use raw transport in wrongcl"
+                            .into(),
+                    ));
+                }
+                if !matches!(self.outer_security, OuterSecurity::Tls(_)) {
+                    return Err(ClientError::Config(
+                        "Naive requires TLS as outer security".into(),
+                    ));
+                }
+                if opts.username.trim().is_empty() {
+                    return Err(ClientError::Config(
+                        "Naive requires a non-empty username".into(),
+                    ));
+                }
+                if opts.password.trim().is_empty() {
+                    return Err(ClientError::Config(
+                        "Naive requires a non-empty password".into(),
+                    ));
+                }
+                if opts.padding_header_name.trim().is_empty() {
+                    return Err(ClientError::Config(
+                        "Naive requires a non-empty padding-header-name".into(),
+                    ));
+                }
+                http::HeaderName::from_bytes(opts.padding_header_name.as_bytes()).map_err(|e| {
+                    ClientError::Config(format!(
+                        "invalid Naive padding-header-name '{}': {e}",
+                        opts.padding_header_name
+                    ))
+                })?;
             }
             ProxyProtocol::Hysteria2(opts) => {
                 if !matches!(self.transport, Transport::Raw) {
@@ -805,6 +857,9 @@ impl Endpoint {
         }
         if matches!(self.proxy, ProxyProtocol::Tuic(_)) {
             return "TUIC → QUIC → TLS → TCP".into();
+        }
+        if matches!(self.proxy, ProxyProtocol::Naive(_)) {
+            return "Naive → h2 CONNECT → TLS → TCP".into();
         }
         if matches!(self.proxy, ProxyProtocol::Wireguard(_)) {
             return "Payload IP → WireGuard → UDP".into();

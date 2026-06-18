@@ -93,6 +93,9 @@ class _ClientHomeState extends State<ClientHome> {
   final _uuid = TextEditingController(
     text: '12345678-1234-1234-1234-123456789abc',
   );
+  final _naiveUsername = TextEditingController();
+  final _naivePassword = TextEditingController();
+  final _naivePaddingHeaderName = TextEditingController(text: 'Padding');
   final _hysteria2ServerName = TextEditingController(
     text: 'foo.cloudfront.net',
   );
@@ -207,6 +210,9 @@ class _ClientHomeState extends State<ClientHome> {
     _serverHost.dispose();
     _serverPort.dispose();
     _uuid.dispose();
+    _naiveUsername.dispose();
+    _naivePassword.dispose();
+    _naivePaddingHeaderName.dispose();
     _hysteria2ServerName.dispose();
     _hysteria2Password.dispose();
     _tuicServerName.dispose();
@@ -285,6 +291,14 @@ class _ClientHomeState extends State<ClientHome> {
         return const VlessConfig(uuid: '').toJson()
           ..['uuid'] = _uuid.text
           ..['flow'] = _vlessVisionFlow ? 'xtls-rprx-vision' : '';
+      case ProxyKind.naive:
+        return NaiveConfig(
+          username: _naiveUsername.text,
+          password: _naivePassword.text,
+          paddingHeaderName: _naivePaddingHeaderName.text.isEmpty
+              ? 'Padding'
+              : _naivePaddingHeaderName.text,
+        ).toJson();
       case ProxyKind.hysteria2:
         return Hysteria2Config(
           serverName: _hysteria2ServerName.text.isEmpty
@@ -613,6 +627,9 @@ class _ClientHomeState extends State<ClientHome> {
     _serverHost.text = '127.0.0.1';
     _serverPort.text = '443';
     _uuid.text = '12345678-1234-1234-1234-123456789abc';
+    _naiveUsername.clear();
+    _naivePassword.clear();
+    _naivePaddingHeaderName.text = 'Padding';
     _hysteria2ServerName.text = 'foo.cloudfront.net';
     _hysteria2Password.clear();
     _hysteria2UdpEnabled = true;
@@ -693,6 +710,10 @@ class _ClientHomeState extends State<ClientHome> {
         return _anytlsPassword;
       case 'wireguard.private-key':
         return _wireguardPrivateKey;
+      case 'naive.username':
+        return _naiveUsername;
+      case 'naive.password':
+        return _naivePassword;
       default:
         return null;
     }
@@ -712,6 +733,10 @@ class _ClientHomeState extends State<ClientHome> {
         return 'AnyTLS password (required)';
       case 'wireguard.private-key':
         return 'WireGuard private-key (required)';
+      case 'naive.username':
+        return 'Naive username (required)';
+      case 'naive.password':
+        return 'Naive password (required)';
       default:
         return field;
     }
@@ -1213,6 +1238,15 @@ class _ClientHomeState extends State<ClientHome> {
         _uuid.text = proxy['uuid'] as String? ?? _uuid.text;
         _vlessVisionFlow =
             (proxy['flow'] as String? ?? '') == 'xtls-rprx-vision';
+        break;
+      case ProxyKind.naive:
+        _naiveUsername.text =
+            proxy['username'] as String? ?? _naiveUsername.text;
+        _naivePassword.text =
+            proxy['password'] as String? ?? _naivePassword.text;
+        _naivePaddingHeaderName.text =
+            proxy['padding-header-name'] as String? ??
+            _naivePaddingHeaderName.text;
         break;
       case ProxyKind.hysteria2:
         _hysteria2ServerName.text =
@@ -1960,10 +1994,10 @@ class _ClientHomeState extends State<ClientHome> {
                       value == ProxyKind.wireguard) {
                     _transportKind = TransportKind.raw;
                     _outerSecurityKind = OuterSecurityKind.none;
-                  } else if (value == ProxyKind.trojan) {
+                  } else if (value == ProxyKind.trojan ||
+                      value == ProxyKind.naive) {
                     _outerSecurityKind = OuterSecurityKind.tls;
-                    if (_transportKind == TransportKind.xhttp ||
-                        _transportKind == TransportKind.grpc) {
+                    if (_transportKind != TransportKind.raw) {
                       _transportKind = TransportKind.raw;
                     }
                   } else if (value != ProxyKind.vless &&
@@ -1988,6 +2022,7 @@ class _ClientHomeState extends State<ClientHome> {
         _proxyKind == ProxyKind.hysteria2 ||
         _proxyKind == ProxyKind.tuic ||
         _proxyKind == ProxyKind.wireguard ||
+        _proxyKind == ProxyKind.naive ||
         _outerSecurityKind == OuterSecurityKind.reality ||
         _outerSecurityKind == OuterSecurityKind.anytls ||
         _outerSecurityKind == OuterSecurityKind.shadowtls;
@@ -2028,6 +2063,7 @@ class _ClientHomeState extends State<ClientHome> {
         _proxyKind == ProxyKind.hysteria2 ||
         _proxyKind == ProxyKind.tuic ||
         _proxyKind == ProxyKind.wireguard ||
+        _proxyKind == ProxyKind.naive ||
         _transportKind == TransportKind.kcp ||
         _transportKind == TransportKind.quic ||
         _transportKind == TransportKind.webtransport ||
@@ -2082,6 +2118,18 @@ class _ClientHomeState extends State<ClientHome> {
               'Adds Vision padding/splice on the inner stream. Server must enable the same flow.',
             ),
           ),
+          const SizedBox(height: 12),
+        ];
+      case ProxyKind.naive:
+        return [
+          _responsiveWrap([
+            _field(_naiveUsername, 'Naive username', 260),
+            _field(_naivePassword, 'Naive password', 320),
+          ]),
+          const SizedBox(height: 8),
+          _responsiveWrap([
+            _field(_naivePaddingHeaderName, 'Naive padding header name', 260),
+          ]),
           const SizedBox(height: 12),
         ];
       case ProxyKind.hysteria2:

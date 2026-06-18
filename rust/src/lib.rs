@@ -11,6 +11,7 @@ pub mod hysteria2;
 pub mod kcp;
 pub mod manager;
 pub mod meek;
+pub mod naive;
 pub mod protocol;
 pub mod proxy;
 pub mod quic;
@@ -30,7 +31,7 @@ pub use client::{ProbeResult, Tunnel, WrongsvClient};
 pub use config::{ClientConfig, LocalProxyConfig, ServerConfig};
 pub use endpoint::{
     AnyTlsOptions, Endpoint, GdocsViewerOptions, GrpcOptions, HuOptions, Hysteria2Options,
-    KcpOptions, MeekOptions, MixedOptions, OuterSecurity, ProxyProtocol, QuicOptions,
+    KcpOptions, MeekOptions, MixedOptions, NaiveOptions, OuterSecurity, ProxyProtocol, QuicOptions,
     RealityOptions, ShadowsocksOptions, TlsOptions, Transport, TrojanOptions, TuicOptions,
     VlessOptions, WebTransportOptions, WireGuardOptions, WsOptions, XhttpOptions,
 };

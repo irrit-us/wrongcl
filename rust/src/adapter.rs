@@ -938,6 +938,57 @@ dest = "cover.example:443"
     }
 
     #[test]
+    fn adapts_naive_config() {
+        let cfg: WrongsvConfig = toml::from_str(
+            r#"
+listen = "0.0.0.0:443"
+
+[naive]
+padding_header_name = "Padding"
+
+[naive.tls]
+dest = "cover.example:443"
+
+[[naive.users]]
+username = "alice"
+password = "secret"
+email = "alice@example.com"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(active_profile(&cfg), "naive");
+        let assessment = active_capability(&cfg);
+        assert_eq!(assessment.support, SupportLevel::Supported);
+        assert!(assessment.config_adaptable);
+        assert_eq!(assessment.payload_networks, vec![PayloadNetwork::Tcp]);
+        assert_eq!(assessment.base_carriers, vec![BaseCarrier::Tcp]);
+
+        let config =
+            client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
+        match &config.server.endpoint.proxy {
+            ProxyProtocol::Naive(opts) => {
+                assert_eq!(opts.username, "alice");
+                assert_eq!(opts.password, "secret");
+                assert_eq!(opts.padding_header_name, "Padding");
+            }
+            other => panic!("expected Naive proxy, got {other:?}"),
+        }
+        match &config.server.endpoint.outer_security {
+            OuterSecurity::Tls(tls) => {
+                assert_eq!(tls.server_name, "cover.example");
+                assert!(tls.insecure_skip_verify);
+                assert_eq!(tls.alpn, vec!["h2".to_string()]);
+            }
+            other => panic!("expected TLS outer security, got {other:?}"),
+        }
+        assert_eq!(
+            config.server.endpoint.stack_summary(),
+            "Naive → h2 CONNECT → TLS → TCP"
+        );
+    }
+
+    #[test]
     fn wireguard_config_reports_partial_and_draft_only() {
         let cfg: WrongsvConfig = toml::from_str(
             r#"

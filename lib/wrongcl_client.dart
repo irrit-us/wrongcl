@@ -6,6 +6,7 @@ import 'package:ffi/ffi.dart';
 
 enum ProxyKind {
   vless('vless', 'VLESS'),
+  naive('naive', 'Naive'),
   hysteria2('hysteria2', 'Hysteria2'),
   tuic('tuic', 'TUIC'),
   trojan('trojan', 'Trojan'),
@@ -65,6 +66,25 @@ class VlessConfig {
     'type': 'vless',
     'uuid': uuid,
     'flow': flow,
+  };
+}
+
+class NaiveConfig {
+  const NaiveConfig({
+    required this.username,
+    required this.password,
+    this.paddingHeaderName = 'Padding',
+  });
+
+  final String username;
+  final String password;
+  final String paddingHeaderName;
+
+  Map<String, Object?> toJson() => {
+    'type': 'naive',
+    'username': username,
+    'password': password,
+    'padding-header-name': paddingHeaderName,
   };
 }
 

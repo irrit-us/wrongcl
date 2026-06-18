@@ -43,6 +43,7 @@ Verified local proxy coverage currently includes:
 - VLESS + gRPC, with and without TLS (TCP and UDP)
 - VLESS raw TCP with `flow = "xtls-rprx-vision"` for TCP
 - Trojan over TLS (TCP and UDP)
+- Naive over HTTP/2 CONNECT over TLS (TCP only)
 - Shadowsocks AEAD / AEAD-2022 over raw TCP and UDP
 - Remote mixed proxy backends over SOCKS5 (TCP and UDP) or HTTP CONNECT (TCP)
 - WireGuard tunnel service through a helper-backed local SOCKS upstream (TCP and UDP proxying; imported wrongsv configs still need a client private-key supplied separately)
@@ -53,7 +54,6 @@ Direct-probe coverage also exists for the same core transport families.
 Current remaining gaps are no longer in the implemented TCP/UDP transport
 matrix. The main remaining work is:
 
-- unimplemented protocol families such as Naive
 - KCP UDP relay
 - Hysteria2 Gecko / Salamander packet obfuscation
 - desktop product work in Flutter / FFI / persistence / packaging
