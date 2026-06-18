@@ -674,6 +674,7 @@ class FakeWrongclClient implements WrongclClient {
         'transports': [
           'raw',
           'kcp',
+          'meek',
           'quic',
           'webtransport',
           'websocket',

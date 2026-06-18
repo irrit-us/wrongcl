@@ -885,6 +885,57 @@ udp_relay = true
     }
 
     #[test]
+    fn adapts_meek_config() {
+        let cfg: WrongsvConfig = toml::from_str(
+            r#"
+listen = "0.0.0.0:443"
+
+[[users]]
+id = "12345678-1234-1234-1234-123456789abc"
+
+[meek]
+path = "/meek"
+host = "cdn.example"
+
+[meek.tls]
+dest = "cover.example:443"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(active_profile(&cfg), "meek");
+        let assessment = active_capability(&cfg);
+        assert_eq!(assessment.support, SupportLevel::Supported);
+        assert!(assessment.config_adaptable);
+        assert_eq!(
+            assessment.payload_networks,
+            vec![PayloadNetwork::Tcp, PayloadNetwork::Udp]
+        );
+        assert_eq!(assessment.base_carriers, vec![BaseCarrier::Tcp]);
+
+        let config =
+            client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
+        match &config.server.endpoint.transport {
+            Transport::Meek(opts) => {
+                assert_eq!(opts.path, "/meek");
+                assert_eq!(opts.host.as_deref(), Some("cdn.example"));
+            }
+            other => panic!("expected Meek transport, got {other:?}"),
+        }
+        match &config.server.endpoint.outer_security {
+            OuterSecurity::Tls(tls) => {
+                assert_eq!(tls.server_name, "cover.example");
+                assert!(tls.insecure_skip_verify);
+            }
+            other => panic!("expected TLS outer security, got {other:?}"),
+        }
+        assert_eq!(
+            config.server.endpoint.stack_summary(),
+            "VLESS → Meek → TLS → TCP"
+        );
+    }
+
+    #[test]
     fn anytls_config_missing_password_rejected() {
         let err = toml::from_str::<WrongsvConfig>(
             r#"

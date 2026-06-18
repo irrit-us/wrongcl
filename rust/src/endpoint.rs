@@ -129,6 +129,7 @@ pub enum Transport {
     #[default]
     Raw,
     Kcp(KcpOptions),
+    Meek(MeekOptions),
     Webtransport(WebTransportOptions),
     Websocket(WsOptions),
     Httpupgrade(HuOptions),
@@ -142,6 +143,7 @@ impl Transport {
         match self {
             Transport::Raw => "raw",
             Transport::Kcp(_) => "kcp",
+            Transport::Meek(_) => "meek",
             Transport::Webtransport(_) => "webtransport",
             Transport::Websocket(_) => "websocket",
             Transport::Httpupgrade(_) => "httpupgrade",
@@ -155,6 +157,7 @@ impl Transport {
         match self {
             Transport::Raw => "raw",
             Transport::Kcp(_) => "KCP",
+            Transport::Meek(_) => "Meek",
             Transport::Webtransport(_) => "WebTransport",
             Transport::Websocket(_) => "WebSocket",
             Transport::Httpupgrade(_) => "HTTPUpgrade",
@@ -247,6 +250,14 @@ pub struct KcpOptions {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MeekOptions {
+    #[serde(default = "default_meek_path")]
+    pub path: String,
+    #[serde(default)]
+    pub host: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WebTransportOptions {
     pub authority: String,
     #[serde(default = "default_wt_path")]
@@ -265,6 +276,10 @@ fn default_hu_path() -> String {
 
 fn default_xhttp_path() -> String {
     "/xhttp".into()
+}
+
+fn default_meek_path() -> String {
+    "/".into()
 }
 
 fn default_wt_path() -> String {
@@ -600,6 +615,24 @@ impl Endpoint {
                 return Err(ClientError::Config("KCP tti must be in 10..=100".into()));
             }
         }
+        if let Transport::Meek(opts) = &self.transport {
+            if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
+                return Err(ClientError::Config(
+                    "Meek transport only wraps the VLESS proxy".into(),
+                ));
+            }
+            if !matches!(
+                self.outer_security,
+                OuterSecurity::None | OuterSecurity::Tls(_)
+            ) {
+                return Err(ClientError::Config(
+                    "Meek transport only supports 'none' or 'tls' outer security".into(),
+                ));
+            }
+            if !opts.path.starts_with('/') {
+                return Err(ClientError::Config("Meek path must start with '/'".into()));
+            }
+        }
         if let Transport::Webtransport(opts) = &self.transport {
             if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
                 return Err(ClientError::Config(
@@ -669,6 +702,7 @@ impl Endpoint {
         match self.transport {
             Transport::Raw => parts.push("raw"),
             Transport::Kcp(_) => parts.push("KCP"),
+            Transport::Meek(_) => parts.push("Meek"),
             Transport::Webtransport(_) => parts.push("WebTransport"),
             Transport::Websocket(_) => parts.push("WebSocket"),
             Transport::Httpupgrade(_) => parts.push("HTTPUpgrade"),

@@ -34,6 +34,7 @@ Verified local proxy coverage currently includes:
 - TUIC over QUIC/TLS (TCP and UDP)
 - VLESS + QUIC (TCP and UDP)
 - VLESS + KCP (TCP only; UDP relay not yet wired in wrongcl)
+- VLESS + Meek, with and without TLS (TCP and UDP)
 - VLESS + WebTransport (TCP and UDP)
 - VLESS + WebSocket, with and without TLS (TCP and UDP)
 - VLESS + HTTPUpgrade, with and without TLS (TCP and UDP)
@@ -50,7 +51,7 @@ Direct-probe coverage also exists for the same core transport families.
 Current remaining gaps are no longer in the implemented TCP/UDP transport
 matrix. The main remaining work is:
 
-- unimplemented protocol families such as Meek, Google Docs Viewer, WireGuard, and Naive
+- unimplemented protocol families such as Google Docs Viewer, WireGuard, and Naive
 - KCP UDP relay
 - Hysteria2 Gecko / Salamander packet obfuscation
 - desktop product work in Flutter / FFI / persistence / packaging

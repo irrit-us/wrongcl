@@ -19,6 +19,7 @@ use crate::endpoint::{
 use crate::error::{ClientError, Result};
 use crate::hysteria2;
 use crate::kcp;
+use crate::meek;
 use crate::protocol::{
     encode_raw_vless_header, encode_udp_vless_header, read_raw_vless_response, Target,
 };
@@ -236,6 +237,22 @@ impl WrongsvClient {
                 false,
             );
         }
+        if let Transport::Meek(meek_opts) = &self.server.endpoint.transport {
+            let mut stream = meek::connect_meek(
+                &self.server.host,
+                self.server.port,
+                meek_opts,
+                &self.server.endpoint.outer_security,
+                &opts.uuid,
+                target,
+                &opts.flow,
+                false,
+            )?;
+            if opts.flow.trim() == VISION_FLOW {
+                stream = vision::wrap(stream, &opts.uuid)?;
+            }
+            return Ok(stream);
+        }
         if let Transport::Webtransport(webtransport_opts) = &self.server.endpoint.transport {
             return webtransport::connect_webtransport(
                 &self.server.host,
@@ -281,6 +298,24 @@ impl WrongsvClient {
             return Err(ClientError::UnsupportedProtocol(
                 "KCP UDP relay is not implemented in wrongcl yet".into(),
             ));
+        }
+        if let Transport::Meek(meek_opts) = &self.server.endpoint.transport {
+            if opts.flow.trim() == VISION_FLOW {
+                return Err(ClientError::UnsupportedProtocol(
+                    "XTLS Vision does not support UDP".into(),
+                ));
+            }
+            let stream = meek::connect_meek(
+                &self.server.host,
+                self.server.port,
+                meek_opts,
+                &self.server.endpoint.outer_security,
+                &opts.uuid,
+                target,
+                &opts.flow,
+                true,
+            )?;
+            return open_stream_udp_session(stream, target.clone());
         }
         if let Transport::Webtransport(webtransport_opts) = &self.server.endpoint.transport {
             if opts.flow.trim() == VISION_FLOW {
@@ -519,6 +554,9 @@ fn wrap_transport(
     match transport {
         Transport::Raw => Ok(inner),
         Transport::Httpupgrade(opts) => connect_httpupgrade(inner, opts, server_host, server_port),
+        Transport::Meek(_) => Err(ClientError::Config(
+            "Meek transport must be opened directly, not wrap_transport".into(),
+        )),
         Transport::Websocket(opts) => connect_websocket(inner, opts, server_host, server_port),
         Transport::Xhttp(_) => Err(ClientError::Config(
             "XHTTP transport must be opened via open_proxy_stack, not wrap_transport".into(),

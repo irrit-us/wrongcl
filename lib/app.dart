@@ -111,6 +111,8 @@ class _ClientHomeState extends State<ClientHome> {
   final _kcpSeed = TextEditingController();
   final _kcpMtu = TextEditingController(text: '1350');
   final _kcpTti = TextEditingController(text: '50');
+  final _meekPath = TextEditingController(text: '/');
+  final _meekHost = TextEditingController();
   final _quicServerName = TextEditingController(text: 'cloudfront.net');
   bool _quicUdpEnabled = true;
   final _webtransportAuthority = TextEditingController(text: 'cloudfront.net');
@@ -209,6 +211,8 @@ class _ClientHomeState extends State<ClientHome> {
     _kcpSeed.dispose();
     _kcpMtu.dispose();
     _kcpTti.dispose();
+    _meekPath.dispose();
+    _meekHost.dispose();
     _quicServerName.dispose();
     _webtransportAuthority.dispose();
     _webtransportPath.dispose();
@@ -305,6 +309,11 @@ class _ClientHomeState extends State<ClientHome> {
           seed: _kcpSeed.text,
           mtu: int.tryParse(_kcpMtu.text) ?? 1350,
           tti: int.tryParse(_kcpTti.text) ?? 50,
+        ).toJson();
+      case TransportKind.meek:
+        return MeekConfig(
+          path: _meekPath.text.isEmpty ? '/' : _meekPath.text,
+          host: _meekHost.text.isEmpty ? null : _meekHost.text,
         ).toJson();
       case TransportKind.quic:
         return QuicConfig(
@@ -577,6 +586,8 @@ class _ClientHomeState extends State<ClientHome> {
     _kcpSeed.clear();
     _kcpMtu.text = '1350';
     _kcpTti.text = '50';
+    _meekPath.text = '/';
+    _meekHost.clear();
     _quicServerName.text = 'cloudfront.net';
     _quicUdpEnabled = true;
     _webtransportAuthority.text = 'cloudfront.net';
@@ -1189,6 +1200,10 @@ class _ClientHomeState extends State<ClientHome> {
         _kcpSeed.text = transport['seed'] as String? ?? '';
         _kcpMtu.text = '${transport['mtu'] ?? _kcpMtu.text}';
         _kcpTti.text = '${transport['tti'] ?? _kcpTti.text}';
+        break;
+      case TransportKind.meek:
+        _meekPath.text = transport['path'] as String? ?? _meekPath.text;
+        _meekHost.text = transport['host'] as String? ?? '';
         break;
       case TransportKind.quic:
         _quicServerName.text =
@@ -2090,6 +2105,14 @@ class _ClientHomeState extends State<ClientHome> {
             _field(_kcpSeed, 'KCP seed (optional)', 320),
             _field(_kcpMtu, 'KCP MTU', 180),
             _field(_kcpTti, 'KCP TTI (ms)', 180),
+          ]),
+          const SizedBox(height: 12),
+        ];
+      case TransportKind.meek:
+        return [
+          _responsiveWrap([
+            _field(_meekPath, 'Meek path', 220),
+            _field(_meekHost, 'Meek host header (optional)', 320),
           ]),
           const SizedBox(height: 12),
         ];

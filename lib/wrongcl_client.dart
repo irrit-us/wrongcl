@@ -23,6 +23,7 @@ enum ProxyKind {
 enum TransportKind {
   raw('raw', 'raw TCP'),
   kcp('kcp', 'KCP'),
+  meek('meek', 'Meek'),
   quic('quic', 'QUIC'),
   webtransport('webtransport', 'WebTransport'),
   websocket('websocket', 'WebSocket'),
@@ -228,6 +229,15 @@ class KcpConfig {
     'mtu': mtu,
     'tti': tti,
   };
+}
+
+class MeekConfig {
+  const MeekConfig({this.path = '/', this.host});
+
+  final String path;
+  final String? host;
+
+  Map<String, Object?> toJson() => {'type': 'meek', 'path': path, 'host': host};
 }
 
 class TlsConfig {
