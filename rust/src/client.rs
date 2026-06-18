@@ -21,6 +21,7 @@ use crate::hysteria2;
 use crate::protocol::{
     encode_raw_vless_header, encode_udp_vless_header, read_raw_vless_response, Target,
 };
+use crate::quic;
 use crate::reality;
 use crate::shadowsocks as ss;
 use crate::shadowtls;
@@ -212,6 +213,17 @@ impl WrongsvClient {
     }
 
     fn connect_vless(&self, target: &Target, opts: &VlessOptions) -> Result<Box<dyn Tunnel>> {
+        if let Transport::Quic(quic_opts) = &self.server.endpoint.transport {
+            return quic::connect_quic(
+                &self.server.host,
+                self.server.port,
+                quic_opts,
+                &opts.uuid,
+                target,
+                &opts.flow,
+                false,
+            );
+        }
         let (mut stream, timeout_handle) = self.open_proxy_stack()?;
         let header = encode_raw_vless_header(&opts.uuid, target, &opts.flow)?;
         stream.write_all(&header)?;
@@ -231,6 +243,28 @@ impl WrongsvClient {
         target: &Target,
         opts: &VlessOptions,
     ) -> Result<Box<dyn UdpSession>> {
+        if let Transport::Quic(quic_opts) = &self.server.endpoint.transport {
+            if opts.flow.trim() == VISION_FLOW {
+                return Err(ClientError::UnsupportedProtocol(
+                    "XTLS Vision does not support UDP".into(),
+                ));
+            }
+            if !quic_opts.udp_enabled {
+                return Err(ClientError::UnsupportedProtocol(
+                    "QUIC UDP relay is disabled for this wrongcl profile".into(),
+                ));
+            }
+            let stream = quic::connect_quic(
+                &self.server.host,
+                self.server.port,
+                quic_opts,
+                &opts.uuid,
+                target,
+                &opts.flow,
+                true,
+            )?;
+            return open_stream_udp_session(stream, target.clone());
+        }
         if opts.flow.trim() == VISION_FLOW {
             return Err(ClientError::UnsupportedProtocol(
                 "XTLS Vision does not support UDP".into(),
@@ -430,6 +464,9 @@ fn wrap_transport(
         )),
         Transport::Grpc(_) => Err(ClientError::Config(
             "gRPC transport must be opened via open_proxy_stack, not wrap_transport".into(),
+        )),
+        Transport::Quic(_) => Err(ClientError::Config(
+            "QUIC transport must be opened directly, not wrap_transport".into(),
         )),
     }
 }

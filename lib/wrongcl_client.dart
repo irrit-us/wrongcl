@@ -22,6 +22,7 @@ enum ProxyKind {
 
 enum TransportKind {
   raw('raw', 'raw TCP'),
+  quic('quic', 'QUIC'),
   websocket('websocket', 'WebSocket'),
   httpupgrade('httpupgrade', 'HTTPUpgrade'),
   xhttp('xhttp', 'XHTTP'),
@@ -177,6 +178,19 @@ class GrpcConfig {
   Map<String, Object?> toJson() => {
     'type': 'grpc',
     'service-name': serviceName,
+  };
+}
+
+class QuicConfig {
+  const QuicConfig({required this.serverName, this.udpEnabled = true});
+
+  final String serverName;
+  final bool udpEnabled;
+
+  Map<String, Object?> toJson() => {
+    'type': 'quic',
+    'server-name': serverName,
+    'udp-enabled': udpEnabled,
   };
 }
 

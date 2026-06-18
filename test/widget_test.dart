@@ -671,7 +671,7 @@ class FakeWrongclClient implements WrongclClient {
           'mixed',
           'shadowsocks',
         ],
-        'transports': ['raw', 'websocket', 'httpupgrade'],
+        'transports': ['raw', 'quic', 'websocket', 'httpupgrade'],
         'outer_security': ['none', 'tls', 'reality', 'anytls', 'shadowtls'],
       },
     );

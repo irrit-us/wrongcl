@@ -108,6 +108,8 @@ class _ClientHomeState extends State<ClientHome> {
   final _mixedPassword = TextEditingController();
   final _shadowsocksPassword = TextEditingController();
   String _shadowsocksMethod = 'chacha20-ietf-poly1305';
+  final _quicServerName = TextEditingController(text: 'cloudfront.net');
+  bool _quicUdpEnabled = true;
   final _wsPath = TextEditingController(text: '/ws');
   final _wsHost = TextEditingController();
   final _huPath = TextEditingController(text: '/up');
@@ -198,6 +200,7 @@ class _ClientHomeState extends State<ClientHome> {
     _mixedUsername.dispose();
     _mixedPassword.dispose();
     _shadowsocksPassword.dispose();
+    _quicServerName.dispose();
     _wsPath.dispose();
     _wsHost.dispose();
     _huPath.dispose();
@@ -286,6 +289,13 @@ class _ClientHomeState extends State<ClientHome> {
     switch (_transportKind) {
       case TransportKind.raw:
         return const {'type': 'raw'};
+      case TransportKind.quic:
+        return QuicConfig(
+          serverName: _quicServerName.text.isEmpty
+              ? 'cloudfront.net'
+              : _quicServerName.text,
+          udpEnabled: _quicUdpEnabled,
+        ).toJson();
       case TransportKind.websocket:
         return WsConfig(
           path: _wsPath.text.isEmpty ? '/ws' : _wsPath.text,
@@ -539,6 +549,8 @@ class _ClientHomeState extends State<ClientHome> {
     _mixedPassword.clear();
     _shadowsocksPassword.clear();
     _shadowsocksMethod = 'chacha20-ietf-poly1305';
+    _quicServerName.text = 'cloudfront.net';
+    _quicUdpEnabled = true;
     _wsPath.text = '/ws';
     _wsHost.clear();
     _huPath.text = '/up';
@@ -1141,6 +1153,11 @@ class _ClientHomeState extends State<ClientHome> {
     _transportKind = TransportKind.fromId(transportType);
     switch (_transportKind) {
       case TransportKind.raw:
+        break;
+      case TransportKind.quic:
+        _quicServerName.text =
+            transport['server-name'] as String? ?? _quicServerName.text;
+        _quicUdpEnabled = transport['udp-enabled'] != false;
         break;
       case TransportKind.websocket:
         _wsPath.text = transport['path'] as String? ?? _wsPath.text;
@@ -1857,7 +1874,12 @@ class _ClientHomeState extends State<ClientHome> {
             ? null
             : (value) {
                 if (value == null) return;
-                setState(() => _transportKind = value);
+                setState(() {
+                  _transportKind = value;
+                  if (value == TransportKind.quic) {
+                    _outerSecurityKind = OuterSecurityKind.none;
+                  }
+                });
                 _refreshStack();
               },
       ),
@@ -1872,6 +1894,7 @@ class _ClientHomeState extends State<ClientHome> {
         _proxyKind == ProxyKind.shadowsocks ||
         _proxyKind == ProxyKind.hysteria2 ||
         _proxyKind == ProxyKind.tuic ||
+        _transportKind == TransportKind.quic ||
         _proxyKind == ProxyKind.trojan;
     return SizedBox(
       width: available < 230 ? available : 230,
@@ -2014,6 +2037,26 @@ class _ClientHomeState extends State<ClientHome> {
     switch (_transportKind) {
       case TransportKind.raw:
         return const [];
+      case TransportKind.quic:
+        return [
+          _responsiveWrap([
+            _field(_quicServerName, 'QUIC SNI / server name', 320),
+          ]),
+          const SizedBox(height: 4),
+          CheckboxListTile(
+            value: _quicUdpEnabled,
+            onChanged: (value) =>
+                setState(() => _quicUdpEnabled = value ?? true),
+            controlAffinity: ListTileControlAffinity.leading,
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: const Text('Enable UDP relay'),
+            subtitle: const Text(
+              'Disable this only when the wrongsv quic transport sets udp_relay = false.',
+            ),
+          ),
+          const SizedBox(height: 12),
+        ];
       case TransportKind.websocket:
         return [
           _responsiveWrap([

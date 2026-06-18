@@ -90,7 +90,7 @@ pub extern "C" fn wrongcl_native_version() -> *mut c_char {
             "version": env!("CARGO_PKG_VERSION"),
             "headless": true,
             "proxies": ["vless", "hysteria2", "tuic", "trojan", "mixed", "shadowsocks"],
-            "transports": ["raw", "websocket", "httpupgrade", "xhttp", "grpc"],
+            "transports": ["raw", "quic", "websocket", "httpupgrade", "xhttp", "grpc"],
             "outer_security": ["none", "tls", "reality", "anytls", "shadowtls"],
             "vless_flows": ["", "xtls-rprx-vision"],
         }),

@@ -131,6 +131,7 @@ pub enum Transport {
     Httpupgrade(HuOptions),
     Xhttp(XhttpOptions),
     Grpc(GrpcOptions),
+    Quic(QuicOptions),
 }
 
 impl Transport {
@@ -141,6 +142,7 @@ impl Transport {
             Transport::Httpupgrade(_) => "httpupgrade",
             Transport::Xhttp(_) => "xhttp",
             Transport::Grpc(_) => "grpc",
+            Transport::Quic(_) => "quic",
         }
     }
 
@@ -151,6 +153,7 @@ impl Transport {
             Transport::Httpupgrade(_) => "HTTPUpgrade",
             Transport::Xhttp(_) => "XHTTP",
             Transport::Grpc(_) => "gRPC",
+            Transport::Quic(_) => "QUIC",
         }
     }
 }
@@ -218,6 +221,14 @@ impl Default for GrpcOptions {
             service_name: default_grpc_service_name(),
         }
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct QuicOptions {
+    #[serde(rename = "server-name")]
+    pub server_name: String,
+    #[serde(default = "default_udp_enabled", rename = "udp-enabled")]
+    pub udp_enabled: bool,
 }
 
 fn default_ws_path() -> String {
@@ -543,6 +554,24 @@ impl Endpoint {
                 ));
             }
         }
+        if let Transport::Quic(opts) = &self.transport {
+            if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
+                return Err(ClientError::Config(
+                    "QUIC transport only wraps the VLESS proxy".into(),
+                ));
+            }
+            if !matches!(self.outer_security, OuterSecurity::None) {
+                return Err(ClientError::Config(
+                    "QUIC transport owns its TLS layer and only supports 'none' outer security"
+                        .into(),
+                ));
+            }
+            if opts.server_name.trim().is_empty() {
+                return Err(ClientError::Config(
+                    "QUIC transport requires server-name (SNI for the QUIC handshake)".into(),
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -553,6 +582,9 @@ impl Endpoint {
         if matches!(self.proxy, ProxyProtocol::Tuic(_)) {
             return "TUIC → QUIC → TLS → TCP".into();
         }
+        if matches!(self.transport, Transport::Quic(_)) {
+            return "VLESS → QUIC → TLS → TCP".into();
+        }
         let mut parts: Vec<&str> = Vec::new();
         parts.push(self.proxy.display_name());
         match self.transport {
@@ -561,6 +593,7 @@ impl Endpoint {
             Transport::Httpupgrade(_) => parts.push("HTTPUpgrade"),
             Transport::Xhttp(_) => parts.push("XHTTP"),
             Transport::Grpc(_) => parts.push("gRPC"),
+            Transport::Quic(_) => parts.push("QUIC"),
         }
         match self.outer_security {
             OuterSecurity::Tls(_) => parts.push("TLS"),

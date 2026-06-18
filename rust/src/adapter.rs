@@ -748,6 +748,50 @@ password = "tuic-pass"
     }
 
     #[test]
+    fn adapts_quic_config() {
+        let cfg: WrongsvConfig = toml::from_str(
+            r#"
+listen = "0.0.0.0:443"
+
+[[users]]
+id = "12345678-1234-1234-1234-123456789abc"
+
+[quic]
+udp_relay = true
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(active_profile(&cfg), "quic");
+        let assessment = active_capability(&cfg);
+        assert_eq!(assessment.support, SupportLevel::Supported);
+        assert!(assessment.config_adaptable);
+        assert_eq!(
+            assessment.payload_networks,
+            vec![PayloadNetwork::Tcp, PayloadNetwork::Udp]
+        );
+        assert_eq!(assessment.base_carriers, vec![BaseCarrier::Udp]);
+
+        let config =
+            client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
+        match &config.server.endpoint.transport {
+            Transport::Quic(opts) => {
+                assert_eq!(opts.server_name, "cloudfront.net");
+                assert!(opts.udp_enabled);
+            }
+            other => panic!("expected QUIC transport, got {other:?}"),
+        }
+        assert!(matches!(
+            config.server.endpoint.outer_security,
+            OuterSecurity::None
+        ));
+        assert_eq!(
+            config.server.endpoint.stack_summary(),
+            "VLESS → QUIC → TLS → TCP"
+        );
+    }
+
+    #[test]
     fn anytls_config_missing_password_rejected() {
         let err = toml::from_str::<WrongsvConfig>(
             r#"

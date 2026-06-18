@@ -10,6 +10,7 @@ pub mod hysteria2;
 pub mod manager;
 pub mod protocol;
 pub mod proxy;
+pub mod quic;
 pub mod reality;
 pub mod shadowsocks;
 pub mod shadowtls;
@@ -24,8 +25,8 @@ pub use client::{ProbeResult, Tunnel, WrongsvClient};
 pub use config::{ClientConfig, LocalProxyConfig, ServerConfig};
 pub use endpoint::{
     AnyTlsOptions, Endpoint, GrpcOptions, HuOptions, Hysteria2Options, MixedOptions, OuterSecurity,
-    ProxyProtocol, RealityOptions, ShadowsocksOptions, TlsOptions, Transport, TrojanOptions,
-    TuicOptions, VlessOptions, WsOptions, XhttpOptions,
+    ProxyProtocol, QuicOptions, RealityOptions, ShadowsocksOptions, TlsOptions, Transport,
+    TrojanOptions, TuicOptions, VlessOptions, WsOptions, XhttpOptions,
 };
 pub use error::{ClientError, Result};
 pub use manager::{global_manager, ConnectionManager};
