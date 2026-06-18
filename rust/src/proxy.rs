@@ -203,6 +203,10 @@ fn handle_socks_client(
     config: ClientConfig,
     shared: &ProxyShared,
 ) -> Result<()> {
+    // The accept loop uses a nonblocking listener for shutdown polling. Some
+    // platforms propagate that mode to accepted sockets, which breaks the
+    // staged SOCKS/HTTP handshakes below.
+    client.set_nonblocking(false)?;
     client.set_read_timeout(Some(SOCKS_HANDSHAKE_TIMEOUT))?;
     client.set_write_timeout(Some(SOCKS_HANDSHAKE_TIMEOUT))?;
 
@@ -869,6 +873,30 @@ mod tests {
         assert_eq!(snapshot.failed_connections, 0);
         assert!(snapshot.bytes_uploaded >= 5);
         assert!(snapshot.bytes_downloaded >= 5);
+    }
+
+    #[test]
+    fn socks_handshake_survives_nonblocking_client_socket() {
+        let server = spawn_fake_vless_server();
+        let config =
+            ClientConfig::raw_vless("127.0.0.1", server.port, TEST_UUID, "127.0.0.1", 0).unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let local_addr = listener.local_addr().unwrap();
+        let worker = thread::spawn(move || {
+            let shared = ProxyShared {
+                stop: AtomicBool::new(false),
+                metrics: ProxyMetrics::new(),
+            };
+            let (stream, _) = listener.accept().unwrap();
+            stream.set_nonblocking(true).unwrap();
+            handle_socks_client(stream, config, &shared)
+        });
+
+        let response = run_socks_echo(local_addr).unwrap();
+        let result = worker.join().unwrap();
+
+        assert_eq!(response, b"hello".to_vec());
+        result.unwrap();
     }
 
     #[test]
