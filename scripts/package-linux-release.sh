@@ -15,6 +15,8 @@ BUNDLE_DIR="$ROOT_DIR/build/linux/x64/release/bundle"
 STAGING_DIR="$OUTPUT_DIR/$ARCHIVE_BASENAME"
 ARCHIVE_PATH="$OUTPUT_DIR/$ARCHIVE_BASENAME.tar.gz"
 CHECKSUM_PATH="$ARCHIVE_PATH.sha256"
+WIREGUARD_HELPER_DIR="$ROOT_DIR/helpers/wireguard-client-bridge"
+WIREGUARD_HELPER_BIN="$BUNDLE_DIR/wireguard-client-bridge"
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -23,6 +25,11 @@ bash "$ROOT_DIR/scripts/ensure-wrongsv-sibling.sh"
 if [[ ! -d "$BUNDLE_DIR" ]]; then
   "$FLUTTER_BIN" build linux
 fi
+
+(
+  cd "$WIREGUARD_HELPER_DIR"
+  GOTOOLCHAIN=auto go build -o "$WIREGUARD_HELPER_BIN" .
+)
 
 rm -rf "$STAGING_DIR" "$ARCHIVE_PATH" "$CHECKSUM_PATH"
 mkdir -p "$STAGING_DIR"

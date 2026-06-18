@@ -17,6 +17,8 @@ use crate::error::{ClientError, Result};
 use crate::protocol::Target;
 
 const HELPER_START_TIMEOUT: Duration = Duration::from_secs(15);
+const HELPER_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const HELPER_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 
 static RUNTIME_CACHE: OnceLock<Mutex<HashMap<String, Arc<WireGuardRuntime>>>> = OnceLock::new();
 
@@ -27,8 +29,10 @@ pub fn connect_wireguard(
     target: &Target,
 ) -> Result<Box<dyn Tunnel>> {
     let runtime = acquire_runtime(server_host, server_port, opts)?;
-    let helper_client = runtime.helper_client()?;
-    let inner = helper_client.connect(target)?;
+    let inner = retry_until_ready(|| {
+        let helper_client = runtime.helper_client()?;
+        helper_client.connect(target)
+    })?;
     Ok(Box::new(HelperTunnel { inner, runtime }))
 }
 
@@ -39,9 +43,40 @@ pub fn connect_wireguard_udp(
     target: &Target,
 ) -> Result<Box<dyn UdpSession>> {
     let runtime = acquire_runtime(server_host, server_port, opts)?;
-    let helper_client = runtime.helper_client()?;
-    let inner = helper_client.connect_udp_session(target)?;
+    let inner = retry_until_ready(|| {
+        let helper_client = runtime.helper_client()?;
+        helper_client.connect_udp_session(target)
+    })?;
     Ok(Box::new(HelperUdpSession { inner, runtime }))
+}
+
+fn retry_until_ready<T, F>(mut attempt: F) -> Result<T>
+where
+    F: FnMut() -> Result<T>,
+{
+    retry_until_ready_with_timeout(HELPER_CONNECT_TIMEOUT, HELPER_RETRY_INTERVAL, &mut attempt)
+}
+
+fn retry_until_ready_with_timeout<T, F>(
+    timeout: Duration,
+    retry_interval: Duration,
+    mut attempt: F,
+) -> Result<T>
+where
+    F: FnMut() -> Result<T>,
+{
+    let deadline = Instant::now() + timeout;
+    loop {
+        match attempt() {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                if Instant::now() >= deadline {
+                    return Err(error);
+                }
+                std::thread::sleep(retry_interval);
+            }
+        }
+    }
 }
 
 fn acquire_runtime(
@@ -190,6 +225,9 @@ fn helper_directory() -> PathBuf {
 }
 
 fn helper_binary_path() -> PathBuf {
+    if let Some(packaged) = packaged_helper_binary() {
+        return packaged;
+    }
     let file = if cfg!(windows) {
         "wireguard-client-bridge.exe"
     } else {
@@ -198,6 +236,25 @@ fn helper_binary_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../target")
         .join(file)
+}
+
+fn packaged_helper_binary() -> Option<PathBuf> {
+    let file = if cfg!(windows) {
+        "wireguard-client-bridge.exe"
+    } else {
+        "wireguard-client-bridge"
+    };
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    let direct = dir.join(file);
+    if direct.is_file() {
+        return Some(direct);
+    }
+    let lib = dir.join("lib").join(file);
+    if lib.is_file() {
+        return Some(lib);
+    }
+    None
 }
 
 fn build_helper_binary() -> Result<PathBuf> {
@@ -363,5 +420,40 @@ impl UdpSession for HelperUdpSession {
     fn try_recv_packet(&mut self) -> Result<Option<UdpPacket>> {
         let _runtime = &self.runtime;
         self.inner.try_recv_packet()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+
+    #[test]
+    fn retry_until_ready_retries_until_success() {
+        let attempts = AtomicUsize::new(0);
+        let value =
+            retry_until_ready_with_timeout(Duration::from_millis(10), Duration::ZERO, || {
+                if attempts.fetch_add(1, Ordering::SeqCst) < 2 {
+                    return Err(ClientError::Config("helper not ready".into()));
+                }
+                Ok(7usize)
+            })
+            .expect("helper should eventually become ready");
+        assert_eq!(value, 7);
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn retry_until_ready_returns_last_error_after_timeout() {
+        let attempts = AtomicUsize::new(0);
+        let error =
+            retry_until_ready_with_timeout(Duration::ZERO, Duration::ZERO, || -> Result<()> {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                Err(ClientError::Config("still starting".into()))
+            })
+            .expect_err("helper should time out");
+        assert!(matches!(error, ClientError::Config(message) if message == "still starting"));
+        assert!(attempts.load(Ordering::SeqCst) >= 1);
     }
 }
