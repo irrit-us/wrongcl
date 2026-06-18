@@ -1,0 +1,250 @@
+name: wrongcl-release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.2'
+          channel: stable
+          cache: true
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libayatana-appindicator3-dev protobuf-compiler
+
+      - name: Package Linux UI release
+        run: bash scripts/package-linux-release.sh
+
+      - name: Package Linux headless release
+        run: bash scripts/package-headless-linux-release.sh
+
+      - name: Upload Linux release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.2'
+          channel: stable
+          cache: true
+
+      - name: Install Windows build dependencies
+        run: choco install protoc --yes
+
+      - name: Package Windows UI release
+        run: powershell -ExecutionPolicy Bypass -File scripts/package-windows-release.ps1
+
+      - name: Package Windows headless release
+        run: powershell -ExecutionPolicy Bypass -File scripts/package-headless-windows-release.ps1
+
+      - name: Upload Windows release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: |
+            dist/*.zip
+            dist/*.sha256
+
+  macos:
+    runs-on: macos-13
+    env:
+      MACOS_RELEASE_ARCH: x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.2'
+          channel: stable
+          cache: true
+
+      - name: Install macOS build dependencies
+        run: brew install protobuf
+
+      - name: Package macOS UI release
+        run: bash scripts/package-macos-release.sh
+
+      - name: Package macOS headless release
+        run: bash scripts/package-headless-macos-release.sh
+
+      - name: Upload macOS release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: |
+            dist/*.zip
+            dist/*.sha256
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.2'
+          channel: stable
+          cache: true
+
+      - name: Install Android build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config protobuf-compiler
+          cargo install cargo-ndk --locked
+
+      - name: Package Android release
+        run: bash scripts/package-android-release.sh
+
+      - name: Upload Android release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-android
+          path: |
+            dist/*.apk
+            dist/*.sha256
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.2'
+          channel: stable
+          cache: true
+
+      - name: Install iOS build dependencies
+        run: brew install protobuf
+
+      - name: Package iOS release
+        run: bash scripts/package-ios-release.sh
+
+      - name: Upload iOS release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-ios
+          path: |
+            dist/*.zip
+            dist/*.sha256
+
+  freebsd-headless:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package FreeBSD headless release
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: "14.3"
+          usesh: true
+          prepare: |
+            pkg install -y bash git go rust
+          run: |
+            cd "$GITHUB_WORKSPACE"
+            sh scripts/package-freebsd-headless.sh
+
+      - name: Upload FreeBSD release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-freebsd
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+
+  release:
+    runs-on: ubuntu-latest
+    needs:
+      - linux
+      - windows
+      - macos
+      - android
+      - ios
+      - freebsd-headless
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Build release notes from changelog
+        run: |
+          mkdir -p release-artifacts/meta
+          bash scripts/release-notes.sh "${GITHUB_REF_NAME}" > release-artifacts/meta/release-notes.md
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: wrongcl ${{ github.ref_name }}
+          body_path: release-artifacts/meta/release-notes.md
+          files: |
+            release-artifacts/**/*.tar.gz
+            release-artifacts/**/*.zip
+            release-artifacts/**/*.apk
+            release-artifacts/**/*.sha256
+          generate_release_notes: false

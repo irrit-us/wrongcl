@@ -9,8 +9,19 @@ $ArchivePath = Join-Path $OutputDir "$ArchiveBaseName.zip"
 $ChecksumPath = "$ArchivePath.sha256"
 $StagingDir = Join-Path $OutputDir $ArchiveBaseName
 $WireGuardHelperDir = Join-Path $RootDir "helpers\wireguard-client-bridge"
+$WrongsvDir = if ($env:WRONGSV_DIR) { $env:WRONGSV_DIR } else { Join-Path (Split-Path -Parent $RootDir) "wrongsv" }
+$WrongsvRepo = if ($env:WRONGSV_REPO) { $env:WRONGSV_REPO } else { "https://github.com/irrit-us/wrongsv.git" }
+$WrongsvRef = if ($env:WRONGSV_REF) { $env:WRONGSV_REF } else { "main" }
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+
+if (-not (Test-Path (Join-Path $WrongsvDir "Cargo.toml"))) {
+  if (Test-Path $WrongsvDir) {
+    throw "wrongsv checkout path exists but is incomplete: $WrongsvDir"
+  }
+  git clone --depth 1 --branch $WrongsvRef $WrongsvRepo $WrongsvDir
+}
+
 cargo build --manifest-path (Join-Path $RootDir "rust\Cargo.toml") --bin wrongcl-headless --release
 
 if (Test-Path $StagingDir) {

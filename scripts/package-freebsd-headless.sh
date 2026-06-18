@@ -12,6 +12,7 @@ CHECKSUM_PATH="$ARCHIVE_PATH.sha256"
 
 mkdir -p "$OUTPUT_DIR"
 
+bash "$ROOT_DIR/scripts/ensure-wrongsv-sibling.sh"
 cargo build --manifest-path "$ROOT_DIR/rust/Cargo.toml" --bin wrongcl-headless --release
 rm -rf "$STAGING_DIR" "$ARCHIVE_PATH" "$CHECKSUM_PATH"
 mkdir -p "$STAGING_DIR"

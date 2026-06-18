@@ -10,7 +10,8 @@ fi
 
 OUTPUT_DIR="${1:-$ROOT_DIR/dist}"
 VERSION="$(awk '/^version: / {print $2}' "$ROOT_DIR/pubspec.yaml")"
-ARCHIVE_BASENAME="wrongcl-macos-universal-${VERSION//+/-}"
+MACOS_RELEASE_ARCH="${MACOS_RELEASE_ARCH:-universal}"
+ARCHIVE_BASENAME="wrongcl-macos-${MACOS_RELEASE_ARCH}-${VERSION//+/-}"
 APP_BUNDLE="$ROOT_DIR/build/macos/Build/Products/Release/wrongcl.app"
 ARCHIVE_PATH="$OUTPUT_DIR/$ARCHIVE_BASENAME.zip"
 CHECKSUM_PATH="$ARCHIVE_PATH.sha256"

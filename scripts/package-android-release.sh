@@ -12,6 +12,7 @@ CHECKSUM_PATH="$APK_PATH.sha256"
 
 mkdir -p "$OUTPUT_DIR"
 
+bash "$ROOT_DIR/scripts/ensure-wrongsv-sibling.sh"
 "$FLUTTER_BIN" build apk --release
 
 cp "$APK_SOURCE" "$APK_PATH"

@@ -12,6 +12,7 @@ WIREGUARD_HELPER_DIR="$ROOT_DIR/helpers/wireguard-client-bridge"
 
 mkdir -p "$OUTPUT_DIR"
 
+bash "$ROOT_DIR/scripts/ensure-wrongsv-sibling.sh"
 cargo build --manifest-path "$ROOT_DIR/rust/Cargo.toml" --bin wrongcl-headless --release
 rm -rf "$STAGING_DIR" "$ARCHIVE_PATH" "$CHECKSUM_PATH"
 mkdir -p "$STAGING_DIR"

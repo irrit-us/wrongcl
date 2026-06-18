@@ -12,6 +12,7 @@ CHECKSUM_PATH="$ARCHIVE_PATH.sha256"
 
 mkdir -p "$OUTPUT_DIR"
 
+bash "$ROOT_DIR/scripts/ensure-wrongsv-sibling.sh"
 "$FLUTTER_BIN" build ios --release --no-codesign
 
 rm -f "$ARCHIVE_PATH" "$CHECKSUM_PATH"
