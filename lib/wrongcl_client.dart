@@ -37,7 +37,8 @@ enum OuterSecurityKind {
   none('none', 'none'),
   tls('tls', 'TLS'),
   reality('reality', 'REALITY'),
-  anytls('anytls', 'AnyTLS');
+  anytls('anytls', 'AnyTLS'),
+  shadowtls('shadowtls', 'ShadowTLS');
 
   const OuterSecurityKind(this.id, this.label);
   final String id;
@@ -199,6 +200,19 @@ class AnyTlsConfig {
     'password': password,
     'insecure-skip-verify': insecureSkipVerify,
     'alpn': alpn,
+  };
+}
+
+class ShadowTlsConfig {
+  const ShadowTlsConfig({required this.serverName, required this.password});
+
+  final String serverName;
+  final String password;
+
+  Map<String, Object?> toJson() => {
+    'type': 'shadowtls',
+    'server-name': serverName,
+    'password': password,
   };
 }
 

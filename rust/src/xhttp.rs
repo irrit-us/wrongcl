@@ -23,7 +23,7 @@ pub fn connect_xhttp(
             Arc::new(tls::build_client_config(tls_opts)?),
             tls_opts.clone(),
         )),
-        OuterSecurity::Reality(_) | OuterSecurity::AnyTls(_) => {
+        OuterSecurity::Reality(_) | OuterSecurity::AnyTls(_) | OuterSecurity::ShadowTls(_) => {
             return Err(ClientError::Config(
                 "XHTTP transport only supports 'none' or 'tls' outer security".into(),
             ));

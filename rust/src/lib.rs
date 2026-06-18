@@ -11,6 +11,7 @@ pub mod protocol;
 pub mod proxy;
 pub mod reality;
 pub mod shadowsocks;
+pub mod shadowtls;
 pub mod tls;
 pub mod trojan;
 pub mod vision;

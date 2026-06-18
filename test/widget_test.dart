@@ -21,12 +21,8 @@ void main() {
       executablePath: '/tmp/wrongcl',
     );
     final systemProxyManager = SystemProxyManager(
-      runner: (executable, arguments) async => ProcessResult(
-        0,
-        0,
-        "'none'\n",
-        '',
-      ),
+      runner: (executable, arguments) async =>
+          ProcessResult(0, 0, "'none'\n", ''),
       platform: SystemProxyPlatform.linux,
     );
 
@@ -108,12 +104,8 @@ void main() {
       executablePath: '/tmp/wrongcl',
     );
     final systemProxyManager = SystemProxyManager(
-      runner: (executable, arguments) async => ProcessResult(
-        0,
-        0,
-        "'none'\n",
-        '',
-      ),
+      runner: (executable, arguments) async =>
+          ProcessResult(0, 0, "'none'\n", ''),
       platform: SystemProxyPlatform.linux,
     );
 
@@ -156,7 +148,9 @@ void main() {
     expect(find.textContaining('probe succeeded'), findsWidgets);
   });
 
-  testWidgets('health view tracks probe success and last error', (tester) async {
+  testWidgets('health view tracks probe success and last error', (
+    tester,
+  ) async {
     final client = FlakyProbeWrongclClient();
     final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
     final profileStore = ProfileStore(
@@ -167,12 +161,8 @@ void main() {
       executablePath: '/tmp/wrongcl',
     );
     final systemProxyManager = SystemProxyManager(
-      runner: (executable, arguments) async => ProcessResult(
-        0,
-        0,
-        "'none'\n",
-        '',
-      ),
+      runner: (executable, arguments) async =>
+          ProcessResult(0, 0, "'none'\n", ''),
       platform: SystemProxyPlatform.linux,
     );
 
@@ -223,12 +213,8 @@ void main() {
       executablePath: '/tmp/wrongcl',
     );
     final systemProxyManager = SystemProxyManager(
-      runner: (executable, arguments) async => ProcessResult(
-        0,
-        0,
-        "'none'\n",
-        '',
-      ),
+      runner: (executable, arguments) async =>
+          ProcessResult(0, 0, "'none'\n", ''),
       platform: SystemProxyPlatform.linux,
     );
     final configPath = File('${tempDir.path}/client.json');
@@ -319,12 +305,8 @@ void main() {
       executablePath: '/tmp/wrongcl',
     );
     final systemProxyManager = SystemProxyManager(
-      runner: (executable, arguments) async => ProcessResult(
-        0,
-        0,
-        "'none'\n",
-        '',
-      ),
+      runner: (executable, arguments) async =>
+          ProcessResult(0, 0, "'none'\n", ''),
       platform: SystemProxyPlatform.linux,
     );
 
@@ -397,12 +379,8 @@ void main() {
       executablePath: '/tmp/wrongcl',
     );
     final systemProxyManager = SystemProxyManager(
-      runner: (executable, arguments) async => ProcessResult(
-        0,
-        0,
-        "'none'\n",
-        '',
-      ),
+      runner: (executable, arguments) async =>
+          ProcessResult(0, 0, "'none'\n", ''),
       platform: SystemProxyPlatform.linux,
     );
 
@@ -442,9 +420,7 @@ void main() {
     expect(wrongsvPathField.controller?.text, '');
   });
 
-  testWidgets('deleting a saved profile requires confirmation', (
-    tester,
-  ) async {
+  testWidgets('deleting a saved profile requires confirmation', (tester) async {
     final client = FakeWrongclClient();
     final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
     final profileStore = MemoryProfileStore([
@@ -474,12 +450,8 @@ void main() {
       executablePath: '/tmp/wrongcl',
     );
     final systemProxyManager = SystemProxyManager(
-      runner: (executable, arguments) async => ProcessResult(
-        0,
-        0,
-        "'none'\n",
-        '',
-      ),
+      runner: (executable, arguments) async =>
+          ProcessResult(0, 0, "'none'\n", ''),
       platform: SystemProxyPlatform.linux,
     );
 
@@ -598,7 +570,9 @@ void main() {
   });
 
   test('autostart manager writes macOS launch agent plist', () async {
-    final tempDir = Directory.systemTemp.createTempSync('wrongcl-autostart-test');
+    final tempDir = Directory.systemTemp.createTempSync(
+      'wrongcl-autostart-test',
+    );
     final autostartFile = File('${tempDir.path}/us.irrit.wrongcl.plist');
     final manager = AutostartManager(
       file: autostartFile,
@@ -611,12 +585,16 @@ void main() {
     expect(text, contains('<string>us.irrit.wrongcl</string>'));
     expect(
       text,
-      contains('<string>/Applications/wrongcl.app/Contents/MacOS/wrongcl</string>'),
+      contains(
+        '<string>/Applications/wrongcl.app/Contents/MacOS/wrongcl</string>',
+      ),
     );
   });
 
   test('autostart manager writes Windows startup script', () async {
-    final tempDir = Directory.systemTemp.createTempSync('wrongcl-autostart-test');
+    final tempDir = Directory.systemTemp.createTempSync(
+      'wrongcl-autostart-test',
+    );
     final autostartFile = File('${tempDir.path}/wrongcl.cmd');
     final manager = AutostartManager(
       file: autostartFile,
@@ -630,45 +608,45 @@ void main() {
     expect(text, contains(r'start "" "C:\Program Files\wrongcl\wrongcl.exe"'));
   });
 
-  test('system proxy manager enables and disables GNOME SOCKS proxy commands', () async {
-    final calls = <String>[];
-    final manager = SystemProxyManager(
-      runner: (executable, arguments) async {
-        calls.add('$executable ${arguments.join(' ')}');
-        if (arguments.length >= 3 &&
-            arguments[0] == 'get' &&
-            arguments[1] == 'org.gnome.system.proxy') {
-          return ProcessResult(0, 0, "'none'\n", '');
-        }
-        return ProcessResult(0, 0, '', '');
-      },
-      platform: SystemProxyPlatform.linux,
-    );
+  test(
+    'system proxy manager enables and disables GNOME SOCKS proxy commands',
+    () async {
+      final calls = <String>[];
+      final manager = SystemProxyManager(
+        runner: (executable, arguments) async {
+          calls.add('$executable ${arguments.join(' ')}');
+          if (arguments.length >= 3 &&
+              arguments[0] == 'get' &&
+              arguments[1] == 'org.gnome.system.proxy') {
+            return ProcessResult(0, 0, "'none'\n", '');
+          }
+          return ProcessResult(0, 0, '', '');
+        },
+        platform: SystemProxyPlatform.linux,
+      );
 
-    final initial = await manager.loadStatus();
-    expect(initial.supported, isTrue);
-    expect(initial.enabled, isFalse);
+      final initial = await manager.loadStatus();
+      expect(initial.supported, isTrue);
+      expect(initial.enabled, isFalse);
 
-    await manager.enableSocks('127.0.0.1', 1080);
-    await manager.disable();
+      await manager.enableSocks('127.0.0.1', 1080);
+      await manager.disable();
 
-    expect(
-      calls,
-      contains('gsettings set org.gnome.system.proxy mode manual'),
-    );
-    expect(
-      calls,
-      contains('gsettings set org.gnome.system.proxy.socks host 127.0.0.1'),
-    );
-    expect(
-      calls,
-      contains('gsettings set org.gnome.system.proxy.socks port 1080'),
-    );
-    expect(
-      calls,
-      contains('gsettings set org.gnome.system.proxy mode none'),
-    );
-  });
+      expect(
+        calls,
+        contains('gsettings set org.gnome.system.proxy mode manual'),
+      );
+      expect(
+        calls,
+        contains('gsettings set org.gnome.system.proxy.socks host 127.0.0.1'),
+      );
+      expect(
+        calls,
+        contains('gsettings set org.gnome.system.proxy.socks port 1080'),
+      );
+      expect(calls, contains('gsettings set org.gnome.system.proxy mode none'));
+    },
+  );
 }
 
 class FakeWrongclClient implements WrongclClient {
@@ -687,7 +665,7 @@ class FakeWrongclClient implements WrongclClient {
         'version': 'test',
         'proxies': ['vless', 'trojan', 'mixed', 'shadowsocks'],
         'transports': ['raw', 'websocket', 'httpupgrade'],
-        'outer_security': ['none', 'tls'],
+        'outer_security': ['none', 'tls', 'reality', 'anytls', 'shadowtls'],
       },
     );
   }
@@ -1013,7 +991,9 @@ class FlakyProbeWrongclClient extends FakeWrongclClient {
 class MemoryProfileStore extends ProfileStore {
   MemoryProfileStore([List<SavedProfile> initialProfiles = const []])
     : _profiles = [...initialProfiles],
-      super(file: File('${Directory.systemTemp.path}/wrongcl-memory-store.json'));
+      super(
+        file: File('${Directory.systemTemp.path}/wrongcl-memory-store.json'),
+      );
 
   List<SavedProfile> _profiles;
 

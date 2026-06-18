@@ -217,6 +217,8 @@ pub enum OuterSecurity {
     Tls(TlsOptions),
     Reality(RealityOptions),
     AnyTls(AnyTlsOptions),
+    #[serde(rename = "shadowtls")]
+    ShadowTls(ShadowTlsOptions),
 }
 
 impl OuterSecurity {
@@ -226,6 +228,7 @@ impl OuterSecurity {
             OuterSecurity::Tls(_) => "tls",
             OuterSecurity::Reality(_) => "reality",
             OuterSecurity::AnyTls(_) => "anytls",
+            OuterSecurity::ShadowTls(_) => "shadowtls",
         }
     }
 
@@ -235,6 +238,7 @@ impl OuterSecurity {
             OuterSecurity::Tls(_) => "TLS",
             OuterSecurity::Reality(_) => "REALITY",
             OuterSecurity::AnyTls(_) => "AnyTLS",
+            OuterSecurity::ShadowTls(_) => "ShadowTLS",
         }
     }
 }
@@ -270,6 +274,13 @@ pub struct AnyTlsOptions {
     pub insecure_skip_verify: bool,
     #[serde(default)]
     pub alpn: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ShadowTlsOptions {
+    #[serde(rename = "server-name")]
+    pub server_name: String,
+    pub password: String,
 }
 
 impl Endpoint {
@@ -397,6 +408,28 @@ impl Endpoint {
                 ));
             }
         }
+        if let OuterSecurity::ShadowTls(opts) = &self.outer_security {
+            if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
+                return Err(ClientError::Config(
+                    "ShadowTLS outer security only wraps the VLESS proxy".into(),
+                ));
+            }
+            if !matches!(self.transport, Transport::Raw) {
+                return Err(ClientError::Config(
+                    "ShadowTLS outer security only supports raw transport".into(),
+                ));
+            }
+            if opts.server_name.trim().is_empty() {
+                return Err(ClientError::Config(
+                    "ShadowTLS requires server-name (SNI for the cover ClientHello)".into(),
+                ));
+            }
+            if opts.password.trim().is_empty() {
+                return Err(ClientError::Config(
+                    "ShadowTLS requires a non-empty password".into(),
+                ));
+            }
+        }
         if let Transport::Xhttp(opts) = &self.transport {
             if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
                 return Err(ClientError::Config(
@@ -452,6 +485,7 @@ impl Endpoint {
             OuterSecurity::Tls(_) => parts.push("TLS"),
             OuterSecurity::Reality(_) => parts.push("REALITY"),
             OuterSecurity::AnyTls(_) => parts.push("AnyTLS"),
+            OuterSecurity::ShadowTls(_) => parts.push("ShadowTLS"),
             OuterSecurity::None => {}
         }
         parts.push("TCP");

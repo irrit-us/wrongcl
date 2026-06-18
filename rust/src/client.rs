@@ -22,6 +22,7 @@ use crate::protocol::{
 };
 use crate::reality;
 use crate::shadowsocks as ss;
+use crate::shadowtls;
 use crate::tls;
 use crate::trojan;
 use crate::vision;
@@ -364,6 +365,7 @@ fn wrap_outer_security(tcp: TcpStream, outer: &OuterSecurity) -> Result<Box<dyn 
         OuterSecurity::Tls(opts) => tls::wrap(tcp, opts),
         OuterSecurity::Reality(opts) => reality::wrap(tcp, opts),
         OuterSecurity::AnyTls(opts) => anytls::wrap(tcp, opts),
+        OuterSecurity::ShadowTls(opts) => shadowtls::wrap(tcp, opts),
     }
 }
 

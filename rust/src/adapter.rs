@@ -629,6 +629,45 @@ server_name = "cloudfront.net"
     }
 
     #[test]
+    fn adapts_shadowtls_config() {
+        let cfg: WrongsvConfig = toml::from_str(
+            r#"
+listen = "0.0.0.0:443"
+
+[[users]]
+id = "12345678-1234-1234-1234-123456789abc"
+
+[shadowtls]
+password = "shadow-pass"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(active_profile(&cfg), "shadowtls");
+        let assessment = active_capability(&cfg);
+        assert_eq!(assessment.support, SupportLevel::Supported);
+        assert!(assessment.config_adaptable);
+        assert_eq!(
+            assessment.payload_networks,
+            vec![PayloadNetwork::Tcp, PayloadNetwork::Udp]
+        );
+
+        let config =
+            client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
+        match &config.server.endpoint.outer_security {
+            OuterSecurity::ShadowTls(opts) => {
+                assert_eq!(opts.server_name, "cloudfront.net");
+                assert_eq!(opts.password, "shadow-pass");
+            }
+            other => panic!("expected ShadowTLS, got {other:?}"),
+        }
+        assert_eq!(
+            config.server.endpoint.stack_summary(),
+            "VLESS → raw → ShadowTLS → TCP"
+        );
+    }
+
+    #[test]
     fn anytls_config_missing_password_rejected() {
         let err = toml::from_str::<WrongsvConfig>(
             r#"

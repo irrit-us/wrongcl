@@ -19,13 +19,12 @@ class WrongclApp extends StatelessWidget {
     AutostartManager? autostartManager,
     SystemProxyManager? systemProxyManager,
     DesktopShellController? desktopShellController,
-  })
-    : client = client ?? NativeWrongclClient(),
-      profileStore = profileStore ?? ProfileStore(),
-      autostartManager = autostartManager ?? AutostartManager(),
-      systemProxyManager = systemProxyManager ?? SystemProxyManager(),
-      desktopShellController =
-          desktopShellController ?? const NoopDesktopShellController();
+  }) : client = client ?? NativeWrongclClient(),
+       profileStore = profileStore ?? ProfileStore(),
+       autostartManager = autostartManager ?? AutostartManager(),
+       systemProxyManager = systemProxyManager ?? SystemProxyManager(),
+       desktopShellController =
+           desktopShellController ?? const NoopDesktopShellController();
 
   final WrongclClient client;
   final ProfileStore profileStore;
@@ -117,6 +116,8 @@ class _ClientHomeState extends State<ClientHome> {
   final _anytlsServerName = TextEditingController();
   final _anytlsPassword = TextEditingController();
   bool _anytlsInsecureSkipVerify = true;
+  final _shadowTlsServerName = TextEditingController(text: 'cloudfront.net');
+  final _shadowTlsPassword = TextEditingController();
 
   final _localHost = TextEditingController(text: '127.0.0.1');
   final _localPort = TextEditingController(text: '1080');
@@ -197,6 +198,8 @@ class _ClientHomeState extends State<ClientHome> {
     _realityRawPubkey.dispose();
     _anytlsServerName.dispose();
     _anytlsPassword.dispose();
+    _shadowTlsServerName.dispose();
+    _shadowTlsPassword.dispose();
     _localHost.dispose();
     _localPort.dispose();
     _targetHost.dispose();
@@ -309,6 +312,13 @@ class _ClientHomeState extends State<ClientHome> {
               : _anytlsServerName.text,
           password: _anytlsPassword.text,
           insecureSkipVerify: _anytlsInsecureSkipVerify,
+        ).toJson();
+      case OuterSecurityKind.shadowtls:
+        return ShadowTlsConfig(
+          serverName: _shadowTlsServerName.text.isEmpty
+              ? 'cloudfront.net'
+              : _shadowTlsServerName.text,
+          password: _shadowTlsPassword.text,
         ).toJson();
     }
   }
@@ -510,6 +520,8 @@ class _ClientHomeState extends State<ClientHome> {
     _anytlsServerName.clear();
     _anytlsPassword.clear();
     _anytlsInsecureSkipVerify = true;
+    _shadowTlsServerName.text = 'cloudfront.net';
+    _shadowTlsPassword.clear();
 
     _localHost.text = '127.0.0.1';
     _localPort.text = '1080';
@@ -1127,6 +1139,12 @@ class _ClientHomeState extends State<ClientHome> {
             outer['password'] as String? ?? _anytlsPassword.text;
         _anytlsInsecureSkipVerify = outer['insecure-skip-verify'] != false;
         break;
+      case OuterSecurityKind.shadowtls:
+        _shadowTlsServerName.text =
+            outer['server-name'] as String? ?? _shadowTlsServerName.text;
+        _shadowTlsPassword.text =
+            outer['password'] as String? ?? _shadowTlsPassword.text;
+        break;
     }
     if (mounted) {
       setState(() {});
@@ -1201,8 +1219,10 @@ class _ClientHomeState extends State<ClientHome> {
                               runSpacing: 12,
                               children: [
                                 FilledButton.icon(
-                                  onPressed: _busy ||
-                                          !(_autostartStatus?.supported ?? false)
+                                  onPressed:
+                                      _busy ||
+                                          !(_autostartStatus?.supported ??
+                                              false)
                                       ? null
                                       : () => _runTask(
                                           'enable autostart',
@@ -1212,8 +1232,10 @@ class _ClientHomeState extends State<ClientHome> {
                                   label: const Text('Enable autostart'),
                                 ),
                                 OutlinedButton.icon(
-                                  onPressed: _busy ||
-                                          !(_autostartStatus?.supported ?? false)
+                                  onPressed:
+                                      _busy ||
+                                          !(_autostartStatus?.supported ??
+                                              false)
                                       ? null
                                       : () => _runTask(
                                           'disable autostart',
@@ -1237,8 +1259,10 @@ class _ClientHomeState extends State<ClientHome> {
                               runSpacing: 12,
                               children: [
                                 FilledButton.icon(
-                                  onPressed: _busy ||
-                                          !(_systemProxyStatus?.supported ?? false)
+                                  onPressed:
+                                      _busy ||
+                                          !(_systemProxyStatus?.supported ??
+                                              false)
                                       ? null
                                       : () => _runTask(
                                           'enable system proxy',
@@ -1248,8 +1272,10 @@ class _ClientHomeState extends State<ClientHome> {
                                   label: const Text('Enable system proxy'),
                                 ),
                                 OutlinedButton.icon(
-                                  onPressed: _busy ||
-                                          !(_systemProxyStatus?.supported ?? false)
+                                  onPressed:
+                                      _busy ||
+                                          !(_systemProxyStatus?.supported ??
+                                              false)
                                       ? null
                                       : () => _runTask(
                                           'disable system proxy',
@@ -1583,7 +1609,8 @@ class _ClientHomeState extends State<ClientHome> {
                                           ),
                                           onSuccess: (response) {
                                             final stack =
-                                                response.data['stack'] as String?;
+                                                response.data['stack']
+                                                    as String?;
                                             if (stack != null && mounted) {
                                               setState(() {
                                                 _stackSummary = stack;
@@ -1615,23 +1642,17 @@ class _ClientHomeState extends State<ClientHome> {
                               runSpacing: 12,
                               children: [
                                 FilledButton.icon(
-                                  onPressed: _busy
-                                      ? null
-                                      : _startProxy,
+                                  onPressed: _busy ? null : _startProxy,
                                   icon: const Icon(Icons.play_arrow),
                                   label: const Text('Start proxy'),
                                 ),
                                 OutlinedButton.icon(
-                                  onPressed: _busy
-                                      ? null
-                                      : _stopProxy,
+                                  onPressed: _busy ? null : _stopProxy,
                                   icon: const Icon(Icons.stop),
                                   label: const Text('Stop'),
                                 ),
                                 OutlinedButton.icon(
-                                  onPressed: _busy
-                                      ? null
-                                      : _refreshStatus,
+                                  onPressed: _busy ? null : _refreshStatus,
                                   icon: const Icon(Icons.refresh),
                                   label: const Text('Refresh'),
                                 ),
@@ -1748,7 +1769,8 @@ class _ClientHomeState extends State<ClientHome> {
                     }
                   } else if (value != ProxyKind.vless &&
                       (_outerSecurityKind == OuterSecurityKind.reality ||
-                          _outerSecurityKind == OuterSecurityKind.anytls)) {
+                          _outerSecurityKind == OuterSecurityKind.anytls ||
+                          _outerSecurityKind == OuterSecurityKind.shadowtls)) {
                     _outerSecurityKind = OuterSecurityKind.none;
                   }
                 });
@@ -1765,7 +1787,8 @@ class _ClientHomeState extends State<ClientHome> {
         _proxyKind == ProxyKind.mixed ||
         _proxyKind == ProxyKind.shadowsocks ||
         _outerSecurityKind == OuterSecurityKind.reality ||
-        _outerSecurityKind == OuterSecurityKind.anytls;
+        _outerSecurityKind == OuterSecurityKind.anytls ||
+        _outerSecurityKind == OuterSecurityKind.shadowtls;
     return SizedBox(
       width: available < 230 ? available : 230,
       child: DropdownButtonFormField<TransportKind>(
@@ -1803,7 +1826,8 @@ class _ClientHomeState extends State<ClientHome> {
         items: [
           for (final kind in OuterSecurityKind.values)
             if ((kind != OuterSecurityKind.reality &&
-                    kind != OuterSecurityKind.anytls) ||
+                    kind != OuterSecurityKind.anytls &&
+                    kind != OuterSecurityKind.shadowtls) ||
                 _proxyKind == ProxyKind.vless)
               DropdownMenuItem(value: kind, child: Text(kind.label)),
         ],
@@ -1814,7 +1838,8 @@ class _ClientHomeState extends State<ClientHome> {
                 setState(() {
                   _outerSecurityKind = value;
                   if (value == OuterSecurityKind.reality ||
-                      value == OuterSecurityKind.anytls) {
+                      value == OuterSecurityKind.anytls ||
+                      value == OuterSecurityKind.shadowtls) {
                     _transportKind = TransportKind.raw;
                   }
                 });
@@ -2011,6 +2036,18 @@ class _ClientHomeState extends State<ClientHome> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+        ];
+      case OuterSecurityKind.shadowtls:
+        return [
+          _responsiveWrap([
+            _field(_shadowTlsServerName, 'ShadowTLS SNI / server name', 320),
+            _field(_shadowTlsPassword, 'ShadowTLS password', 320),
+          ]),
+          const SizedBox(height: 8),
+          const Text(
+            'wrongsv shadowtls defaults to a cloudfront-style cover handshake; override the server name when the deployed fallback destination expects a different SNI.',
           ),
           const SizedBox(height: 12),
         ];

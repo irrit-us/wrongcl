@@ -28,6 +28,7 @@ Verified local proxy coverage currently includes:
 - VLESS raw TCP and raw UDP
 - VLESS + TLS (TCP and UDP)
 - VLESS + AnyTLS (TCP and UDP)
+- VLESS + ShadowTLS (TCP and UDP)
 - VLESS + REALITY (TCP and UDP, with client public key supplied)
 - VLESS + WebSocket, with and without TLS (TCP and UDP)
 - VLESS + HTTPUpgrade, with and without TLS (TCP and UDP)
