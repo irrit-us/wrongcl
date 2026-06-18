@@ -2,7 +2,7 @@ use std::io::{self, Read, Write};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use bytes::Bytes;
@@ -15,10 +15,41 @@ use crate::error::{ClientError, Result};
 use crate::tls;
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+const CONNECT_RETRY_TIMEOUT: Duration = Duration::from_secs(3);
+const CONNECT_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 const NAIVE_PAD_OPS: usize = 8;
 const NAIVE_PAD_MAX_PAYLOAD: usize = u16::MAX as usize;
 
 pub fn connect_naive(
+    server_host: &str,
+    server_port: u16,
+    opts: &NaiveOptions,
+    tls_opts: &TlsOptions,
+    target_host: &str,
+    target_port: u16,
+) -> Result<Box<dyn Tunnel>> {
+    let deadline = Instant::now() + CONNECT_RETRY_TIMEOUT;
+    loop {
+        match connect_naive_once(
+            server_host,
+            server_port,
+            opts,
+            tls_opts,
+            target_host,
+            target_port,
+        ) {
+            Ok(tunnel) => return Ok(tunnel),
+            Err(ClientError::Io(error))
+                if is_retryable_connect_error(&error) && Instant::now() < deadline =>
+            {
+                std::thread::sleep(CONNECT_RETRY_INTERVAL);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+pub fn connect_naive_once(
     server_host: &str,
     server_port: u16,
     opts: &NaiveOptions,
@@ -116,6 +147,34 @@ pub fn connect_naive(
         eof: false,
         _handle: handle,
     }))
+}
+
+fn is_retryable_connect_error(error: &io::Error) -> bool {
+    if matches!(
+        error.kind(),
+        io::ErrorKind::BrokenPipe
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::ConnectionRefused
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::NotConnected
+            | io::ErrorKind::TimedOut
+            | io::ErrorKind::UnexpectedEof
+            | io::ErrorKind::WouldBlock
+    ) {
+        return true;
+    }
+    let message = error.to_string();
+    [
+        "Broken pipe",
+        "Connection refused",
+        "Connection reset",
+        "handshake eof",
+        "peer closed",
+        "Resource temporarily unavailable",
+        "timed out",
+    ]
+    .iter()
+    .any(|fragment| message.contains(fragment))
 }
 
 async fn naive_handshake(

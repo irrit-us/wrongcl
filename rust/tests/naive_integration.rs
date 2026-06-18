@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use wrongcl_native::client::WrongsvClient;
 use wrongcl_native::config::{ClientConfig, LocalProxyConfig, ServerConfig};
@@ -41,7 +41,7 @@ email = "alice@example.com"
     let handle = InboundServer::new(config)
         .unwrap()
         .spawn_with_shutdown(shutdown.clone());
-    wait_for_tcp_listener(SocketAddr::from(([127, 0, 0, 1], port)));
+    thread::sleep(Duration::from_millis(150));
     NaiveServer {
         port,
         _shutdown: shutdown,
@@ -77,24 +77,6 @@ fn free_tcp_port() -> u16 {
         .port()
 }
 
-fn wait_for_tcp_listener(addr: SocketAddr) {
-    let deadline = Instant::now() + Duration::from_secs(3);
-    loop {
-        match TcpStream::connect_timeout(&addr, Duration::from_millis(100)) {
-            Ok(stream) => {
-                let _ = stream.shutdown(Shutdown::Both);
-                return;
-            }
-            Err(error) => {
-                if Instant::now() >= deadline {
-                    panic!("Naive test server did not start on {addr}: {error}");
-                }
-                thread::sleep(Duration::from_millis(25));
-            }
-        }
-    }
-}
-
 fn spawn_tcp_echo_server() -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
@@ -116,6 +98,35 @@ fn spawn_tcp_echo_server() -> SocketAddr {
         }
     });
     addr
+}
+
+fn spawn_flaky_front_proxy(backend_port: u16) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        let mut drop_first = true;
+        for stream in listener.incoming().flatten() {
+            if drop_first {
+                drop_first = false;
+                drop(stream);
+                continue;
+            }
+            let backend = TcpStream::connect(("127.0.0.1", backend_port)).unwrap();
+            let mut client_read = stream.try_clone().unwrap();
+            let mut client_write = stream;
+            let mut backend_read = backend.try_clone().unwrap();
+            let mut backend_write = backend;
+            thread::spawn(move || {
+                let _ = std::io::copy(&mut client_read, &mut backend_write);
+                let _ = backend_write.shutdown(Shutdown::Write);
+            });
+            thread::spawn(move || {
+                let _ = std::io::copy(&mut backend_read, &mut client_write);
+                let _ = client_write.shutdown(Shutdown::Write);
+            });
+        }
+    });
+    port
 }
 
 #[test]
@@ -152,6 +163,22 @@ fn socks_proxy_works_against_naive_server() {
     proxy.stop().unwrap();
 
     assert_eq!(response, b"hello-naive".to_vec());
+}
+
+#[test]
+fn probe_retries_after_initial_connection_drop() {
+    let backend = spawn_naive_server();
+    let front_port = spawn_flaky_front_proxy(backend.port);
+    let echo_addr = spawn_tcp_echo_server();
+
+    let client = WrongsvClient::new(naive_server_config(front_port)).unwrap();
+    let result = client
+        .probe(
+            &Target::new(echo_addr.ip().to_string(), echo_addr.port()).unwrap(),
+            "ping-naive-retry",
+        )
+        .expect("probe over Naive after transient connect drop");
+    assert_eq!(result.preview, "ping-naive-retry");
 }
 
 #[test]
