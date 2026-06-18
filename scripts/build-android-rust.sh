@@ -24,6 +24,7 @@ if [[ "$PROFILE" != "debug" ]]; then
   cargo_args+=(--release)
 fi
 
+cd "$RUST_DIR"
 cargo ndk \
   --platform 24 \
   -t armeabi-v7a \
@@ -31,5 +32,4 @@ cargo ndk \
   -t x86_64 \
   -o "$JNI_LIBS_DIR" \
   build \
-  --manifest-path "$RUST_DIR/Cargo.toml" \
   "${cargo_args[@]}"
