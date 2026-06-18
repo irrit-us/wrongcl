@@ -108,6 +108,12 @@ class _ClientHomeState extends State<ClientHome> {
   final _mixedPassword = TextEditingController();
   final _shadowsocksPassword = TextEditingController();
   String _shadowsocksMethod = 'chacha20-ietf-poly1305';
+  final _wireguardPrivateKey = TextEditingController();
+  final _wireguardPeerPublicKey = TextEditingController();
+  final _wireguardPreSharedKey = TextEditingController();
+  final _wireguardClientIp = TextEditingController(text: '10.66.66.2/32');
+  final _wireguardAllowedIps = TextEditingController(text: '10.66.66.1/32');
+  final _wireguardMtu = TextEditingController(text: '1400');
   final _kcpSeed = TextEditingController();
   final _kcpMtu = TextEditingController(text: '1350');
   final _kcpTti = TextEditingController(text: '50');
@@ -210,6 +216,12 @@ class _ClientHomeState extends State<ClientHome> {
     _mixedUsername.dispose();
     _mixedPassword.dispose();
     _shadowsocksPassword.dispose();
+    _wireguardPrivateKey.dispose();
+    _wireguardPeerPublicKey.dispose();
+    _wireguardPreSharedKey.dispose();
+    _wireguardClientIp.dispose();
+    _wireguardAllowedIps.dispose();
+    _wireguardMtu.dispose();
     _kcpSeed.dispose();
     _kcpMtu.dispose();
     _kcpTti.dispose();
@@ -300,6 +312,22 @@ class _ClientHomeState extends State<ClientHome> {
         return ShadowsocksConfig(
           method: _shadowsocksMethod,
           password: _shadowsocksPassword.text,
+        ).toJson();
+      case ProxyKind.wireguard:
+        final allowedIps = _wireguardAllowedIps.text
+            .split(',')
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toList();
+        return WireGuardConfig(
+          privateKey: _wireguardPrivateKey.text,
+          peerPublicKey: _wireguardPeerPublicKey.text,
+          preSharedKey: _wireguardPreSharedKey.text.isEmpty
+              ? null
+              : _wireguardPreSharedKey.text,
+          clientIp: _wireguardClientIp.text,
+          allowedIps: allowedIps,
+          mtu: int.tryParse(_wireguardMtu.text) ?? 1400,
         ).toJson();
     }
   }
@@ -596,6 +624,12 @@ class _ClientHomeState extends State<ClientHome> {
     _mixedPassword.clear();
     _shadowsocksPassword.clear();
     _shadowsocksMethod = 'chacha20-ietf-poly1305';
+    _wireguardPrivateKey.clear();
+    _wireguardPeerPublicKey.clear();
+    _wireguardPreSharedKey.clear();
+    _wireguardClientIp.text = '10.66.66.2/32';
+    _wireguardAllowedIps.text = '10.66.66.1/32';
+    _wireguardMtu.text = '1400';
     _kcpSeed.clear();
     _kcpMtu.text = '1350';
     _kcpTti.text = '50';
@@ -657,6 +691,8 @@ class _ClientHomeState extends State<ClientHome> {
         return _trojanPassword;
       case 'anytls.password':
         return _anytlsPassword;
+      case 'wireguard.private-key':
+        return _wireguardPrivateKey;
       default:
         return null;
     }
@@ -674,6 +710,8 @@ class _ClientHomeState extends State<ClientHome> {
         return 'Trojan password (required)';
       case 'anytls.password':
         return 'AnyTLS password (required)';
+      case 'wireguard.private-key':
+        return 'WireGuard private-key (required)';
       default:
         return field;
     }
@@ -1203,6 +1241,19 @@ class _ClientHomeState extends State<ClientHome> {
         _shadowsocksMethod = proxy['method'] as String? ?? _shadowsocksMethod;
         _shadowsocksPassword.text =
             proxy['password'] as String? ?? _shadowsocksPassword.text;
+        break;
+      case ProxyKind.wireguard:
+        _wireguardPrivateKey.text =
+            proxy['private-key'] as String? ?? _wireguardPrivateKey.text;
+        _wireguardPeerPublicKey.text =
+            proxy['peer-public-key'] as String? ?? _wireguardPeerPublicKey.text;
+        _wireguardPreSharedKey.text = proxy['pre-shared-key'] as String? ?? '';
+        _wireguardClientIp.text =
+            proxy['client-ip'] as String? ?? _wireguardClientIp.text;
+        final allowedIps =
+            (proxy['allowed-ips'] as List?)?.cast<Object?>() ?? const [];
+        _wireguardAllowedIps.text = allowedIps.join(', ');
+        _wireguardMtu.text = '${proxy['mtu'] ?? _wireguardMtu.text}';
         break;
     }
 
@@ -1905,7 +1956,8 @@ class _ClientHomeState extends State<ClientHome> {
                   if (value == ProxyKind.mixed ||
                       value == ProxyKind.shadowsocks ||
                       value == ProxyKind.hysteria2 ||
-                      value == ProxyKind.tuic) {
+                      value == ProxyKind.tuic ||
+                      value == ProxyKind.wireguard) {
                     _transportKind = TransportKind.raw;
                     _outerSecurityKind = OuterSecurityKind.none;
                   } else if (value == ProxyKind.trojan) {
@@ -1935,6 +1987,7 @@ class _ClientHomeState extends State<ClientHome> {
         _proxyKind == ProxyKind.shadowsocks ||
         _proxyKind == ProxyKind.hysteria2 ||
         _proxyKind == ProxyKind.tuic ||
+        _proxyKind == ProxyKind.wireguard ||
         _outerSecurityKind == OuterSecurityKind.reality ||
         _outerSecurityKind == OuterSecurityKind.anytls ||
         _outerSecurityKind == OuterSecurityKind.shadowtls;
@@ -1974,6 +2027,7 @@ class _ClientHomeState extends State<ClientHome> {
         _proxyKind == ProxyKind.shadowsocks ||
         _proxyKind == ProxyKind.hysteria2 ||
         _proxyKind == ProxyKind.tuic ||
+        _proxyKind == ProxyKind.wireguard ||
         _transportKind == TransportKind.kcp ||
         _transportKind == TransportKind.quic ||
         _transportKind == TransportKind.webtransport ||
@@ -2079,6 +2133,32 @@ class _ClientHomeState extends State<ClientHome> {
           _responsiveWrap([
             _shadowsocksMethodDropdown(),
             _field(_shadowsocksPassword, 'Shadowsocks password', 320),
+          ]),
+          const SizedBox(height: 12),
+        ];
+      case ProxyKind.wireguard:
+        return [
+          _responsiveWrap([
+            _field(_wireguardPrivateKey, 'WireGuard private-key', 420),
+            _field(_wireguardPeerPublicKey, 'WireGuard peer-public-key', 420),
+          ]),
+          const SizedBox(height: 8),
+          _responsiveWrap([
+            _field(
+              _wireguardPreSharedKey,
+              'WireGuard pre-shared-key (optional)',
+              420,
+            ),
+            _field(_wireguardClientIp, 'WireGuard client-ip', 240),
+          ]),
+          const SizedBox(height: 8),
+          _responsiveWrap([
+            _field(
+              _wireguardAllowedIps,
+              'WireGuard allowed-ips (comma separated)',
+              420,
+            ),
+            _field(_wireguardMtu, 'WireGuard MTU', 180),
           ]),
           const SizedBox(height: 12),
         ];

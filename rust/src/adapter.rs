@@ -938,6 +938,53 @@ dest = "cover.example:443"
     }
 
     #[test]
+    fn wireguard_config_reports_partial_and_draft_only() {
+        let cfg: WrongsvConfig = toml::from_str(
+            r#"
+listen = "0.0.0.0:51820"
+
+[wireguard]
+private_key = "EGs4lTSJPmgELx6YiJAmPR2meWi6bY+e9rTdCipSj10="
+server_cidrs = ["10.77.0.1/32"]
+outbound = true
+
+[[wireguard.peers]]
+public_key = "MmLJ5iHFVVBp7VsB0hxfpQ0wEzAbT2KQnpQpj0+RtBw="
+allowed_ips = ["10.77.0.2/32"]
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(active_profile(&cfg), "wireguard");
+        let assessment = active_capability(&cfg);
+        assert_eq!(assessment.support, SupportLevel::Partial);
+        assert!(!assessment.config_adaptable);
+        assert_eq!(assessment.payload_networks, vec![PayloadNetwork::Ip]);
+        assert_eq!(assessment.base_carriers, vec![BaseCarrier::Udp]);
+        assert_eq!(assessment.missing_fields.len(), 1);
+        assert_eq!(assessment.missing_fields[0].field, "wireguard.private-key");
+
+        let resolution = import_resolution_hint(&cfg);
+        let plan = build_wrongcl_adapt_plan(&cfg, &resolution, "wrong.example", "127.0.0.1", 1080)
+            .unwrap();
+        assert!(plan.draft_config.is_some());
+        assert!(plan.strict_config.is_none());
+
+        let err =
+            client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap_err();
+        match err {
+            ClientError::Config(msg) => {
+                assert!(msg.contains("wireguard.private-key"), "msg: {msg}");
+                assert!(
+                    msg.contains("no TUN or routed-tunnel runtime"),
+                    "msg: {msg}"
+                );
+            }
+            other => panic!("expected Config error, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn adapts_gdocsviewer_config() {
         let cfg: WrongsvConfig = toml::from_str(
             r#"

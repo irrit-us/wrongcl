@@ -52,11 +52,13 @@ Direct-probe coverage also exists for the same core transport families.
 Current remaining gaps are no longer in the implemented TCP/UDP transport
 matrix. The main remaining work is:
 
-- unimplemented protocol families such as WireGuard and Naive
+- unimplemented protocol families such as Naive
 - KCP UDP relay
 - Hysteria2 Gecko / Salamander packet obfuscation
 - desktop product work in Flutter / FFI / persistence / packaging
 - client-side prompts for missing fields such as REALITY `public-key`
+- helper-backed WireGuard runtime work; the import/config surface is now partial
+  and still needs a client private-key plus the final runtime
 
 The capability adapter recognizes the rest of wrongsv's profile surface and
 reports `supported`, `partial`, or `unsupported` plus structured missing

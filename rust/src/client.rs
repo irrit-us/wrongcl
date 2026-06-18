@@ -161,6 +161,7 @@ impl WrongsvClient {
             ProxyProtocol::Trojan(opts) => self.connect_trojan(target, &opts),
             ProxyProtocol::Mixed(opts) => self.connect_mixed(target, &opts),
             ProxyProtocol::Shadowsocks(opts) => self.connect_shadowsocks(target, &opts),
+            ProxyProtocol::Wireguard(opts) => self.connect_wireguard(target, &opts),
         }
     }
 
@@ -182,6 +183,7 @@ impl WrongsvClient {
                 true
             }
             ProxyProtocol::Mixed(_) => true,
+            ProxyProtocol::Wireguard(_) => false,
         }
     }
 
@@ -193,6 +195,7 @@ impl WrongsvClient {
             ProxyProtocol::Trojan(opts) => self.connect_trojan_udp(target, &opts),
             ProxyProtocol::Shadowsocks(opts) => self.connect_shadowsocks_udp(target, &opts),
             ProxyProtocol::Mixed(opts) => self.connect_mixed_udp(target, &opts),
+            ProxyProtocol::Wireguard(opts) => self.connect_wireguard_udp(target, &opts),
         }
     }
 
@@ -534,6 +537,26 @@ impl WrongsvClient {
                 ClientError::Config("failed to resolve Shadowsocks server address".into())
             })?;
         open_shadowsocks_udp_session(config, server_addr, target.clone())
+    }
+
+    fn connect_wireguard(
+        &self,
+        _target: &Target,
+        _opts: &crate::endpoint::WireGuardOptions,
+    ) -> Result<Box<dyn Tunnel>> {
+        Err(ClientError::UnsupportedProtocol(
+            "WireGuard runtime is still being built in wrongcl".into(),
+        ))
+    }
+
+    fn connect_wireguard_udp(
+        &self,
+        _target: &Target,
+        _opts: &crate::endpoint::WireGuardOptions,
+    ) -> Result<Box<dyn UdpSession>> {
+        Err(ClientError::UnsupportedProtocol(
+            "WireGuard runtime is still being built in wrongcl".into(),
+        ))
     }
 
     fn open_proxy_stack(&self) -> Result<(Box<dyn Tunnel>, Option<TcpStream>)> {

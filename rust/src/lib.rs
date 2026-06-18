@@ -31,7 +31,7 @@ pub use endpoint::{
     AnyTlsOptions, Endpoint, GdocsViewerOptions, GrpcOptions, HuOptions, Hysteria2Options,
     KcpOptions, MeekOptions, MixedOptions, OuterSecurity, ProxyProtocol, QuicOptions,
     RealityOptions, ShadowsocksOptions, TlsOptions, Transport, TrojanOptions, TuicOptions,
-    VlessOptions, WebTransportOptions, WsOptions, XhttpOptions,
+    VlessOptions, WebTransportOptions, WireGuardOptions, WsOptions, XhttpOptions,
 };
 pub use error::{ClientError, Result};
 pub use manager::{global_manager, ConnectionManager};

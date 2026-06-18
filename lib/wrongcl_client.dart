@@ -10,7 +10,8 @@ enum ProxyKind {
   tuic('tuic', 'TUIC'),
   trojan('trojan', 'Trojan'),
   mixed('mixed', 'Mixed remote SOCKS/HTTP'),
-  shadowsocks('shadowsocks', 'Shadowsocks');
+  shadowsocks('shadowsocks', 'Shadowsocks'),
+  wireguard('wireguard', 'WireGuard');
 
   const ProxyKind(this.id, this.label);
   final String id;
@@ -239,6 +240,34 @@ class MeekConfig {
   final String? host;
 
   Map<String, Object?> toJson() => {'type': 'meek', 'path': path, 'host': host};
+}
+
+class WireGuardConfig {
+  const WireGuardConfig({
+    required this.privateKey,
+    required this.peerPublicKey,
+    required this.clientIp,
+    required this.allowedIps,
+    this.preSharedKey,
+    this.mtu = 1400,
+  });
+
+  final String privateKey;
+  final String peerPublicKey;
+  final String? preSharedKey;
+  final String clientIp;
+  final List<String> allowedIps;
+  final int mtu;
+
+  Map<String, Object?> toJson() => {
+    'type': 'wireguard',
+    'private-key': privateKey,
+    'peer-public-key': peerPublicKey,
+    'pre-shared-key': preSharedKey,
+    'client-ip': clientIp,
+    'allowed-ips': allowedIps,
+    'mtu': mtu,
+  };
 }
 
 class GdocsViewerConfig {

@@ -33,6 +33,7 @@ pub enum ProxyProtocol {
     Trojan(TrojanOptions),
     Mixed(MixedOptions),
     Shadowsocks(ShadowsocksOptions),
+    Wireguard(WireGuardOptions),
 }
 
 impl ProxyProtocol {
@@ -44,6 +45,7 @@ impl ProxyProtocol {
             ProxyProtocol::Trojan(_) => "trojan",
             ProxyProtocol::Mixed(_) => "mixed",
             ProxyProtocol::Shadowsocks(_) => "shadowsocks",
+            ProxyProtocol::Wireguard(_) => "wireguard",
         }
     }
 
@@ -55,6 +57,7 @@ impl ProxyProtocol {
             ProxyProtocol::Trojan(_) => "Trojan",
             ProxyProtocol::Mixed(_) => "Mixed remote SOCKS/HTTP",
             ProxyProtocol::Shadowsocks(_) => "Shadowsocks",
+            ProxyProtocol::Wireguard(_) => "WireGuard",
         }
     }
 }
@@ -122,6 +125,26 @@ impl Default for ShadowsocksOptions {
             password: String::new(),
         }
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WireGuardOptions {
+    #[serde(rename = "private-key")]
+    pub private_key: String,
+    #[serde(rename = "peer-public-key")]
+    pub peer_public_key: String,
+    #[serde(default, rename = "pre-shared-key")]
+    pub pre_shared_key: Option<String>,
+    #[serde(rename = "client-ip")]
+    pub client_ip: String,
+    #[serde(rename = "allowed-ips")]
+    pub allowed_ips: Vec<String>,
+    #[serde(default = "default_wireguard_mtu")]
+    pub mtu: u32,
+}
+
+fn default_wireguard_mtu() -> u32 {
+    1400
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -495,6 +518,52 @@ impl Endpoint {
                     ));
                 }
             }
+            ProxyProtocol::Wireguard(opts) => {
+                if !matches!(self.transport, Transport::Raw) {
+                    return Err(ClientError::Config(
+                        "WireGuard owns its UDP tunnel and must use raw transport in wrongcl"
+                            .into(),
+                    ));
+                }
+                if !matches!(self.outer_security, OuterSecurity::None) {
+                    return Err(ClientError::Config(
+                        "WireGuard does not wrap wrongcl outer security".into(),
+                    ));
+                }
+                if opts.private_key.trim().is_empty() {
+                    return Err(ClientError::Config("WireGuard requires private-key".into()));
+                }
+                if decode_32_byte_key(&opts.private_key).is_none() {
+                    return Err(ClientError::Config(
+                        "WireGuard private-key must be base64 for 32 bytes".into(),
+                    ));
+                }
+                if decode_32_byte_key(&opts.peer_public_key).is_none() {
+                    return Err(ClientError::Config(
+                        "WireGuard peer-public-key must be base64 for 32 bytes".into(),
+                    ));
+                }
+                if let Some(pre_shared_key) = &opts.pre_shared_key {
+                    if decode_32_byte_key(pre_shared_key).is_none() {
+                        return Err(ClientError::Config(
+                            "WireGuard pre-shared-key must be base64 for 32 bytes".into(),
+                        ));
+                    }
+                }
+                if opts.client_ip.trim().is_empty() {
+                    return Err(ClientError::Config("WireGuard requires client-ip".into()));
+                }
+                if opts.allowed_ips.is_empty() {
+                    return Err(ClientError::Config(
+                        "WireGuard requires at least one allowed-ips entry".into(),
+                    ));
+                }
+                if opts.mtu < 576 {
+                    return Err(ClientError::Config(
+                        "WireGuard mtu must be at least 576".into(),
+                    ));
+                }
+            }
         }
 
         if let OuterSecurity::Tls(opts) = &self.outer_security {
@@ -737,6 +806,9 @@ impl Endpoint {
         if matches!(self.proxy, ProxyProtocol::Tuic(_)) {
             return "TUIC → QUIC → TLS → TCP".into();
         }
+        if matches!(self.proxy, ProxyProtocol::Wireguard(_)) {
+            return "Payload IP → WireGuard → UDP".into();
+        }
         if matches!(self.transport, Transport::Quic(_)) {
             return "VLESS → QUIC → TLS → TCP".into();
         }
@@ -770,4 +842,11 @@ impl Endpoint {
         parts.push("TCP");
         parts.join(" → ")
     }
+}
+
+fn decode_32_byte_key(value: &str) -> Option<[u8; 32]> {
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(value)
+        .ok()?;
+    decoded.try_into().ok()
 }
