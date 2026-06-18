@@ -7,6 +7,7 @@ import 'package:ffi/ffi.dart';
 enum ProxyKind {
   vless('vless', 'VLESS'),
   hysteria2('hysteria2', 'Hysteria2'),
+  tuic('tuic', 'TUIC'),
   trojan('trojan', 'Trojan'),
   mixed('mixed', 'Mixed remote SOCKS/HTTP'),
   shadowsocks('shadowsocks', 'Shadowsocks');
@@ -84,6 +85,25 @@ class Hysteria2Config {
     'server-name': serverName,
     'password': password,
     'udp-enabled': udpEnabled,
+  };
+}
+
+class TuicConfig {
+  const TuicConfig({
+    required this.serverName,
+    required this.uuid,
+    required this.password,
+  });
+
+  final String serverName;
+  final String uuid;
+  final String password;
+
+  Map<String, Object?> toJson() => {
+    'type': 'tuic',
+    'server-name': serverName,
+    'uuid': uuid,
+    'password': password,
   };
 }
 

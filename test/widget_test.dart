@@ -663,7 +663,14 @@ class FakeWrongclClient implements WrongclClient {
       message: 'native ready',
       data: {
         'version': 'test',
-        'proxies': ['vless', 'hysteria2', 'trojan', 'mixed', 'shadowsocks'],
+        'proxies': [
+          'vless',
+          'hysteria2',
+          'tuic',
+          'trojan',
+          'mixed',
+          'shadowsocks',
+        ],
         'transports': ['raw', 'websocket', 'httpupgrade'],
         'outer_security': ['none', 'tls', 'reality', 'anytls', 'shadowtls'],
       },

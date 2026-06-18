@@ -26,6 +26,7 @@ use crate::shadowsocks as ss;
 use crate::shadowtls;
 use crate::tls;
 use crate::trojan;
+use crate::tuic;
 use crate::vision;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -151,6 +152,7 @@ impl WrongsvClient {
         match self.server.endpoint.proxy.clone() {
             ProxyProtocol::Vless(opts) => self.connect_vless(target, &opts),
             ProxyProtocol::Hysteria2(opts) => self.connect_hysteria2(target, &opts),
+            ProxyProtocol::Tuic(opts) => self.connect_tuic(target, &opts),
             ProxyProtocol::Trojan(opts) => self.connect_trojan(target, &opts),
             ProxyProtocol::Mixed(opts) => self.connect_mixed(target, &opts),
             ProxyProtocol::Shadowsocks(opts) => self.connect_shadowsocks(target, &opts),
@@ -161,7 +163,9 @@ impl WrongsvClient {
         match &self.server.endpoint.proxy {
             ProxyProtocol::Vless(opts) => opts.flow.trim().is_empty(),
             ProxyProtocol::Hysteria2(opts) => opts.udp_enabled,
-            ProxyProtocol::Trojan(_) | ProxyProtocol::Shadowsocks(_) => true,
+            ProxyProtocol::Tuic(_) | ProxyProtocol::Trojan(_) | ProxyProtocol::Shadowsocks(_) => {
+                true
+            }
             ProxyProtocol::Mixed(_) => false,
         }
     }
@@ -170,6 +174,7 @@ impl WrongsvClient {
         match self.server.endpoint.proxy.clone() {
             ProxyProtocol::Vless(opts) => self.connect_vless_udp(target, &opts),
             ProxyProtocol::Hysteria2(opts) => self.connect_hysteria2_udp(target, &opts),
+            ProxyProtocol::Tuic(opts) => self.connect_tuic_udp(target, &opts),
             ProxyProtocol::Trojan(opts) => self.connect_trojan_udp(target, &opts),
             ProxyProtocol::Shadowsocks(opts) => self.connect_shadowsocks_udp(target, &opts),
             ProxyProtocol::Mixed(_) => Err(ClientError::UnsupportedProtocol(
@@ -260,6 +265,22 @@ impl WrongsvClient {
             ));
         }
         hysteria2::connect_hysteria2_udp(&self.server.host, self.server.port, opts, target.clone())
+    }
+
+    fn connect_tuic(
+        &self,
+        target: &Target,
+        opts: &crate::endpoint::TuicOptions,
+    ) -> Result<Box<dyn Tunnel>> {
+        tuic::connect_tuic(&self.server.host, self.server.port, opts, target.clone())
+    }
+
+    fn connect_tuic_udp(
+        &self,
+        target: &Target,
+        opts: &crate::endpoint::TuicOptions,
+    ) -> Result<Box<dyn UdpSession>> {
+        tuic::connect_tuic_udp(&self.server.host, self.server.port, opts, target.clone())
     }
 
     fn connect_trojan(&self, target: &Target, opts: &TrojanOptions) -> Result<Box<dyn Tunnel>> {

@@ -15,6 +15,7 @@ pub mod shadowsocks;
 pub mod shadowtls;
 pub mod tls;
 pub mod trojan;
+pub mod tuic;
 pub mod vision;
 pub mod xhttp;
 
@@ -24,7 +25,7 @@ pub use config::{ClientConfig, LocalProxyConfig, ServerConfig};
 pub use endpoint::{
     AnyTlsOptions, Endpoint, GrpcOptions, HuOptions, Hysteria2Options, MixedOptions, OuterSecurity,
     ProxyProtocol, RealityOptions, ShadowsocksOptions, TlsOptions, Transport, TrojanOptions,
-    VlessOptions, WsOptions, XhttpOptions,
+    TuicOptions, VlessOptions, WsOptions, XhttpOptions,
 };
 pub use error::{ClientError, Result};
 pub use manager::{global_manager, ConnectionManager};

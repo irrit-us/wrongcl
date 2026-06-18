@@ -98,6 +98,11 @@ class _ClientHomeState extends State<ClientHome> {
   );
   final _hysteria2Password = TextEditingController();
   bool _hysteria2UdpEnabled = true;
+  final _tuicServerName = TextEditingController(text: 'foo.cloudfront.net');
+  final _tuicUuid = TextEditingController(
+    text: '12345678-1234-1234-1234-123456789abc',
+  );
+  final _tuicPassword = TextEditingController();
   final _trojanPassword = TextEditingController();
   final _mixedUsername = TextEditingController();
   final _mixedPassword = TextEditingController();
@@ -186,6 +191,9 @@ class _ClientHomeState extends State<ClientHome> {
     _uuid.dispose();
     _hysteria2ServerName.dispose();
     _hysteria2Password.dispose();
+    _tuicServerName.dispose();
+    _tuicUuid.dispose();
+    _tuicPassword.dispose();
     _trojanPassword.dispose();
     _mixedUsername.dispose();
     _mixedPassword.dispose();
@@ -250,6 +258,14 @@ class _ClientHomeState extends State<ClientHome> {
               : _hysteria2ServerName.text,
           password: _hysteria2Password.text,
           udpEnabled: _hysteria2UdpEnabled,
+        ).toJson();
+      case ProxyKind.tuic:
+        return TuicConfig(
+          serverName: _tuicServerName.text.isEmpty
+              ? 'foo.cloudfront.net'
+              : _tuicServerName.text,
+          uuid: _tuicUuid.text,
+          password: _tuicPassword.text,
         ).toJson();
       case ProxyKind.trojan:
         return TrojanConfig(password: _trojanPassword.text).toJson();
@@ -515,6 +531,9 @@ class _ClientHomeState extends State<ClientHome> {
     _hysteria2ServerName.text = 'foo.cloudfront.net';
     _hysteria2Password.clear();
     _hysteria2UdpEnabled = true;
+    _tuicServerName.text = 'foo.cloudfront.net';
+    _tuicUuid.text = '12345678-1234-1234-1234-123456789abc';
+    _tuicPassword.clear();
     _trojanPassword.clear();
     _mixedUsername.clear();
     _mixedPassword.clear();
@@ -1094,6 +1113,12 @@ class _ClientHomeState extends State<ClientHome> {
         _hysteria2Password.text =
             proxy['password'] as String? ?? _hysteria2Password.text;
         _hysteria2UdpEnabled = proxy['udp-enabled'] != false;
+        break;
+      case ProxyKind.tuic:
+        _tuicServerName.text =
+            proxy['server-name'] as String? ?? _tuicServerName.text;
+        _tuicUuid.text = proxy['uuid'] as String? ?? _tuicUuid.text;
+        _tuicPassword.text = proxy['password'] as String? ?? _tuicPassword.text;
         break;
       case ProxyKind.trojan:
         _trojanPassword.text =
@@ -1784,7 +1809,8 @@ class _ClientHomeState extends State<ClientHome> {
                   _proxyKind = value;
                   if (value == ProxyKind.mixed ||
                       value == ProxyKind.shadowsocks ||
-                      value == ProxyKind.hysteria2) {
+                      value == ProxyKind.hysteria2 ||
+                      value == ProxyKind.tuic) {
                     _transportKind = TransportKind.raw;
                     _outerSecurityKind = OuterSecurityKind.none;
                   } else if (value == ProxyKind.trojan) {
@@ -1813,6 +1839,7 @@ class _ClientHomeState extends State<ClientHome> {
         _proxyKind == ProxyKind.mixed ||
         _proxyKind == ProxyKind.shadowsocks ||
         _proxyKind == ProxyKind.hysteria2 ||
+        _proxyKind == ProxyKind.tuic ||
         _outerSecurityKind == OuterSecurityKind.reality ||
         _outerSecurityKind == OuterSecurityKind.anytls ||
         _outerSecurityKind == OuterSecurityKind.shadowtls;
@@ -1844,6 +1871,7 @@ class _ClientHomeState extends State<ClientHome> {
         _proxyKind == ProxyKind.mixed ||
         _proxyKind == ProxyKind.shadowsocks ||
         _proxyKind == ProxyKind.hysteria2 ||
+        _proxyKind == ProxyKind.tuic ||
         _proxyKind == ProxyKind.trojan;
     return SizedBox(
       width: available < 230 ? available : 230,
@@ -1916,6 +1944,16 @@ class _ClientHomeState extends State<ClientHome> {
               'Disable this only when the wrongsv hysteria2 server sets disable_udp = true.',
             ),
           ),
+          const SizedBox(height: 12),
+        ];
+      case ProxyKind.tuic:
+        return [
+          _responsiveWrap([
+            _field(_tuicServerName, 'TUIC SNI / server name', 320),
+            _field(_tuicUuid, 'TUIC user UUID', 420),
+          ]),
+          const SizedBox(height: 8),
+          _responsiveWrap([_field(_tuicPassword, 'TUIC password', 320)]),
           const SizedBox(height: 12),
         ];
       case ProxyKind.trojan:

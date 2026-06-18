@@ -707,6 +707,47 @@ disable_udp = false
     }
 
     #[test]
+    fn adapts_tuic_config() {
+        let cfg: WrongsvConfig = toml::from_str(
+            r#"
+listen = "0.0.0.0:443"
+
+[tuic]
+
+[[tuic.users]]
+uuid = "12345678-1234-1234-1234-123456789abc"
+password = "tuic-pass"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(active_profile(&cfg), "tuic");
+        let assessment = active_capability(&cfg);
+        assert_eq!(assessment.support, SupportLevel::Supported);
+        assert!(assessment.config_adaptable);
+        assert_eq!(
+            assessment.payload_networks,
+            vec![PayloadNetwork::Tcp, PayloadNetwork::Udp]
+        );
+        assert_eq!(assessment.base_carriers, vec![BaseCarrier::Udp]);
+
+        let config =
+            client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
+        match &config.server.endpoint.proxy {
+            ProxyProtocol::Tuic(opts) => {
+                assert_eq!(opts.server_name, "foo.cloudfront.net");
+                assert_eq!(opts.uuid, "12345678-1234-1234-1234-123456789abc");
+                assert_eq!(opts.password, "tuic-pass");
+            }
+            other => panic!("expected TUIC, got {other:?}"),
+        }
+        assert_eq!(
+            config.server.endpoint.stack_summary(),
+            "TUIC → QUIC → TLS → TCP"
+        );
+    }
+
+    #[test]
     fn anytls_config_missing_password_rejected() {
         let err = toml::from_str::<WrongsvConfig>(
             r#"
