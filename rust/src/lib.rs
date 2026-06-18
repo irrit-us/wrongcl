@@ -6,6 +6,7 @@ pub mod endpoint;
 pub mod error;
 pub mod ffi;
 pub mod grpc;
+pub mod hysteria2;
 pub mod manager;
 pub mod protocol;
 pub mod proxy;
@@ -21,9 +22,9 @@ pub use adapter::{adapt_wrongsv_config, inspect_wrongsv_config, AdaptedConfig, C
 pub use client::{ProbeResult, Tunnel, WrongsvClient};
 pub use config::{ClientConfig, LocalProxyConfig, ServerConfig};
 pub use endpoint::{
-    AnyTlsOptions, Endpoint, GrpcOptions, HuOptions, MixedOptions, OuterSecurity, ProxyProtocol,
-    RealityOptions, ShadowsocksOptions, TlsOptions, Transport, TrojanOptions, VlessOptions,
-    WsOptions, XhttpOptions,
+    AnyTlsOptions, Endpoint, GrpcOptions, HuOptions, Hysteria2Options, MixedOptions, OuterSecurity,
+    ProxyProtocol, RealityOptions, ShadowsocksOptions, TlsOptions, Transport, TrojanOptions,
+    VlessOptions, WsOptions, XhttpOptions,
 };
 pub use error::{ClientError, Result};
 pub use manager::{global_manager, ConnectionManager};

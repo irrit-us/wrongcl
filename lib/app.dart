@@ -93,6 +93,11 @@ class _ClientHomeState extends State<ClientHome> {
   final _uuid = TextEditingController(
     text: '12345678-1234-1234-1234-123456789abc',
   );
+  final _hysteria2ServerName = TextEditingController(
+    text: 'foo.cloudfront.net',
+  );
+  final _hysteria2Password = TextEditingController();
+  bool _hysteria2UdpEnabled = true;
   final _trojanPassword = TextEditingController();
   final _mixedUsername = TextEditingController();
   final _mixedPassword = TextEditingController();
@@ -179,6 +184,8 @@ class _ClientHomeState extends State<ClientHome> {
     _serverHost.dispose();
     _serverPort.dispose();
     _uuid.dispose();
+    _hysteria2ServerName.dispose();
+    _hysteria2Password.dispose();
     _trojanPassword.dispose();
     _mixedUsername.dispose();
     _mixedPassword.dispose();
@@ -236,6 +243,14 @@ class _ClientHomeState extends State<ClientHome> {
         return const VlessConfig(uuid: '').toJson()
           ..['uuid'] = _uuid.text
           ..['flow'] = _vlessVisionFlow ? 'xtls-rprx-vision' : '';
+      case ProxyKind.hysteria2:
+        return Hysteria2Config(
+          serverName: _hysteria2ServerName.text.isEmpty
+              ? 'foo.cloudfront.net'
+              : _hysteria2ServerName.text,
+          password: _hysteria2Password.text,
+          udpEnabled: _hysteria2UdpEnabled,
+        ).toJson();
       case ProxyKind.trojan:
         return TrojanConfig(password: _trojanPassword.text).toJson();
       case ProxyKind.mixed:
@@ -497,6 +512,9 @@ class _ClientHomeState extends State<ClientHome> {
     _serverHost.text = '127.0.0.1';
     _serverPort.text = '443';
     _uuid.text = '12345678-1234-1234-1234-123456789abc';
+    _hysteria2ServerName.text = 'foo.cloudfront.net';
+    _hysteria2Password.clear();
+    _hysteria2UdpEnabled = true;
     _trojanPassword.clear();
     _mixedUsername.clear();
     _mixedPassword.clear();
@@ -1069,6 +1087,13 @@ class _ClientHomeState extends State<ClientHome> {
         _uuid.text = proxy['uuid'] as String? ?? _uuid.text;
         _vlessVisionFlow =
             (proxy['flow'] as String? ?? '') == 'xtls-rprx-vision';
+        break;
+      case ProxyKind.hysteria2:
+        _hysteria2ServerName.text =
+            proxy['server-name'] as String? ?? _hysteria2ServerName.text;
+        _hysteria2Password.text =
+            proxy['password'] as String? ?? _hysteria2Password.text;
+        _hysteria2UdpEnabled = proxy['udp-enabled'] != false;
         break;
       case ProxyKind.trojan:
         _trojanPassword.text =
@@ -1758,7 +1783,8 @@ class _ClientHomeState extends State<ClientHome> {
                 setState(() {
                   _proxyKind = value;
                   if (value == ProxyKind.mixed ||
-                      value == ProxyKind.shadowsocks) {
+                      value == ProxyKind.shadowsocks ||
+                      value == ProxyKind.hysteria2) {
                     _transportKind = TransportKind.raw;
                     _outerSecurityKind = OuterSecurityKind.none;
                   } else if (value == ProxyKind.trojan) {
@@ -1786,6 +1812,7 @@ class _ClientHomeState extends State<ClientHome> {
         _busy ||
         _proxyKind == ProxyKind.mixed ||
         _proxyKind == ProxyKind.shadowsocks ||
+        _proxyKind == ProxyKind.hysteria2 ||
         _outerSecurityKind == OuterSecurityKind.reality ||
         _outerSecurityKind == OuterSecurityKind.anytls ||
         _outerSecurityKind == OuterSecurityKind.shadowtls;
@@ -1816,6 +1843,7 @@ class _ClientHomeState extends State<ClientHome> {
         _busy ||
         _proxyKind == ProxyKind.mixed ||
         _proxyKind == ProxyKind.shadowsocks ||
+        _proxyKind == ProxyKind.hysteria2 ||
         _proxyKind == ProxyKind.trojan;
     return SizedBox(
       width: available < 230 ? available : 230,
@@ -1865,6 +1893,27 @@ class _ClientHomeState extends State<ClientHome> {
             title: const Text('XTLS Vision flow (xtls-rprx-vision)'),
             subtitle: const Text(
               'Adds Vision padding/splice on the inner stream. Server must enable the same flow.',
+            ),
+          ),
+          const SizedBox(height: 12),
+        ];
+      case ProxyKind.hysteria2:
+        return [
+          _responsiveWrap([
+            _field(_hysteria2ServerName, 'Hysteria2 SNI / server name', 320),
+            _field(_hysteria2Password, 'Hysteria2 password', 320),
+          ]),
+          const SizedBox(height: 4),
+          CheckboxListTile(
+            value: _hysteria2UdpEnabled,
+            onChanged: (value) =>
+                setState(() => _hysteria2UdpEnabled = value ?? true),
+            controlAffinity: ListTileControlAffinity.leading,
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: const Text('Enable UDP relay'),
+            subtitle: const Text(
+              'Disable this only when the wrongsv hysteria2 server sets disable_udp = true.',
             ),
           ),
           const SizedBox(height: 12),

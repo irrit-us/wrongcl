@@ -6,6 +6,7 @@ import 'package:ffi/ffi.dart';
 
 enum ProxyKind {
   vless('vless', 'VLESS'),
+  hysteria2('hysteria2', 'Hysteria2'),
   trojan('trojan', 'Trojan'),
   mixed('mixed', 'Mixed remote SOCKS/HTTP'),
   shadowsocks('shadowsocks', 'Shadowsocks');
@@ -65,6 +66,25 @@ class TrojanConfig {
   final String password;
 
   Map<String, Object?> toJson() => {'type': 'trojan', 'password': password};
+}
+
+class Hysteria2Config {
+  const Hysteria2Config({
+    required this.serverName,
+    required this.password,
+    this.udpEnabled = true,
+  });
+
+  final String serverName;
+  final String password;
+  final bool udpEnabled;
+
+  Map<String, Object?> toJson() => {
+    'type': 'hysteria2',
+    'server-name': serverName,
+    'password': password,
+    'udp-enabled': udpEnabled,
+  };
 }
 
 class MixedConfig {

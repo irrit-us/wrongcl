@@ -26,6 +26,7 @@ impl Default for Endpoint {
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum ProxyProtocol {
     Vless(VlessOptions),
+    Hysteria2(Hysteria2Options),
     Trojan(TrojanOptions),
     Mixed(MixedOptions),
     Shadowsocks(ShadowsocksOptions),
@@ -35,6 +36,7 @@ impl ProxyProtocol {
     pub fn id(&self) -> &'static str {
         match self {
             ProxyProtocol::Vless(_) => "vless",
+            ProxyProtocol::Hysteria2(_) => "hysteria2",
             ProxyProtocol::Trojan(_) => "trojan",
             ProxyProtocol::Mixed(_) => "mixed",
             ProxyProtocol::Shadowsocks(_) => "shadowsocks",
@@ -44,6 +46,7 @@ impl ProxyProtocol {
     pub fn display_name(&self) -> &'static str {
         match self {
             ProxyProtocol::Vless(_) => "VLESS",
+            ProxyProtocol::Hysteria2(_) => "Hysteria2",
             ProxyProtocol::Trojan(_) => "Trojan",
             ProxyProtocol::Mixed(_) => "Mixed remote SOCKS/HTTP",
             ProxyProtocol::Shadowsocks(_) => "Shadowsocks",
@@ -70,6 +73,19 @@ impl Default for VlessOptions {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TrojanOptions {
     pub password: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Hysteria2Options {
+    #[serde(rename = "server-name")]
+    pub server_name: String,
+    pub password: String,
+    #[serde(default = "default_udp_enabled", rename = "udp-enabled")]
+    pub udp_enabled: bool,
+}
+
+fn default_udp_enabled() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -297,6 +313,30 @@ impl Endpoint {
                     )));
                 }
             }
+            ProxyProtocol::Hysteria2(opts) => {
+                if !matches!(self.transport, Transport::Raw) {
+                    return Err(ClientError::Config(
+                        "Hysteria2 owns its QUIC transport and must use raw transport in wrongcl"
+                            .into(),
+                    ));
+                }
+                if !matches!(self.outer_security, OuterSecurity::None) {
+                    return Err(ClientError::Config(
+                        "Hysteria2 owns its TLS layer and does not wrap wrongcl outer security"
+                            .into(),
+                    ));
+                }
+                if opts.server_name.trim().is_empty() {
+                    return Err(ClientError::Config(
+                        "Hysteria2 requires server-name (SNI for the QUIC handshake)".into(),
+                    ));
+                }
+                if opts.password.trim().is_empty() {
+                    return Err(ClientError::Config(
+                        "Hysteria2 requires a non-empty password".into(),
+                    ));
+                }
+            }
             ProxyProtocol::Trojan(opts) => {
                 if opts.password.trim().is_empty() {
                     return Err(ClientError::Config(
@@ -472,6 +512,9 @@ impl Endpoint {
     }
 
     pub fn stack_summary(&self) -> String {
+        if matches!(self.proxy, ProxyProtocol::Hysteria2(_)) {
+            return "Hysteria2 → QUIC → TLS → TCP".into();
+        }
         let mut parts: Vec<&str> = Vec::new();
         parts.push(self.proxy.display_name());
         match self.transport {

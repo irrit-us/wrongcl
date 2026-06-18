@@ -13,10 +13,11 @@ use wrongsv_vless_encoding::{LengthPacketReader, LengthPacketWriter, PacketReadE
 use crate::anytls;
 use crate::config::ServerConfig;
 use crate::endpoint::{
-    Endpoint, HuOptions, MixedOptions, OuterSecurity, ProxyProtocol, ShadowsocksOptions, Transport,
-    TrojanOptions, VlessOptions, WsOptions,
+    Endpoint, HuOptions, Hysteria2Options, MixedOptions, OuterSecurity, ProxyProtocol,
+    ShadowsocksOptions, Transport, TrojanOptions, VlessOptions, WsOptions,
 };
 use crate::error::{ClientError, Result};
+use crate::hysteria2;
 use crate::protocol::{
     encode_raw_vless_header, encode_udp_vless_header, read_raw_vless_response, Target,
 };
@@ -149,6 +150,7 @@ impl WrongsvClient {
     pub fn connect(&self, target: &Target) -> Result<Box<dyn Tunnel>> {
         match self.server.endpoint.proxy.clone() {
             ProxyProtocol::Vless(opts) => self.connect_vless(target, &opts),
+            ProxyProtocol::Hysteria2(opts) => self.connect_hysteria2(target, &opts),
             ProxyProtocol::Trojan(opts) => self.connect_trojan(target, &opts),
             ProxyProtocol::Mixed(opts) => self.connect_mixed(target, &opts),
             ProxyProtocol::Shadowsocks(opts) => self.connect_shadowsocks(target, &opts),
@@ -158,6 +160,7 @@ impl WrongsvClient {
     pub fn supports_udp(&self) -> bool {
         match &self.server.endpoint.proxy {
             ProxyProtocol::Vless(opts) => opts.flow.trim().is_empty(),
+            ProxyProtocol::Hysteria2(opts) => opts.udp_enabled,
             ProxyProtocol::Trojan(_) | ProxyProtocol::Shadowsocks(_) => true,
             ProxyProtocol::Mixed(_) => false,
         }
@@ -166,6 +169,7 @@ impl WrongsvClient {
     pub fn connect_udp_session(&self, target: &Target) -> Result<Box<dyn UdpSession>> {
         match self.server.endpoint.proxy.clone() {
             ProxyProtocol::Vless(opts) => self.connect_vless_udp(target, &opts),
+            ProxyProtocol::Hysteria2(opts) => self.connect_hysteria2_udp(target, &opts),
             ProxyProtocol::Trojan(opts) => self.connect_trojan_udp(target, &opts),
             ProxyProtocol::Shadowsocks(opts) => self.connect_shadowsocks_udp(target, &opts),
             ProxyProtocol::Mixed(_) => Err(ClientError::UnsupportedProtocol(
@@ -235,6 +239,27 @@ impl WrongsvClient {
             clear_timeouts(&handle)?;
         }
         open_stream_udp_session(stream, target.clone())
+    }
+
+    fn connect_hysteria2(
+        &self,
+        target: &Target,
+        opts: &Hysteria2Options,
+    ) -> Result<Box<dyn Tunnel>> {
+        hysteria2::connect_hysteria2(&self.server.host, self.server.port, opts, target.clone())
+    }
+
+    fn connect_hysteria2_udp(
+        &self,
+        target: &Target,
+        opts: &Hysteria2Options,
+    ) -> Result<Box<dyn UdpSession>> {
+        if !opts.udp_enabled {
+            return Err(ClientError::UnsupportedProtocol(
+                "Hysteria2 UDP relay is disabled for this wrongcl profile".into(),
+            ));
+        }
+        hysteria2::connect_hysteria2_udp(&self.server.host, self.server.port, opts, target.clone())
     }
 
     fn connect_trojan(&self, target: &Target, opts: &TrojanOptions) -> Result<Box<dyn Tunnel>> {

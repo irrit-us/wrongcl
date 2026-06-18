@@ -30,6 +30,7 @@ Verified local proxy coverage currently includes:
 - VLESS + AnyTLS (TCP and UDP)
 - VLESS + ShadowTLS (TCP and UDP)
 - VLESS + REALITY (TCP and UDP, with client public key supplied)
+- Hysteria2 over QUIC/TLS (TCP and UDP; Gecko/Salamander obfs not yet wired in wrongcl)
 - VLESS + WebSocket, with and without TLS (TCP and UDP)
 - VLESS + HTTPUpgrade, with and without TLS (TCP and UDP)
 - VLESS + XHTTP, with and without TLS (TCP and UDP)
@@ -45,7 +46,8 @@ Direct-probe coverage also exists for the same core transport families.
 Current remaining gaps are no longer in the implemented TCP/UDP transport
 matrix. The main remaining work is:
 
-- unimplemented protocol families such as QUIC/WebTransport/Hysteria2/TUIC/KCP
+- unimplemented protocol families such as QUIC/WebTransport/TUIC/KCP
+- Hysteria2 Gecko / Salamander packet obfuscation
 - desktop product work in Flutter / FFI / persistence / packaging
 - client-side prompts for missing fields such as REALITY `public-key`
 

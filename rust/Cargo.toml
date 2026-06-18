@@ -14,10 +14,13 @@ bytes = "1"
 clap = { version = "4", features = ["derive"] }
 ctrlc = "3"
 h2 = "0.4"
+h3 = "0.0.8"
+h3-quinn = "0.0.10"
 hkdf = "0.12"
 hmac = "0.12"
 http = "1"
 prost = "0.14"
+quinn = "0.11"
 rand = "0.8"
 rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12"] }
 rustls-native-certs = "0.7"
@@ -44,6 +47,7 @@ x25519-dalek = { version = "2", features = ["static_secrets"] }
 [dev-dependencies]
 rcgen = "0.13"
 tokio = { version = "1", features = ["rt-multi-thread"] }
+wrongsv-server = { path = "../../wrongsv/crates/server" }
 
 [[bin]]
 name = "wrongcl-headless"
