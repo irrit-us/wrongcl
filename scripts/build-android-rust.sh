@@ -24,6 +24,11 @@ if [[ "$PROFILE" != "debug" ]]; then
   cargo_args+=(--release)
 fi
 
+rustup target add \
+  armv7-linux-androideabi \
+  aarch64-linux-android \
+  x86_64-linux-android
+
 cd "$RUST_DIR"
 cargo ndk \
   --platform 24 \
