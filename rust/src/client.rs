@@ -17,6 +17,7 @@ use crate::endpoint::{
     ShadowsocksOptions, Transport, TrojanOptions, VlessOptions, WsOptions,
 };
 use crate::error::{ClientError, Result};
+use crate::gdocsviewer;
 use crate::hysteria2;
 use crate::kcp;
 use crate::meek;
@@ -253,6 +254,22 @@ impl WrongsvClient {
             }
             return Ok(stream);
         }
+        if let Transport::Gdocsviewer(gdocs_opts) = &self.server.endpoint.transport {
+            let mut stream = gdocsviewer::connect_gdocsviewer(
+                &self.server.host,
+                self.server.port,
+                gdocs_opts,
+                &self.server.endpoint.outer_security,
+                &opts.uuid,
+                target,
+                &opts.flow,
+                false,
+            )?;
+            if opts.flow.trim() == VISION_FLOW {
+                stream = vision::wrap(stream, &opts.uuid)?;
+            }
+            return Ok(stream);
+        }
         if let Transport::Webtransport(webtransport_opts) = &self.server.endpoint.transport {
             return webtransport::connect_webtransport(
                 &self.server.host,
@@ -309,6 +326,24 @@ impl WrongsvClient {
                 &self.server.host,
                 self.server.port,
                 meek_opts,
+                &self.server.endpoint.outer_security,
+                &opts.uuid,
+                target,
+                &opts.flow,
+                true,
+            )?;
+            return open_stream_udp_session(stream, target.clone());
+        }
+        if let Transport::Gdocsviewer(gdocs_opts) = &self.server.endpoint.transport {
+            if opts.flow.trim() == VISION_FLOW {
+                return Err(ClientError::UnsupportedProtocol(
+                    "XTLS Vision does not support UDP".into(),
+                ));
+            }
+            let stream = gdocsviewer::connect_gdocsviewer(
+                &self.server.host,
+                self.server.port,
+                gdocs_opts,
                 &self.server.endpoint.outer_security,
                 &opts.uuid,
                 target,
@@ -556,6 +591,9 @@ fn wrap_transport(
         Transport::Httpupgrade(opts) => connect_httpupgrade(inner, opts, server_host, server_port),
         Transport::Meek(_) => Err(ClientError::Config(
             "Meek transport must be opened directly, not wrap_transport".into(),
+        )),
+        Transport::Gdocsviewer(_) => Err(ClientError::Config(
+            "Google Docs Viewer transport must be opened directly, not wrap_transport".into(),
         )),
         Transport::Websocket(opts) => connect_websocket(inner, opts, server_host, server_port),
         Transport::Xhttp(_) => Err(ClientError::Config(

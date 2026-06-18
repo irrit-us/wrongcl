@@ -675,6 +675,7 @@ class FakeWrongclClient implements WrongclClient {
           'raw',
           'kcp',
           'meek',
+          'gdocsviewer',
           'quic',
           'webtransport',
           'websocket',

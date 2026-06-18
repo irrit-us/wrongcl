@@ -113,6 +113,8 @@ class _ClientHomeState extends State<ClientHome> {
   final _kcpTti = TextEditingController(text: '50');
   final _meekPath = TextEditingController(text: '/');
   final _meekHost = TextEditingController();
+  final _gdocsviewerPathPrefix = TextEditingController(text: '/gdocsviewer');
+  final _gdocsviewerSharedKey = TextEditingController();
   final _quicServerName = TextEditingController(text: 'cloudfront.net');
   bool _quicUdpEnabled = true;
   final _webtransportAuthority = TextEditingController(text: 'cloudfront.net');
@@ -213,6 +215,8 @@ class _ClientHomeState extends State<ClientHome> {
     _kcpTti.dispose();
     _meekPath.dispose();
     _meekHost.dispose();
+    _gdocsviewerPathPrefix.dispose();
+    _gdocsviewerSharedKey.dispose();
     _quicServerName.dispose();
     _webtransportAuthority.dispose();
     _webtransportPath.dispose();
@@ -314,6 +318,15 @@ class _ClientHomeState extends State<ClientHome> {
         return MeekConfig(
           path: _meekPath.text.isEmpty ? '/' : _meekPath.text,
           host: _meekHost.text.isEmpty ? null : _meekHost.text,
+        ).toJson();
+      case TransportKind.gdocsviewer:
+        return GdocsViewerConfig(
+          pathPrefix: _gdocsviewerPathPrefix.text.isEmpty
+              ? '/gdocsviewer'
+              : _gdocsviewerPathPrefix.text,
+          sharedKey: _gdocsviewerSharedKey.text.isEmpty
+              ? null
+              : _gdocsviewerSharedKey.text,
         ).toJson();
       case TransportKind.quic:
         return QuicConfig(
@@ -588,6 +601,8 @@ class _ClientHomeState extends State<ClientHome> {
     _kcpTti.text = '50';
     _meekPath.text = '/';
     _meekHost.clear();
+    _gdocsviewerPathPrefix.text = '/gdocsviewer';
+    _gdocsviewerSharedKey.clear();
     _quicServerName.text = 'cloudfront.net';
     _quicUdpEnabled = true;
     _webtransportAuthority.text = 'cloudfront.net';
@@ -1204,6 +1219,11 @@ class _ClientHomeState extends State<ClientHome> {
       case TransportKind.meek:
         _meekPath.text = transport['path'] as String? ?? _meekPath.text;
         _meekHost.text = transport['host'] as String? ?? '';
+        break;
+      case TransportKind.gdocsviewer:
+        _gdocsviewerPathPrefix.text =
+            transport['path-prefix'] as String? ?? _gdocsviewerPathPrefix.text;
+        _gdocsviewerSharedKey.text = transport['shared-key'] as String? ?? '';
         break;
       case TransportKind.quic:
         _quicServerName.text =
@@ -2113,6 +2133,22 @@ class _ClientHomeState extends State<ClientHome> {
           _responsiveWrap([
             _field(_meekPath, 'Meek path', 220),
             _field(_meekHost, 'Meek host header (optional)', 320),
+          ]),
+          const SizedBox(height: 12),
+        ];
+      case TransportKind.gdocsviewer:
+        return [
+          _responsiveWrap([
+            _field(
+              _gdocsviewerPathPrefix,
+              'Google Docs Viewer path prefix',
+              260,
+            ),
+            _field(
+              _gdocsviewerSharedKey,
+              'Google Docs Viewer shared key (optional)',
+              360,
+            ),
           ]),
           const SizedBox(height: 12),
         ];

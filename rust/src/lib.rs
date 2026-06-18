@@ -5,6 +5,7 @@ pub mod config;
 pub mod endpoint;
 pub mod error;
 pub mod ffi;
+pub mod gdocsviewer;
 pub mod grpc;
 pub mod hysteria2;
 pub mod kcp;
@@ -27,10 +28,10 @@ pub use adapter::{adapt_wrongsv_config, inspect_wrongsv_config, AdaptedConfig, C
 pub use client::{ProbeResult, Tunnel, WrongsvClient};
 pub use config::{ClientConfig, LocalProxyConfig, ServerConfig};
 pub use endpoint::{
-    AnyTlsOptions, Endpoint, GrpcOptions, HuOptions, Hysteria2Options, KcpOptions, MeekOptions,
-    MixedOptions, OuterSecurity, ProxyProtocol, QuicOptions, RealityOptions, ShadowsocksOptions,
-    TlsOptions, Transport, TrojanOptions, TuicOptions, VlessOptions, WebTransportOptions,
-    WsOptions, XhttpOptions,
+    AnyTlsOptions, Endpoint, GdocsViewerOptions, GrpcOptions, HuOptions, Hysteria2Options,
+    KcpOptions, MeekOptions, MixedOptions, OuterSecurity, ProxyProtocol, QuicOptions,
+    RealityOptions, ShadowsocksOptions, TlsOptions, Transport, TrojanOptions, TuicOptions,
+    VlessOptions, WebTransportOptions, WsOptions, XhttpOptions,
 };
 pub use error::{ClientError, Result};
 pub use manager::{global_manager, ConnectionManager};

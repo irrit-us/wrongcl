@@ -1,3 +1,4 @@
+use base64::Engine as _;
 use http::uri::Authority;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -130,6 +131,7 @@ pub enum Transport {
     Raw,
     Kcp(KcpOptions),
     Meek(MeekOptions),
+    Gdocsviewer(GdocsViewerOptions),
     Webtransport(WebTransportOptions),
     Websocket(WsOptions),
     Httpupgrade(HuOptions),
@@ -144,6 +146,7 @@ impl Transport {
             Transport::Raw => "raw",
             Transport::Kcp(_) => "kcp",
             Transport::Meek(_) => "meek",
+            Transport::Gdocsviewer(_) => "gdocsviewer",
             Transport::Webtransport(_) => "webtransport",
             Transport::Websocket(_) => "websocket",
             Transport::Httpupgrade(_) => "httpupgrade",
@@ -158,6 +161,7 @@ impl Transport {
             Transport::Raw => "raw",
             Transport::Kcp(_) => "KCP",
             Transport::Meek(_) => "Meek",
+            Transport::Gdocsviewer(_) => "Google Docs Viewer",
             Transport::Webtransport(_) => "WebTransport",
             Transport::Websocket(_) => "WebSocket",
             Transport::Httpupgrade(_) => "HTTPUpgrade",
@@ -258,6 +262,14 @@ pub struct MeekOptions {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GdocsViewerOptions {
+    #[serde(default = "default_gdocsviewer_path", rename = "path-prefix")]
+    pub path_prefix: String,
+    #[serde(default, rename = "shared-key")]
+    pub shared_key: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WebTransportOptions {
     pub authority: String,
     #[serde(default = "default_wt_path")]
@@ -280,6 +292,10 @@ fn default_xhttp_path() -> String {
 
 fn default_meek_path() -> String {
     "/".into()
+}
+
+fn default_gdocsviewer_path() -> String {
+    "/gdocsviewer".into()
 }
 
 fn default_wt_path() -> String {
@@ -633,6 +649,39 @@ impl Endpoint {
                 return Err(ClientError::Config("Meek path must start with '/'".into()));
             }
         }
+        if let Transport::Gdocsviewer(opts) = &self.transport {
+            if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
+                return Err(ClientError::Config(
+                    "Google Docs Viewer transport only wraps the VLESS proxy".into(),
+                ));
+            }
+            if !matches!(
+                self.outer_security,
+                OuterSecurity::None | OuterSecurity::Tls(_)
+            ) {
+                return Err(ClientError::Config(
+                    "Google Docs Viewer transport only supports 'none' or 'tls' outer security"
+                        .into(),
+                ));
+            }
+            if !opts.path_prefix.starts_with('/') {
+                return Err(ClientError::Config(
+                    "Google Docs Viewer path-prefix must start with '/'".into(),
+                ));
+            }
+            if let Some(shared_key) = &opts.shared_key {
+                let decoded = base64::engine::general_purpose::STANDARD
+                    .decode(shared_key)
+                    .map_err(|_| {
+                        ClientError::Config("Google Docs Viewer shared-key must be base64".into())
+                    })?;
+                if decoded.len() != 32 {
+                    return Err(ClientError::Config(
+                        "Google Docs Viewer shared-key must decode to 32 bytes".into(),
+                    ));
+                }
+            }
+        }
         if let Transport::Webtransport(opts) = &self.transport {
             if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
                 return Err(ClientError::Config(
@@ -703,6 +752,7 @@ impl Endpoint {
             Transport::Raw => parts.push("raw"),
             Transport::Kcp(_) => parts.push("KCP"),
             Transport::Meek(_) => parts.push("Meek"),
+            Transport::Gdocsviewer(_) => parts.push("Google Docs Viewer"),
             Transport::Webtransport(_) => parts.push("WebTransport"),
             Transport::Websocket(_) => parts.push("WebSocket"),
             Transport::Httpupgrade(_) => parts.push("HTTPUpgrade"),

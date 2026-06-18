@@ -24,6 +24,7 @@ enum TransportKind {
   raw('raw', 'raw TCP'),
   kcp('kcp', 'KCP'),
   meek('meek', 'Meek'),
+  gdocsviewer('gdocsviewer', 'Google Docs Viewer'),
   quic('quic', 'QUIC'),
   webtransport('webtransport', 'WebTransport'),
   websocket('websocket', 'WebSocket'),
@@ -238,6 +239,19 @@ class MeekConfig {
   final String? host;
 
   Map<String, Object?> toJson() => {'type': 'meek', 'path': path, 'host': host};
+}
+
+class GdocsViewerConfig {
+  const GdocsViewerConfig({this.pathPrefix = '/gdocsviewer', this.sharedKey});
+
+  final String pathPrefix;
+  final String? sharedKey;
+
+  Map<String, Object?> toJson() => {
+    'type': 'gdocsviewer',
+    'path-prefix': pathPrefix,
+    'shared-key': sharedKey,
+  };
 }
 
 class TlsConfig {
