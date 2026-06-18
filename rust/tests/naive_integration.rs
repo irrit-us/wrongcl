@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use wrongcl_native::client::WrongsvClient;
 use wrongcl_native::config::{ClientConfig, LocalProxyConfig, ServerConfig};
@@ -41,7 +41,7 @@ email = "alice@example.com"
     let handle = InboundServer::new(config)
         .unwrap()
         .spawn_with_shutdown(shutdown.clone());
-    thread::sleep(Duration::from_millis(150));
+    wait_for_tcp_listener(SocketAddr::from(([127, 0, 0, 1], port)));
     NaiveServer {
         port,
         _shutdown: shutdown,
@@ -75,6 +75,24 @@ fn free_tcp_port() -> u16 {
         .local_addr()
         .unwrap()
         .port()
+}
+
+fn wait_for_tcp_listener(addr: SocketAddr) {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        match TcpStream::connect_timeout(&addr, Duration::from_millis(100)) {
+            Ok(stream) => {
+                let _ = stream.shutdown(Shutdown::Both);
+                return;
+            }
+            Err(error) => {
+                if Instant::now() >= deadline {
+                    panic!("Naive test server did not start on {addr}: {error}");
+                }
+                thread::sleep(Duration::from_millis(25));
+            }
+        }
+    }
 }
 
 fn spawn_tcp_echo_server() -> SocketAddr {
