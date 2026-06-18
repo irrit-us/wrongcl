@@ -792,6 +792,48 @@ udp_relay = true
     }
 
     #[test]
+    fn adapts_kcp_config() {
+        let cfg: WrongsvConfig = toml::from_str(
+            r#"
+listen = "0.0.0.0:443"
+
+[[users]]
+id = "12345678-1234-1234-1234-123456789abc"
+udp = false
+
+[kcp]
+seed = "kcp-seed"
+mtu = 1400
+tti = 20
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(active_profile(&cfg), "kcp");
+        let assessment = active_capability(&cfg);
+        assert_eq!(assessment.support, SupportLevel::Supported);
+        assert!(assessment.config_adaptable);
+        assert_eq!(assessment.payload_networks, vec![PayloadNetwork::Tcp]);
+        assert_eq!(assessment.base_carriers, vec![BaseCarrier::Udp]);
+
+        let config =
+            client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
+        match &config.server.endpoint.transport {
+            Transport::Kcp(opts) => {
+                assert_eq!(opts.seed, "kcp-seed");
+                assert_eq!(opts.mtu, 1400);
+                assert_eq!(opts.tti, 20);
+            }
+            other => panic!("expected KCP transport, got {other:?}"),
+        }
+        assert!(matches!(
+            config.server.endpoint.outer_security,
+            OuterSecurity::None
+        ));
+        assert_eq!(config.server.endpoint.stack_summary(), "VLESS → KCP → TCP");
+    }
+
+    #[test]
     fn anytls_config_missing_password_rejected() {
         let err = toml::from_str::<WrongsvConfig>(
             r#"

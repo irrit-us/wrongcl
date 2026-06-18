@@ -127,6 +127,7 @@ impl Default for ShadowsocksOptions {
 pub enum Transport {
     #[default]
     Raw,
+    Kcp(KcpOptions),
     Websocket(WsOptions),
     Httpupgrade(HuOptions),
     Xhttp(XhttpOptions),
@@ -138,6 +139,7 @@ impl Transport {
     pub fn id(&self) -> &'static str {
         match self {
             Transport::Raw => "raw",
+            Transport::Kcp(_) => "kcp",
             Transport::Websocket(_) => "websocket",
             Transport::Httpupgrade(_) => "httpupgrade",
             Transport::Xhttp(_) => "xhttp",
@@ -149,6 +151,7 @@ impl Transport {
     pub fn display_name(&self) -> &'static str {
         match self {
             Transport::Raw => "raw",
+            Transport::Kcp(_) => "KCP",
             Transport::Websocket(_) => "WebSocket",
             Transport::Httpupgrade(_) => "HTTPUpgrade",
             Transport::Xhttp(_) => "XHTTP",
@@ -229,6 +232,14 @@ pub struct QuicOptions {
     pub server_name: String,
     #[serde(default = "default_udp_enabled", rename = "udp-enabled")]
     pub udp_enabled: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KcpOptions {
+    #[serde(default)]
+    pub seed: String,
+    pub mtu: u16,
+    pub tti: u32,
 }
 
 fn default_ws_path() -> String {
@@ -554,6 +565,24 @@ impl Endpoint {
                 ));
             }
         }
+        if let Transport::Kcp(opts) = &self.transport {
+            if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
+                return Err(ClientError::Config(
+                    "KCP transport only wraps the VLESS proxy".into(),
+                ));
+            }
+            if !matches!(self.outer_security, OuterSecurity::None) {
+                return Err(ClientError::Config(
+                    "KCP transport does not wrap wrongcl outer security".into(),
+                ));
+            }
+            if !(576..=1460).contains(&opts.mtu) {
+                return Err(ClientError::Config("KCP mtu must be in 576..=1460".into()));
+            }
+            if !(10..=100).contains(&opts.tti) {
+                return Err(ClientError::Config("KCP tti must be in 10..=100".into()));
+            }
+        }
         if let Transport::Quic(opts) = &self.transport {
             if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
                 return Err(ClientError::Config(
@@ -585,10 +614,14 @@ impl Endpoint {
         if matches!(self.transport, Transport::Quic(_)) {
             return "VLESS → QUIC → TLS → TCP".into();
         }
+        if matches!(self.transport, Transport::Kcp(_)) {
+            return "VLESS → KCP → TCP".into();
+        }
         let mut parts: Vec<&str> = Vec::new();
         parts.push(self.proxy.display_name());
         match self.transport {
             Transport::Raw => parts.push("raw"),
+            Transport::Kcp(_) => parts.push("KCP"),
             Transport::Websocket(_) => parts.push("WebSocket"),
             Transport::Httpupgrade(_) => parts.push("HTTPUpgrade"),
             Transport::Xhttp(_) => parts.push("XHTTP"),

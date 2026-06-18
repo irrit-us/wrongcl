@@ -108,6 +108,9 @@ class _ClientHomeState extends State<ClientHome> {
   final _mixedPassword = TextEditingController();
   final _shadowsocksPassword = TextEditingController();
   String _shadowsocksMethod = 'chacha20-ietf-poly1305';
+  final _kcpSeed = TextEditingController();
+  final _kcpMtu = TextEditingController(text: '1350');
+  final _kcpTti = TextEditingController(text: '50');
   final _quicServerName = TextEditingController(text: 'cloudfront.net');
   bool _quicUdpEnabled = true;
   final _wsPath = TextEditingController(text: '/ws');
@@ -200,6 +203,9 @@ class _ClientHomeState extends State<ClientHome> {
     _mixedUsername.dispose();
     _mixedPassword.dispose();
     _shadowsocksPassword.dispose();
+    _kcpSeed.dispose();
+    _kcpMtu.dispose();
+    _kcpTti.dispose();
     _quicServerName.dispose();
     _wsPath.dispose();
     _wsHost.dispose();
@@ -289,6 +295,12 @@ class _ClientHomeState extends State<ClientHome> {
     switch (_transportKind) {
       case TransportKind.raw:
         return const {'type': 'raw'};
+      case TransportKind.kcp:
+        return KcpConfig(
+          seed: _kcpSeed.text,
+          mtu: int.tryParse(_kcpMtu.text) ?? 1350,
+          tti: int.tryParse(_kcpTti.text) ?? 50,
+        ).toJson();
       case TransportKind.quic:
         return QuicConfig(
           serverName: _quicServerName.text.isEmpty
@@ -549,6 +561,9 @@ class _ClientHomeState extends State<ClientHome> {
     _mixedPassword.clear();
     _shadowsocksPassword.clear();
     _shadowsocksMethod = 'chacha20-ietf-poly1305';
+    _kcpSeed.clear();
+    _kcpMtu.text = '1350';
+    _kcpTti.text = '50';
     _quicServerName.text = 'cloudfront.net';
     _quicUdpEnabled = true;
     _wsPath.text = '/ws';
@@ -1153,6 +1168,11 @@ class _ClientHomeState extends State<ClientHome> {
     _transportKind = TransportKind.fromId(transportType);
     switch (_transportKind) {
       case TransportKind.raw:
+        break;
+      case TransportKind.kcp:
+        _kcpSeed.text = transport['seed'] as String? ?? '';
+        _kcpMtu.text = '${transport['mtu'] ?? _kcpMtu.text}';
+        _kcpTti.text = '${transport['tti'] ?? _kcpTti.text}';
         break;
       case TransportKind.quic:
         _quicServerName.text =
@@ -1876,7 +1896,8 @@ class _ClientHomeState extends State<ClientHome> {
                 if (value == null) return;
                 setState(() {
                   _transportKind = value;
-                  if (value == TransportKind.quic) {
+                  if (value == TransportKind.quic ||
+                      value == TransportKind.kcp) {
                     _outerSecurityKind = OuterSecurityKind.none;
                   }
                 });
@@ -1894,6 +1915,7 @@ class _ClientHomeState extends State<ClientHome> {
         _proxyKind == ProxyKind.shadowsocks ||
         _proxyKind == ProxyKind.hysteria2 ||
         _proxyKind == ProxyKind.tuic ||
+        _transportKind == TransportKind.kcp ||
         _transportKind == TransportKind.quic ||
         _proxyKind == ProxyKind.trojan;
     return SizedBox(
@@ -2037,6 +2059,15 @@ class _ClientHomeState extends State<ClientHome> {
     switch (_transportKind) {
       case TransportKind.raw:
         return const [];
+      case TransportKind.kcp:
+        return [
+          _responsiveWrap([
+            _field(_kcpSeed, 'KCP seed (optional)', 320),
+            _field(_kcpMtu, 'KCP MTU', 180),
+            _field(_kcpTti, 'KCP TTI (ms)', 180),
+          ]),
+          const SizedBox(height: 12),
+        ];
       case TransportKind.quic:
         return [
           _responsiveWrap([

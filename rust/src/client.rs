@@ -18,6 +18,7 @@ use crate::endpoint::{
 };
 use crate::error::{ClientError, Result};
 use crate::hysteria2;
+use crate::kcp;
 use crate::protocol::{
     encode_raw_vless_header, encode_udp_vless_header, read_raw_vless_response, Target,
 };
@@ -213,6 +214,17 @@ impl WrongsvClient {
     }
 
     fn connect_vless(&self, target: &Target, opts: &VlessOptions) -> Result<Box<dyn Tunnel>> {
+        if let Transport::Kcp(kcp_opts) = &self.server.endpoint.transport {
+            return kcp::connect_kcp(
+                &self.server.host,
+                self.server.port,
+                kcp_opts,
+                &opts.uuid,
+                target,
+                &opts.flow,
+                false,
+            );
+        }
         if let Transport::Quic(quic_opts) = &self.server.endpoint.transport {
             return quic::connect_quic(
                 &self.server.host,
@@ -243,6 +255,11 @@ impl WrongsvClient {
         target: &Target,
         opts: &VlessOptions,
     ) -> Result<Box<dyn UdpSession>> {
+        if matches!(self.server.endpoint.transport, Transport::Kcp(_)) {
+            return Err(ClientError::UnsupportedProtocol(
+                "KCP UDP relay is not implemented in wrongcl yet".into(),
+            ));
+        }
         if let Transport::Quic(quic_opts) = &self.server.endpoint.transport {
             if opts.flow.trim() == VISION_FLOW {
                 return Err(ClientError::UnsupportedProtocol(
@@ -464,6 +481,9 @@ fn wrap_transport(
         )),
         Transport::Grpc(_) => Err(ClientError::Config(
             "gRPC transport must be opened via open_proxy_stack, not wrap_transport".into(),
+        )),
+        Transport::Kcp(_) => Err(ClientError::Config(
+            "KCP transport must be opened directly, not wrap_transport".into(),
         )),
         Transport::Quic(_) => Err(ClientError::Config(
             "QUIC transport must be opened directly, not wrap_transport".into(),

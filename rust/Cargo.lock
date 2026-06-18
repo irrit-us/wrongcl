@@ -2758,6 +2758,7 @@ dependencies = [
  "hkdf",
  "hmac",
  "http",
+ "kcp",
  "prost",
  "quinn",
  "rand 0.8.6",

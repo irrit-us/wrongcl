@@ -22,6 +22,7 @@ enum ProxyKind {
 
 enum TransportKind {
   raw('raw', 'raw TCP'),
+  kcp('kcp', 'KCP'),
   quic('quic', 'QUIC'),
   websocket('websocket', 'WebSocket'),
   httpupgrade('httpupgrade', 'HTTPUpgrade'),
@@ -191,6 +192,21 @@ class QuicConfig {
     'type': 'quic',
     'server-name': serverName,
     'udp-enabled': udpEnabled,
+  };
+}
+
+class KcpConfig {
+  const KcpConfig({this.seed = '', this.mtu = 1350, this.tti = 50});
+
+  final String seed;
+  final int mtu;
+  final int tti;
+
+  Map<String, Object?> toJson() => {
+    'type': 'kcp',
+    'seed': seed,
+    'mtu': mtu,
+    'tti': tti,
   };
 }
 
