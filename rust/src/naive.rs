@@ -163,14 +163,14 @@ fn is_retryable_connect_error(error: &io::Error) -> bool {
     ) {
         return true;
     }
-    let message = error.to_string();
+    let message = error.to_string().to_ascii_lowercase();
     [
-        "Broken pipe",
-        "Connection refused",
-        "Connection reset",
+        "broken pipe",
+        "connection refused",
+        "connection reset",
         "handshake eof",
         "peer closed",
-        "Resource temporarily unavailable",
+        "resource temporarily unavailable",
         "timed out",
     ]
     .iter()
@@ -593,4 +593,15 @@ fn read_channel(
         read_buf.extend_from_slice(&data[n..]);
     }
     Ok(n)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn connection_reset_message_is_retryable() {
+        let error = io::Error::other("response: connection reset");
+        assert!(is_retryable_connect_error(&error));
+    }
 }
