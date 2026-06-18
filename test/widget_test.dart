@@ -670,6 +670,7 @@ class FakeWrongclClient implements WrongclClient {
           'trojan',
           'mixed',
           'shadowsocks',
+          'wireguard',
         ],
         'transports': [
           'raw',

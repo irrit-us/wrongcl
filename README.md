@@ -45,6 +45,7 @@ Verified local proxy coverage currently includes:
 - Trojan over TLS (TCP and UDP)
 - Shadowsocks AEAD / AEAD-2022 over raw TCP and UDP
 - Remote mixed proxy backends over SOCKS5 (TCP and UDP) or HTTP CONNECT (TCP)
+- WireGuard tunnel service through a helper-backed local SOCKS upstream (TCP and UDP proxying; imported wrongsv configs still need a client private-key supplied separately)
 - Local HTTP `CONNECT` tunneling and absolute-form HTTP forwarding over the same listener as SOCKS5
 
 Direct-probe coverage also exists for the same core transport families.
@@ -57,8 +58,8 @@ matrix. The main remaining work is:
 - Hysteria2 Gecko / Salamander packet obfuscation
 - desktop product work in Flutter / FFI / persistence / packaging
 - client-side prompts for missing fields such as REALITY `public-key`
-- helper-backed WireGuard runtime work; the import/config surface is now partial
-  and still needs a client private-key plus the final runtime
+- full WireGuard routed-tunnel / TUN exposure is still missing; imported wrongsv
+  configs stay partial until the client private-key is supplied
 
 The capability adapter recognizes the rest of wrongsv's profile surface and
 reports `supported`, `partial`, or `unsupported` plus structured missing

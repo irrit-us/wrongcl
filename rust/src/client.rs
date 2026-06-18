@@ -33,6 +33,7 @@ use crate::trojan;
 use crate::tuic;
 use crate::vision;
 use crate::webtransport;
+use crate::wireguard;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -179,11 +180,11 @@ impl WrongsvClient {
                 }
             }
             ProxyProtocol::Hysteria2(opts) => opts.udp_enabled,
-            ProxyProtocol::Tuic(_) | ProxyProtocol::Trojan(_) | ProxyProtocol::Shadowsocks(_) => {
-                true
-            }
+            ProxyProtocol::Tuic(_)
+            | ProxyProtocol::Trojan(_)
+            | ProxyProtocol::Shadowsocks(_)
+            | ProxyProtocol::Wireguard(_) => true,
             ProxyProtocol::Mixed(_) => true,
-            ProxyProtocol::Wireguard(_) => false,
         }
     }
 
@@ -541,22 +542,18 @@ impl WrongsvClient {
 
     fn connect_wireguard(
         &self,
-        _target: &Target,
-        _opts: &crate::endpoint::WireGuardOptions,
+        target: &Target,
+        opts: &crate::endpoint::WireGuardOptions,
     ) -> Result<Box<dyn Tunnel>> {
-        Err(ClientError::UnsupportedProtocol(
-            "WireGuard runtime is still being built in wrongcl".into(),
-        ))
+        wireguard::connect_wireguard(&self.server.host, self.server.port, opts, target)
     }
 
     fn connect_wireguard_udp(
         &self,
-        _target: &Target,
-        _opts: &crate::endpoint::WireGuardOptions,
+        target: &Target,
+        opts: &crate::endpoint::WireGuardOptions,
     ) -> Result<Box<dyn UdpSession>> {
-        Err(ClientError::UnsupportedProtocol(
-            "WireGuard runtime is still being built in wrongcl".into(),
-        ))
+        wireguard::connect_wireguard_udp(&self.server.host, self.server.port, opts, target)
     }
 
     fn open_proxy_stack(&self) -> Result<(Box<dyn Tunnel>, Option<TcpStream>)> {

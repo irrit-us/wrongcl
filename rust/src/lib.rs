@@ -22,6 +22,7 @@ pub mod trojan;
 pub mod tuic;
 pub mod vision;
 pub mod webtransport;
+pub mod wireguard;
 pub mod xhttp;
 
 pub use adapter::{adapt_wrongsv_config, inspect_wrongsv_config, AdaptedConfig, CapabilityReport};

@@ -14,6 +14,10 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.2'
