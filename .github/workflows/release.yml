@@ -201,7 +201,7 @@ jobs:
           release: "14.3"
           usesh: true
           prepare: |
-            pkg install -y bash git go rust
+            pkg install -y bash git go rust protobuf
           run: |
             cd "$GITHUB_WORKSPACE"
             sh scripts/package-freebsd-headless.sh
