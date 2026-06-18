@@ -30,6 +30,7 @@ use crate::tls;
 use crate::trojan;
 use crate::tuic;
 use crate::vision;
+use crate::webtransport;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -163,7 +164,17 @@ impl WrongsvClient {
 
     pub fn supports_udp(&self) -> bool {
         match &self.server.endpoint.proxy {
-            ProxyProtocol::Vless(opts) => opts.flow.trim().is_empty(),
+            ProxyProtocol::Vless(opts) => {
+                if !opts.flow.trim().is_empty() {
+                    return false;
+                }
+                match &self.server.endpoint.transport {
+                    Transport::Kcp(_) => false,
+                    Transport::Quic(opts) => opts.udp_enabled,
+                    Transport::Webtransport(opts) => opts.udp_enabled,
+                    _ => true,
+                }
+            }
             ProxyProtocol::Hysteria2(opts) => opts.udp_enabled,
             ProxyProtocol::Tuic(_) | ProxyProtocol::Trojan(_) | ProxyProtocol::Shadowsocks(_) => {
                 true
@@ -225,6 +236,17 @@ impl WrongsvClient {
                 false,
             );
         }
+        if let Transport::Webtransport(webtransport_opts) = &self.server.endpoint.transport {
+            return webtransport::connect_webtransport(
+                &self.server.host,
+                self.server.port,
+                webtransport_opts,
+                &opts.uuid,
+                target,
+                &opts.flow,
+                false,
+            );
+        }
         if let Transport::Quic(quic_opts) = &self.server.endpoint.transport {
             return quic::connect_quic(
                 &self.server.host,
@@ -259,6 +281,28 @@ impl WrongsvClient {
             return Err(ClientError::UnsupportedProtocol(
                 "KCP UDP relay is not implemented in wrongcl yet".into(),
             ));
+        }
+        if let Transport::Webtransport(webtransport_opts) = &self.server.endpoint.transport {
+            if opts.flow.trim() == VISION_FLOW {
+                return Err(ClientError::UnsupportedProtocol(
+                    "XTLS Vision does not support UDP".into(),
+                ));
+            }
+            if !webtransport_opts.udp_enabled {
+                return Err(ClientError::UnsupportedProtocol(
+                    "WebTransport UDP relay is disabled for this wrongcl profile".into(),
+                ));
+            }
+            let stream = webtransport::connect_webtransport(
+                &self.server.host,
+                self.server.port,
+                webtransport_opts,
+                &opts.uuid,
+                target,
+                &opts.flow,
+                true,
+            )?;
+            return open_stream_udp_session(stream, target.clone());
         }
         if let Transport::Quic(quic_opts) = &self.server.endpoint.transport {
             if opts.flow.trim() == VISION_FLOW {
@@ -484,6 +528,9 @@ fn wrap_transport(
         )),
         Transport::Kcp(_) => Err(ClientError::Config(
             "KCP transport must be opened directly, not wrap_transport".into(),
+        )),
+        Transport::Webtransport(_) => Err(ClientError::Config(
+            "WebTransport transport must be opened directly, not wrap_transport".into(),
         )),
         Transport::Quic(_) => Err(ClientError::Config(
             "QUIC transport must be opened directly, not wrap_transport".into(),
@@ -1291,8 +1338,8 @@ mod tests {
     use super::*;
     use crate::config::{ClientConfig, LocalProxyConfig};
     use crate::endpoint::{
-        Endpoint, HuOptions, MixedOptions, ProxyProtocol, ShadowsocksOptions, Transport,
-        VlessOptions, WsOptions,
+        Endpoint, HuOptions, KcpOptions, MixedOptions, ProxyProtocol, QuicOptions,
+        ShadowsocksOptions, Transport, VlessOptions, WebTransportOptions, WsOptions,
     };
     use crate::proxy::{ProxyHandle, ProxySnapshot};
     use std::net::{SocketAddr, TcpListener};
@@ -1595,6 +1642,51 @@ mod tests {
             .unwrap();
         assert_eq!(result.bytes_read, 4);
         assert_eq!(result.preview, "ping");
+    }
+
+    #[test]
+    fn supports_udp_tracks_transport_capability() {
+        let raw =
+            WrongsvClient::new(vless_server("127.0.0.1", 443, TEST_UUID, Transport::Raw)).unwrap();
+        assert!(raw.supports_udp());
+
+        let kcp = WrongsvClient::new(vless_server(
+            "127.0.0.1",
+            443,
+            TEST_UUID,
+            Transport::Kcp(KcpOptions {
+                seed: String::new(),
+                mtu: 1350,
+                tti: 50,
+            }),
+        ))
+        .unwrap();
+        assert!(!kcp.supports_udp());
+
+        let quic_disabled = WrongsvClient::new(vless_server(
+            "127.0.0.1",
+            443,
+            TEST_UUID,
+            Transport::Quic(QuicOptions {
+                server_name: "cloudfront.net".into(),
+                udp_enabled: false,
+            }),
+        ))
+        .unwrap();
+        assert!(!quic_disabled.supports_udp());
+
+        let webtransport_disabled = WrongsvClient::new(vless_server(
+            "127.0.0.1",
+            443,
+            TEST_UUID,
+            Transport::Webtransport(WebTransportOptions {
+                authority: "wt.example".into(),
+                path: "/wt".into(),
+                udp_enabled: false,
+            }),
+        ))
+        .unwrap();
+        assert!(!webtransport_disabled.supports_udp());
     }
 
     #[test]

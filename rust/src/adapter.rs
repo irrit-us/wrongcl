@@ -159,7 +159,7 @@ fn active_profile(cfg: &WrongsvConfig) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::endpoint::{OuterSecurity, ProxyProtocol, Transport};
+    use crate::endpoint::{OuterSecurity, ProxyProtocol, Transport, WebTransportOptions};
 
     #[test]
     fn adapts_websocket_config() {
@@ -831,6 +831,57 @@ tti = 20
             OuterSecurity::None
         ));
         assert_eq!(config.server.endpoint.stack_summary(), "VLESS → KCP → TCP");
+    }
+
+    #[test]
+    fn adapts_webtransport_config() {
+        let cfg: WrongsvConfig = toml::from_str(
+            r#"
+listen = "0.0.0.0:443"
+
+[[users]]
+id = "12345678-1234-1234-1234-123456789abc"
+
+[webtransport]
+path = "/wt"
+host = "wt.example"
+udp_relay = true
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(active_profile(&cfg), "webtransport");
+        let assessment = active_capability(&cfg);
+        assert_eq!(assessment.support, SupportLevel::Supported);
+        assert!(assessment.config_adaptable);
+        assert_eq!(
+            assessment.payload_networks,
+            vec![PayloadNetwork::Tcp, PayloadNetwork::Udp]
+        );
+        assert_eq!(assessment.base_carriers, vec![BaseCarrier::Udp]);
+
+        let config =
+            client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
+        match &config.server.endpoint.transport {
+            Transport::Webtransport(WebTransportOptions {
+                authority,
+                path,
+                udp_enabled,
+            }) => {
+                assert_eq!(authority, "wt.example");
+                assert_eq!(path, "/wt");
+                assert!(*udp_enabled);
+            }
+            other => panic!("expected WebTransport transport, got {other:?}"),
+        }
+        assert!(matches!(
+            config.server.endpoint.outer_security,
+            OuterSecurity::None
+        ));
+        assert_eq!(
+            config.server.endpoint.stack_summary(),
+            "VLESS → WebTransport → QUIC → TLS → TCP"
+        );
     }
 
     #[test]

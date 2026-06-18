@@ -1,3 +1,4 @@
+use http::uri::Authority;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -128,6 +129,7 @@ pub enum Transport {
     #[default]
     Raw,
     Kcp(KcpOptions),
+    Webtransport(WebTransportOptions),
     Websocket(WsOptions),
     Httpupgrade(HuOptions),
     Xhttp(XhttpOptions),
@@ -140,6 +142,7 @@ impl Transport {
         match self {
             Transport::Raw => "raw",
             Transport::Kcp(_) => "kcp",
+            Transport::Webtransport(_) => "webtransport",
             Transport::Websocket(_) => "websocket",
             Transport::Httpupgrade(_) => "httpupgrade",
             Transport::Xhttp(_) => "xhttp",
@@ -152,6 +155,7 @@ impl Transport {
         match self {
             Transport::Raw => "raw",
             Transport::Kcp(_) => "KCP",
+            Transport::Webtransport(_) => "WebTransport",
             Transport::Websocket(_) => "WebSocket",
             Transport::Httpupgrade(_) => "HTTPUpgrade",
             Transport::Xhttp(_) => "XHTTP",
@@ -242,6 +246,15 @@ pub struct KcpOptions {
     pub tti: u32,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WebTransportOptions {
+    pub authority: String,
+    #[serde(default = "default_wt_path")]
+    pub path: String,
+    #[serde(default = "default_udp_enabled", rename = "udp-enabled")]
+    pub udp_enabled: bool,
+}
+
 fn default_ws_path() -> String {
     "/ws".into()
 }
@@ -252,6 +265,10 @@ fn default_hu_path() -> String {
 
 fn default_xhttp_path() -> String {
     "/xhttp".into()
+}
+
+fn default_wt_path() -> String {
+    "/wt".into()
 }
 
 fn default_grpc_service_name() -> String {
@@ -583,6 +600,33 @@ impl Endpoint {
                 return Err(ClientError::Config("KCP tti must be in 10..=100".into()));
             }
         }
+        if let Transport::Webtransport(opts) = &self.transport {
+            if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
+                return Err(ClientError::Config(
+                    "WebTransport transport only wraps the VLESS proxy".into(),
+                ));
+            }
+            if !matches!(self.outer_security, OuterSecurity::None) {
+                return Err(ClientError::Config(
+                    "WebTransport transport owns its TLS layer and only supports 'none' outer security"
+                        .into(),
+                ));
+            }
+            if opts.authority.trim().is_empty() {
+                return Err(ClientError::Config(
+                    "WebTransport transport requires authority (used for SNI and :authority)"
+                        .into(),
+                ));
+            }
+            opts.authority
+                .parse::<Authority>()
+                .map_err(|e| ClientError::Config(format!("invalid WebTransport authority: {e}")))?;
+            if !opts.path.starts_with('/') {
+                return Err(ClientError::Config(
+                    "WebTransport path must start with '/'".into(),
+                ));
+            }
+        }
         if let Transport::Quic(opts) = &self.transport {
             if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
                 return Err(ClientError::Config(
@@ -617,11 +661,15 @@ impl Endpoint {
         if matches!(self.transport, Transport::Kcp(_)) {
             return "VLESS → KCP → TCP".into();
         }
+        if matches!(self.transport, Transport::Webtransport(_)) {
+            return "VLESS → WebTransport → QUIC → TLS → TCP".into();
+        }
         let mut parts: Vec<&str> = Vec::new();
         parts.push(self.proxy.display_name());
         match self.transport {
             Transport::Raw => parts.push("raw"),
             Transport::Kcp(_) => parts.push("KCP"),
+            Transport::Webtransport(_) => parts.push("WebTransport"),
             Transport::Websocket(_) => parts.push("WebSocket"),
             Transport::Httpupgrade(_) => parts.push("HTTPUpgrade"),
             Transport::Xhttp(_) => parts.push("XHTTP"),

@@ -24,6 +24,7 @@ enum TransportKind {
   raw('raw', 'raw TCP'),
   kcp('kcp', 'KCP'),
   quic('quic', 'QUIC'),
+  webtransport('webtransport', 'WebTransport'),
   websocket('websocket', 'WebSocket'),
   httpupgrade('httpupgrade', 'HTTPUpgrade'),
   xhttp('xhttp', 'XHTTP'),
@@ -191,6 +192,25 @@ class QuicConfig {
   Map<String, Object?> toJson() => {
     'type': 'quic',
     'server-name': serverName,
+    'udp-enabled': udpEnabled,
+  };
+}
+
+class WebTransportConfig {
+  const WebTransportConfig({
+    required this.authority,
+    this.path = '/wt',
+    this.udpEnabled = true,
+  });
+
+  final String authority;
+  final String path;
+  final bool udpEnabled;
+
+  Map<String, Object?> toJson() => {
+    'type': 'webtransport',
+    'authority': authority,
+    'path': path,
     'udp-enabled': udpEnabled,
   };
 }

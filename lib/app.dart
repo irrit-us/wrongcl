@@ -113,6 +113,9 @@ class _ClientHomeState extends State<ClientHome> {
   final _kcpTti = TextEditingController(text: '50');
   final _quicServerName = TextEditingController(text: 'cloudfront.net');
   bool _quicUdpEnabled = true;
+  final _webtransportAuthority = TextEditingController(text: 'cloudfront.net');
+  final _webtransportPath = TextEditingController(text: '/wt');
+  bool _webtransportUdpEnabled = true;
   final _wsPath = TextEditingController(text: '/ws');
   final _wsHost = TextEditingController();
   final _huPath = TextEditingController(text: '/up');
@@ -207,6 +210,8 @@ class _ClientHomeState extends State<ClientHome> {
     _kcpMtu.dispose();
     _kcpTti.dispose();
     _quicServerName.dispose();
+    _webtransportAuthority.dispose();
+    _webtransportPath.dispose();
     _wsPath.dispose();
     _wsHost.dispose();
     _huPath.dispose();
@@ -307,6 +312,14 @@ class _ClientHomeState extends State<ClientHome> {
               ? 'cloudfront.net'
               : _quicServerName.text,
           udpEnabled: _quicUdpEnabled,
+        ).toJson();
+      case TransportKind.webtransport:
+        return WebTransportConfig(
+          authority: _webtransportAuthority.text.isEmpty
+              ? _serverHost.text
+              : _webtransportAuthority.text,
+          path: _webtransportPath.text.isEmpty ? '/wt' : _webtransportPath.text,
+          udpEnabled: _webtransportUdpEnabled,
         ).toJson();
       case TransportKind.websocket:
         return WsConfig(
@@ -566,6 +579,9 @@ class _ClientHomeState extends State<ClientHome> {
     _kcpTti.text = '50';
     _quicServerName.text = 'cloudfront.net';
     _quicUdpEnabled = true;
+    _webtransportAuthority.text = 'cloudfront.net';
+    _webtransportPath.text = '/wt';
+    _webtransportUdpEnabled = true;
     _wsPath.text = '/ws';
     _wsHost.clear();
     _huPath.text = '/up';
@@ -1178,6 +1194,13 @@ class _ClientHomeState extends State<ClientHome> {
         _quicServerName.text =
             transport['server-name'] as String? ?? _quicServerName.text;
         _quicUdpEnabled = transport['udp-enabled'] != false;
+        break;
+      case TransportKind.webtransport:
+        _webtransportAuthority.text =
+            transport['authority'] as String? ?? _webtransportAuthority.text;
+        _webtransportPath.text =
+            transport['path'] as String? ?? _webtransportPath.text;
+        _webtransportUdpEnabled = transport['udp-enabled'] != false;
         break;
       case TransportKind.websocket:
         _wsPath.text = transport['path'] as String? ?? _wsPath.text;
@@ -1897,7 +1920,8 @@ class _ClientHomeState extends State<ClientHome> {
                 setState(() {
                   _transportKind = value;
                   if (value == TransportKind.quic ||
-                      value == TransportKind.kcp) {
+                      value == TransportKind.kcp ||
+                      value == TransportKind.webtransport) {
                     _outerSecurityKind = OuterSecurityKind.none;
                   }
                 });
@@ -1917,6 +1941,7 @@ class _ClientHomeState extends State<ClientHome> {
         _proxyKind == ProxyKind.tuic ||
         _transportKind == TransportKind.kcp ||
         _transportKind == TransportKind.quic ||
+        _transportKind == TransportKind.webtransport ||
         _proxyKind == ProxyKind.trojan;
     return SizedBox(
       width: available < 230 ? available : 230,
@@ -2084,6 +2109,27 @@ class _ClientHomeState extends State<ClientHome> {
             title: const Text('Enable UDP relay'),
             subtitle: const Text(
               'Disable this only when the wrongsv quic transport sets udp_relay = false.',
+            ),
+          ),
+          const SizedBox(height: 12),
+        ];
+      case TransportKind.webtransport:
+        return [
+          _responsiveWrap([
+            _field(_webtransportAuthority, 'WebTransport authority / SNI', 320),
+            _field(_webtransportPath, 'WebTransport path', 220),
+          ]),
+          const SizedBox(height: 4),
+          CheckboxListTile(
+            value: _webtransportUdpEnabled,
+            onChanged: (value) =>
+                setState(() => _webtransportUdpEnabled = value ?? true),
+            controlAffinity: ListTileControlAffinity.leading,
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: const Text('Enable UDP relay'),
+            subtitle: const Text(
+              'Disable this only when the wrongsv webtransport transport sets udp_relay = false.',
             ),
           ),
           const SizedBox(height: 12),
