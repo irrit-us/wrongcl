@@ -281,10 +281,11 @@
 			);
 			name = "Build wrongcl_native";
 			outputPaths = (
+				"$(PROJECT_DIR)/Flutter/libwrongcl_native.a",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nif [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  CARGO_FLAGS=\"\"\n  PROFILE_DIR=\"debug\"\nelse\n  CARGO_FLAGS=\"--release\"\n  PROFILE_DIR=\"release\"\nfi\ncase \"$SDK_NAME\" in\n  iphoneos*)\n    RUST_TARGET=\"aarch64-apple-ios\"\n    ;;\n  iphonesimulator*)\n    case \"$ARCHS\" in\n      *x86_64*) RUST_TARGET=\"x86_64-apple-ios\" ;;\n      *) RUST_TARGET=\"aarch64-apple-ios-sim\" ;;\n    esac\n    ;;\n  *)\n    echo \"unsupported SDK_NAME=$SDK_NAME\" >&2\n    exit 1\n    ;;\nesac\nexport CARGO_TARGET_DIR=\"$PROJECT_DIR/../build/ios/wrongcl_native\"\nrustup target add \"$RUST_TARGET\"\ncargo build --manifest-path \"$PROJECT_DIR/../rust/Cargo.toml\" --target \"$RUST_TARGET\" $CARGO_FLAGS\ncp \"$CARGO_TARGET_DIR/$RUST_TARGET/$PROFILE_DIR/libwrongcl_native.a\" \"$PROJECT_DIR/Flutter/libwrongcl_native.a\"\n";
+			shellScript = "set -e\nif [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  CARGO_FLAGS=\"\"\n  PROFILE_DIR=\"debug\"\nelse\n  CARGO_FLAGS=\"--release\"\n  PROFILE_DIR=\"release\"\nfi\ncase \"$SDK_NAME\" in\n  iphoneos*)\n    RUST_TARGET=\"aarch64-apple-ios\"\n    ;;\n  iphonesimulator*)\n    case \"$ARCHS\" in\n      *x86_64*) RUST_TARGET=\"x86_64-apple-ios\" ;;\n      *) RUST_TARGET=\"aarch64-apple-ios-sim\" ;;\n    esac\n    ;;\n  *)\n    echo \"unsupported SDK_NAME=$SDK_NAME\" >&2\n    exit 1\n    ;;\nesac\nexport CARGO_TARGET_DIR=\"$PROJECT_DIR/../build/ios/wrongcl_native\"\nrustup target add \"$RUST_TARGET\"\ncargo build --manifest-path \"$PROJECT_DIR/../rust/Cargo.toml\" --target \"$RUST_TARGET\" $CARGO_FLAGS\nmkdir -p \"$PROJECT_DIR/Flutter\"\ncp \"$CARGO_TARGET_DIR/$RUST_TARGET/$PROFILE_DIR/libwrongcl_native.a\" \"$PROJECT_DIR/Flutter/libwrongcl_native.a\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

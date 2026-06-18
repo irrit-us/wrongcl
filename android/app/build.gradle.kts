@@ -4,7 +4,7 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-val appRootDir = rootProject.projectDir.parentFile.parentFile
+val appRootDir = rootProject.projectDir.parentFile
 val rustBuildScript = appRootDir.resolve("scripts/build-android-rust.sh")
 
 android {
