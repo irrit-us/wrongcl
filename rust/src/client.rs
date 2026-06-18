@@ -181,7 +181,7 @@ impl WrongsvClient {
             ProxyProtocol::Tuic(_) | ProxyProtocol::Trojan(_) | ProxyProtocol::Shadowsocks(_) => {
                 true
             }
-            ProxyProtocol::Mixed(_) => false,
+            ProxyProtocol::Mixed(_) => true,
         }
     }
 
@@ -192,9 +192,7 @@ impl WrongsvClient {
             ProxyProtocol::Tuic(opts) => self.connect_tuic_udp(target, &opts),
             ProxyProtocol::Trojan(opts) => self.connect_trojan_udp(target, &opts),
             ProxyProtocol::Shadowsocks(opts) => self.connect_shadowsocks_udp(target, &opts),
-            ProxyProtocol::Mixed(_) => Err(ClientError::UnsupportedProtocol(
-                "remote mixed proxy does not support UDP ASSOCIATE in wrongcl yet".into(),
-            )),
+            ProxyProtocol::Mixed(opts) => self.connect_mixed_udp(target, &opts),
         }
     }
 
@@ -496,6 +494,17 @@ impl WrongsvClient {
                 }
             }
         }
+    }
+
+    fn connect_mixed_udp(
+        &self,
+        target: &Target,
+        opts: &MixedOptions,
+    ) -> Result<Box<dyn UdpSession>> {
+        let mut tcp = self.connect_tcp_with_timeouts()?;
+        let relay_target = remote_socks5_udp_associate(&mut tcp, opts)?;
+        clear_timeouts(&tcp)?;
+        open_remote_socks5_udp_session(tcp, relay_target, target.clone())
     }
 
     fn connect_shadowsocks(
@@ -922,6 +931,79 @@ impl UdpSession for ShadowsocksUdpSession {
     }
 }
 
+struct RemoteSocks5UdpSession {
+    target: Target,
+    socket: UdpSocket,
+    responses: Receiver<std::result::Result<UdpPacket, ClientError>>,
+    _control: TcpStream,
+}
+
+impl RemoteSocks5UdpSession {
+    fn new(control: TcpStream, relay: Target, target: Target) -> Result<Self> {
+        let relay_addr = format!("{}:{}", relay.host, relay.port)
+            .to_socket_addrs()?
+            .next()
+            .ok_or_else(|| ClientError::Config("failed to resolve SOCKS5 UDP relay".into()))?;
+        let bind_addr = match relay_addr {
+            std::net::SocketAddr::V4(_) => "0.0.0.0:0",
+            std::net::SocketAddr::V6(_) => "[::]:0",
+        };
+        let socket = UdpSocket::bind(bind_addr)?;
+        socket.connect(relay_addr)?;
+        let read_socket = socket.try_clone()?;
+        read_socket.set_read_timeout(Some(Duration::from_millis(200)))?;
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let mut buf = [0u8; 65535];
+            loop {
+                match read_socket.recv(&mut buf) {
+                    Ok(0) => continue,
+                    Ok(n) => {
+                        let parsed = parse_socks5_udp_packet(&buf[..n]);
+                        if tx.send(parsed).is_err() {
+                            break;
+                        }
+                    }
+                    Err(ref e)
+                        if matches!(
+                            e.kind(),
+                            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                        ) =>
+                    {
+                        continue;
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(ClientError::Io(e)));
+                        break;
+                    }
+                }
+            }
+        });
+
+        Ok(Self {
+            target,
+            socket,
+            responses: rx,
+            _control: control,
+        })
+    }
+}
+
+impl UdpSession for RemoteSocks5UdpSession {
+    fn send_packet(&mut self, payload: &[u8]) -> Result<()> {
+        let packet = encode_socks5_udp_packet(&self.target, payload)?;
+        self.socket.send(&packet)?;
+        Ok(())
+    }
+
+    fn try_recv_packet(&mut self) -> Result<Option<UdpPacket>> {
+        match self.responses.try_recv() {
+            Ok(result) => result.map(Some),
+            Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => Ok(None),
+        }
+    }
+}
+
 fn open_stream_udp_session(stream: Box<dyn Tunnel>, target: Target) -> Result<Box<dyn UdpSession>> {
     Ok(Box::new(StreamUdpSession::new(stream, target)?))
 }
@@ -939,6 +1021,16 @@ fn open_shadowsocks_udp_session(
         config,
         server_addr,
         target,
+    )?))
+}
+
+fn open_remote_socks5_udp_session(
+    control: TcpStream,
+    relay: Target,
+    target: Target,
+) -> Result<Box<dyn UdpSession>> {
+    Ok(Box::new(RemoteSocks5UdpSession::new(
+        control, relay, target,
     )?))
 }
 
@@ -1066,6 +1158,53 @@ fn remote_socks5_connect(
     opts: &MixedOptions,
     target: &Target,
 ) -> Result<()> {
+    remote_socks5_negotiate(stream, opts)?;
+
+    let mut request = vec![0x05, 0x01, 0x00];
+    write_socks_address(&mut request, &target.host, target.port)?;
+    stream.write_all(&request)?;
+
+    let mut reply = [0u8; 4];
+    stream.read_exact(&mut reply)?;
+    if reply[0] != 0x05 {
+        return Err(ClientError::Config(
+            "remote SOCKS5 reply bad version".into(),
+        ));
+    }
+    if reply[1] != 0x00 {
+        return Err(ClientError::Config(format!(
+            "remote SOCKS5 CONNECT failed with reply {:#04x}",
+            reply[1]
+        )));
+    }
+    let _ = read_socks_bound_address(stream, reply[3])?;
+    Ok(())
+}
+
+fn remote_socks5_udp_associate(stream: &mut TcpStream, opts: &MixedOptions) -> Result<Target> {
+    remote_socks5_negotiate(stream, opts)?;
+
+    let request = [0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0];
+    stream.write_all(&request)?;
+
+    let mut reply = [0u8; 4];
+    stream.read_exact(&mut reply)?;
+    if reply[0] != 0x05 {
+        return Err(ClientError::Config(
+            "remote SOCKS5 reply bad version".into(),
+        ));
+    }
+    if reply[1] != 0x00 {
+        return Err(ClientError::Config(format!(
+            "remote SOCKS5 UDP ASSOCIATE failed with reply {:#04x}",
+            reply[1]
+        )));
+    }
+    let (host, port) = read_socks_bound_address(stream, reply[3])?;
+    normalize_socks_udp_relay_target(stream, host, port)
+}
+
+fn remote_socks5_negotiate(stream: &mut TcpStream, opts: &MixedOptions) -> Result<()> {
     let use_auth = opts
         .username
         .as_deref()
@@ -1105,25 +1244,6 @@ fn remote_socks5_connect(
             )));
         }
     }
-
-    let mut request = vec![0x05, 0x01, 0x00];
-    write_socks_address(&mut request, &target.host, target.port)?;
-    stream.write_all(&request)?;
-
-    let mut reply = [0u8; 4];
-    stream.read_exact(&mut reply)?;
-    if reply[0] != 0x05 {
-        return Err(ClientError::Config(
-            "remote SOCKS5 reply bad version".into(),
-        ));
-    }
-    if reply[1] != 0x00 {
-        return Err(ClientError::Config(format!(
-            "remote SOCKS5 CONNECT failed with reply {:#04x}",
-            reply[1]
-        )));
-    }
-    read_socks_bound_address(stream, reply[3])?;
     Ok(())
 }
 
@@ -1178,29 +1298,122 @@ fn write_socks_address(buf: &mut Vec<u8>, host: &str, port: u16) -> Result<()> {
     Ok(())
 }
 
-fn read_socks_bound_address(stream: &mut TcpStream, atyp: u8) -> Result<()> {
+fn read_socks_bound_address(stream: &mut TcpStream, atyp: u8) -> Result<(String, u16)> {
     match atyp {
         0x01 => {
             let mut buf = [0u8; 6];
             stream.read_exact(&mut buf)?;
+            let host = Ipv4Addr::from([buf[0], buf[1], buf[2], buf[3]]).to_string();
+            let port = u16::from_be_bytes([buf[4], buf[5]]);
+            Ok((host, port))
         }
         0x03 => {
             let mut len = [0u8; 1];
             stream.read_exact(&mut len)?;
             let mut buf = vec![0u8; len[0] as usize + 2];
             stream.read_exact(&mut buf)?;
+            let host = String::from_utf8(buf[..len[0] as usize].to_vec()).map_err(|_| {
+                ClientError::Config("remote SOCKS5 reply contained invalid domain name".into())
+            })?;
+            let port = u16::from_be_bytes([buf[len[0] as usize], buf[len[0] as usize + 1]]);
+            Ok((host, port))
         }
         0x04 => {
             let mut buf = [0u8; 18];
             stream.read_exact(&mut buf)?;
+            let mut octets = [0u8; 16];
+            octets.copy_from_slice(&buf[..16]);
+            let host = Ipv6Addr::from(octets).to_string();
+            let port = u16::from_be_bytes([buf[16], buf[17]]);
+            Ok((host, port))
         }
-        other => {
-            return Err(ClientError::Config(format!(
-                "remote SOCKS5 reply used unsupported address type {other:#04x}"
-            )));
-        }
+        other => Err(ClientError::Config(format!(
+            "remote SOCKS5 reply used unsupported address type {other:#04x}"
+        ))),
     }
-    Ok(())
+}
+
+fn normalize_socks_udp_relay_target(stream: &TcpStream, host: String, port: u16) -> Result<Target> {
+    let host = if host == "0.0.0.0" || host == "::" {
+        stream.peer_addr()?.ip().to_string()
+    } else {
+        host
+    };
+    Target::new(host, port)
+}
+
+fn parse_socks5_udp_packet(packet: &[u8]) -> Result<UdpPacket> {
+    if packet.len() < 4 {
+        return Err(ClientError::Config(
+            "remote SOCKS5 UDP packet too short".into(),
+        ));
+    }
+    if packet[0] != 0 || packet[1] != 0 {
+        return Err(ClientError::Config(
+            "remote SOCKS5 UDP reserved bytes must be zero".into(),
+        ));
+    }
+    if packet[2] != 0 {
+        return Err(ClientError::UnsupportedProtocol(
+            "remote SOCKS5 UDP fragmentation is not supported".into(),
+        ));
+    }
+    let (target, header_len) = parse_socks5_udp_target(&packet[3..])?;
+    Ok(UdpPacket {
+        target,
+        payload: packet[3 + header_len..].to_vec(),
+    })
+}
+
+fn encode_socks5_udp_packet(target: &Target, payload: &[u8]) -> Result<Vec<u8>> {
+    let mut out = vec![0x00, 0x00, 0x00];
+    write_socks_address(&mut out, &target.host, target.port)?;
+    out.extend_from_slice(payload);
+    Ok(out)
+}
+
+fn parse_socks5_udp_target(data: &[u8]) -> Result<(Target, usize)> {
+    let atyp = *data
+        .first()
+        .ok_or_else(|| ClientError::Config("missing SOCKS5 UDP address type".into()))?;
+    match atyp {
+        0x01 => {
+            if data.len() < 1 + 4 + 2 {
+                return Err(ClientError::Config("short SOCKS5 UDP IPv4 address".into()));
+            }
+            let host = Ipv4Addr::from([data[1], data[2], data[3], data[4]]).to_string();
+            let port = u16::from_be_bytes([data[5], data[6]]);
+            Ok((Target::new(host, port)?, 7))
+        }
+        0x03 => {
+            let len = *data
+                .get(1)
+                .ok_or_else(|| ClientError::Config("short SOCKS5 UDP domain length".into()))?
+                as usize;
+            if data.len() < 2 + len + 2 {
+                return Err(ClientError::Config(
+                    "short SOCKS5 UDP domain address".into(),
+                ));
+            }
+            let host = String::from_utf8(data[2..2 + len].to_vec())
+                .map_err(|_| ClientError::Config("invalid SOCKS5 UDP domain name".into()))?;
+            let port = u16::from_be_bytes([data[2 + len], data[3 + len]]);
+            Ok((Target::new(host, port)?, 4 + len))
+        }
+        0x04 => {
+            if data.len() < 1 + 16 + 2 {
+                return Err(ClientError::Config("short SOCKS5 UDP IPv6 address".into()));
+            }
+            let mut octets = [0u8; 16];
+            octets.copy_from_slice(&data[1..17]);
+            let host = Ipv6Addr::from(octets).to_string();
+            let port = u16::from_be_bytes([data[17], data[18]]);
+            Ok((Target::new(host, port)?, 19))
+        }
+        other => Err(ClientError::Config(format!(
+            "unsupported SOCKS5 UDP address type {other:#04x}"
+        ))),
+    }
 }
 
 fn remote_http_connect(stream: &mut TcpStream, opts: &MixedOptions, target: &Target) -> Result<()> {
@@ -1665,6 +1878,50 @@ mod tests {
     }
 
     #[test]
+    fn socks_proxy_udp_works_against_fake_remote_socks5_server() {
+        let server = spawn_fake_socks5_server(None, None);
+        let client = WrongsvClient::new(mixed_server(
+            "127.0.0.1",
+            server.port,
+            MixedOptions::default(),
+        ))
+        .unwrap();
+
+        let mut session = client
+            .connect_udp_session(&Target::new("example.com", 53).unwrap())
+            .unwrap();
+        session.send_packet(b"ping-udp").unwrap();
+        for _ in 0..40 {
+            if let Some(packet) = session.try_recv_packet().unwrap() {
+                assert_eq!(packet.payload, b"ping-udp");
+                assert_eq!(packet.target.host, "example.com");
+                assert_eq!(packet.target.port, 53);
+                return;
+            }
+            thread::sleep(Duration::from_millis(25));
+        }
+        panic!("no UDP response from remote SOCKS5 session");
+    }
+
+    #[test]
+    fn local_proxy_udp_works_against_fake_remote_socks5_server() {
+        let server = spawn_fake_socks5_server(None, None);
+        let mut proxy = ProxyHandle::start(ClientConfig {
+            server: mixed_server("127.0.0.1", server.port, MixedOptions::default()),
+            local: LocalProxyConfig {
+                host: "127.0.0.1".into(),
+                port: 0,
+            },
+        })
+        .unwrap();
+
+        let response = run_socks_udp_echo(proxy.snapshot().socket_addr()).unwrap();
+        proxy.stop().unwrap();
+
+        assert_eq!(response, b"ping-udp".to_vec());
+    }
+
+    #[test]
     fn probe_works_against_fake_remote_http_connect_server() {
         let server = spawn_fake_http_connect_server(None, None);
         let client = WrongsvClient::new(mixed_server(
@@ -1763,6 +2020,10 @@ mod tests {
         ))
         .unwrap();
         assert!(!webtransport_disabled.supports_udp());
+
+        let mixed =
+            WrongsvClient::new(mixed_server("127.0.0.1", 443, MixedOptions::default())).unwrap();
+        assert!(mixed.supports_udp());
     }
 
     #[test]
@@ -2024,33 +2285,94 @@ mod tests {
         let mut request = [0u8; 4];
         stream.read_exact(&mut request)?;
         assert_eq!(request[0], 0x05);
-        assert_eq!(request[1], 0x01);
-        match request[3] {
+        match request[1] {
             0x01 => {
-                let mut buf = [0u8; 6];
-                stream.read_exact(&mut buf)?;
+                match request[3] {
+                    0x01 => {
+                        let mut buf = [0u8; 6];
+                        stream.read_exact(&mut buf)?;
+                    }
+                    0x03 => {
+                        let mut len = [0u8; 1];
+                        stream.read_exact(&mut len)?;
+                        let mut buf = vec![0u8; len[0] as usize + 2];
+                        stream.read_exact(&mut buf)?;
+                    }
+                    0x04 => {
+                        let mut buf = [0u8; 18];
+                        stream.read_exact(&mut buf)?;
+                    }
+                    other => panic!("unexpected socks atyp {other}"),
+                }
+                stream.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])?;
+
+                let mut buf = [0u8; 1024];
+                loop {
+                    match stream.read(&mut buf) {
+                        Ok(0) => return Ok(()),
+                        Ok(n) => stream.write_all(&buf[..n])?,
+                        Err(e) => return Err(e),
+                    }
+                }
             }
             0x03 => {
-                let mut len = [0u8; 1];
-                stream.read_exact(&mut len)?;
-                let mut buf = vec![0u8; len[0] as usize + 2];
-                stream.read_exact(&mut buf)?;
-            }
-            0x04 => {
-                let mut buf = [0u8; 18];
-                stream.read_exact(&mut buf)?;
-            }
-            other => panic!("unexpected socks atyp {other}"),
-        }
-        stream.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])?;
+                match request[3] {
+                    0x01 => {
+                        let mut buf = [0u8; 6];
+                        stream.read_exact(&mut buf)?;
+                    }
+                    0x03 => {
+                        let mut len = [0u8; 1];
+                        stream.read_exact(&mut len)?;
+                        let mut buf = vec![0u8; len[0] as usize + 2];
+                        stream.read_exact(&mut buf)?;
+                    }
+                    0x04 => {
+                        let mut buf = [0u8; 18];
+                        stream.read_exact(&mut buf)?;
+                    }
+                    other => panic!("unexpected socks atyp {other}"),
+                }
 
-        let mut buf = [0u8; 1024];
-        loop {
-            match stream.read(&mut buf) {
-                Ok(0) => return Ok(()),
-                Ok(n) => stream.write_all(&buf[..n])?,
-                Err(e) => return Err(e),
+                let udp = UdpSocket::bind("127.0.0.1:0")?;
+                let addr = udp.local_addr()?;
+                let mut reply = vec![0x05, 0x00, 0x00];
+                reply.push(0x01);
+                reply.extend_from_slice(&match addr.ip() {
+                    std::net::IpAddr::V4(ip) => ip.octets().to_vec(),
+                    _ => panic!("expected IPv4 relay address"),
+                });
+                reply.extend_from_slice(&addr.port().to_be_bytes());
+                stream.write_all(&reply)?;
+                udp.set_read_timeout(Some(Duration::from_millis(100)))?;
+                stream.set_read_timeout(Some(Duration::from_millis(100)))?;
+
+                let mut buf = [0u8; 65535];
+                loop {
+                    match udp.recv_from(&mut buf) {
+                        Ok((n, peer)) => {
+                            let packet = parse_socks5_udp_packet(&buf[..n])
+                                .map_err(|e| io::Error::other(e.to_string()))?;
+                            let response =
+                                encode_socks5_udp_packet(&packet.target, &packet.payload)
+                                    .map_err(|e| io::Error::other(e.to_string()))?;
+                            udp.send_to(&response, peer)?;
+                        }
+                        Err(ref e)
+                            if matches!(
+                                e.kind(),
+                                io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                            ) =>
+                        {
+                            if !control_connection_alive_for_test(&stream)? {
+                                return Ok(());
+                            }
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
             }
+            other => panic!("unexpected SOCKS5 command {other:#04x}"),
         }
     }
 
@@ -2089,6 +2411,56 @@ mod tests {
                 Ok(n) => stream.write_all(&buf[..n])?,
                 Err(e) => return Err(e),
             }
+        }
+    }
+
+    fn run_socks_udp_echo(local_addr: SocketAddr) -> io::Result<Vec<u8>> {
+        let mut control = TcpStream::connect_timeout(&local_addr, Duration::from_secs(2))?;
+        control.set_read_timeout(Some(Duration::from_secs(3)))?;
+        control.write_all(&[0x05, 0x01, 0x00])?;
+
+        let mut greeting = [0u8; 2];
+        control.read_exact(&mut greeting)?;
+        assert_eq!(greeting, [0x05, 0x00]);
+
+        control.write_all(&[0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0])?;
+        let mut reply = [0u8; 10];
+        control.read_exact(&mut reply)?;
+        assert_eq!(reply[1], 0x00);
+        let relay_addr = SocketAddr::new(
+            std::net::IpAddr::V4(Ipv4Addr::new(reply[4], reply[5], reply[6], reply[7])),
+            u16::from_be_bytes([reply[8], reply[9]]),
+        );
+
+        let udp = UdpSocket::bind("127.0.0.1:0")?;
+        udp.set_read_timeout(Some(Duration::from_secs(3)))?;
+
+        let payload = b"ping-udp";
+        let packet = encode_socks5_udp_packet(&Target::new("example.com", 53).unwrap(), payload)
+            .map_err(|e| io::Error::other(e.to_string()))?;
+        udp.send_to(&packet, relay_addr)?;
+
+        let mut buf = [0u8; 1024];
+        let (n, _) = udp.recv_from(&mut buf)?;
+        let packet =
+            parse_socks5_udp_packet(&buf[..n]).map_err(|e| io::Error::other(e.to_string()))?;
+        Ok(packet.payload)
+    }
+
+    fn control_connection_alive_for_test(client: &TcpStream) -> io::Result<bool> {
+        let mut byte = [0u8; 1];
+        match client.peek(&mut byte) {
+            Ok(0) => Ok(false),
+            Ok(_) => Ok(true),
+            Err(ref e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) =>
+            {
+                Ok(true)
+            }
+            Err(e) => Err(e),
         }
     }
 

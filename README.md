@@ -44,7 +44,7 @@ Verified local proxy coverage currently includes:
 - VLESS raw TCP with `flow = "xtls-rprx-vision"` for TCP
 - Trojan over TLS (TCP and UDP)
 - Shadowsocks AEAD / AEAD-2022 over raw TCP and UDP
-- Remote mixed proxy backends over SOCKS5 or HTTP CONNECT
+- Remote mixed proxy backends over SOCKS5 (TCP and UDP) or HTTP CONNECT (TCP)
 - Local HTTP `CONNECT` tunneling and absolute-form HTTP forwarding over the same listener as SOCKS5
 
 Direct-probe coverage also exists for the same core transport families.
