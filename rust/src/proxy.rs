@@ -614,10 +614,7 @@ fn relay_udp_associate(
 
         if let Some(peer) = client_peer {
             for session in sessions.values_mut() {
-                loop {
-                    let Some(packet) = session.try_recv_packet()? else {
-                        break;
-                    };
+                while let Some(packet) = session.try_recv_packet()? {
                     let payload = encode_socks5_udp_datagram(&packet.target, &packet.payload)?;
                     udp_socket.send_to(&payload, peer)?;
                     metrics
