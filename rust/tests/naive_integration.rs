@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -100,6 +101,14 @@ fn spawn_tcp_echo_server() -> SocketAddr {
     addr
 }
 
+fn test_guard() -> MutexGuard<'static, ()> {
+    static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
+    GUARD
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+}
+
 fn spawn_flaky_front_proxy(backend_port: u16) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -131,6 +140,7 @@ fn spawn_flaky_front_proxy(backend_port: u16) -> u16 {
 
 #[test]
 fn probe_works_against_naive_server() {
+    let _guard = test_guard();
     let server = spawn_naive_server();
     let echo_addr = spawn_tcp_echo_server();
 
@@ -146,6 +156,7 @@ fn probe_works_against_naive_server() {
 
 #[test]
 fn socks_proxy_works_against_naive_server() {
+    let _guard = test_guard();
     let server = spawn_naive_server();
     let echo_addr = spawn_tcp_echo_server();
 
@@ -167,6 +178,7 @@ fn socks_proxy_works_against_naive_server() {
 
 #[test]
 fn probe_retries_after_initial_connection_drop() {
+    let _guard = test_guard();
     let backend = spawn_naive_server();
     let front_port = spawn_flaky_front_proxy(backend.port);
     let echo_addr = spawn_tcp_echo_server();
@@ -183,6 +195,7 @@ fn probe_retries_after_initial_connection_drop() {
 
 #[test]
 fn naive_profile_rejects_udp_session() {
+    let _guard = test_guard();
     let server = spawn_naive_server();
 
     let client = WrongsvClient::new(naive_server_config(server.port)).unwrap();
