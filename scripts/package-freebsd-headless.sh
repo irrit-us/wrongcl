@@ -19,7 +19,7 @@ mkdir -p "$STAGING_DIR"
 cp "$ROOT_DIR/rust/target/release/wrongcl-headless" "$STAGING_DIR/"
 (
   cd "$ROOT_DIR/helpers/wireguard-client-bridge"
-  GOTOOLCHAIN=auto go build -o "$STAGING_DIR/wireguard-client-bridge" .
+  GOTOOLCHAIN=auto go build -buildvcs=false -o "$STAGING_DIR/wireguard-client-bridge" .
 )
 tar -czf "$ARCHIVE_PATH" -C "$OUTPUT_DIR" "$ARCHIVE_BASENAME"
 sha256 -q "$ARCHIVE_PATH" | awk -v name="$(basename "$ARCHIVE_PATH")" '{print tolower($0) "  " name}' > "$CHECKSUM_PATH"
