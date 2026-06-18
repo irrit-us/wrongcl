@@ -572,6 +572,7 @@ void main() {
     final autostartManager = AutostartManager(
       file: autostartFile,
       executablePath: '/tmp/wrongcl',
+      platform: AutostartPlatform.linux,
     );
 
     final initial = await autostartManager.loadStatus();
