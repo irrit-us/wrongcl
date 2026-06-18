@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'app.dart';
+import 'desktop_shell_controller.dart';
 
-void main() {
-  runApp(WrongclApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final desktopShellController = TrayDesktopShellController();
+  await desktopShellController.bootstrap();
+  runApp(WrongclApp(desktopShellController: desktopShellController));
 }

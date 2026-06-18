@@ -13,7 +13,7 @@ library through Dart FFI. The native layer can:
 - save, duplicate, safely delete, reset, and reload local client profiles from
   disk through a versioned on-disk profile store that still loads legacy
   profile arrays
-- show activity history plus desktop integration state for autostart and system proxy
+- show activity history plus desktop integration state for autostart, system proxy, and tray controls
 - run a direct probe through wrongsv and show the first response bytes
 - report connection-manager state and byte counters
 
@@ -65,7 +65,7 @@ The Flutter shell now includes:
 - a `Client Config` section for loading/exporting wrongcl config files
 - a `wrongsv Import` section for capability inspection and form adaptation
 - an `Activity` section for recent actions
-- a `Desktop Integration` section with Linux autostart and system-proxy management
+- a `Desktop Integration` section with tray controls plus Linux autostart and system-proxy management
 
 ## Platform Verification
 
@@ -105,6 +105,7 @@ cargo build --manifest-path rust/Cargo.toml --bin wrongcl-headless
 Install Flutter, then build the desktop app:
 
 ```bash
+sudo apt-get install -y libayatana-appindicator3-dev
 flutter pub get
 flutter build linux
 ```
@@ -188,3 +189,10 @@ flutter run -d linux
 Use the default UUID from `configs/basic-tcp.toml`, set the server host/port,
 start the local proxy, then run a probe or point a local SOCKS5-capable or
 HTTP CONNECT-capable client at `127.0.0.1:1080`.
+
+## Desktop Smoke Checklist
+
+- Linux, macOS, Windows: launch the app and confirm the tray icon appears.
+- Linux, macOS, Windows: use the tray menu to show or hide the window.
+- Linux, macOS, Windows: start the proxy from the window, then stop or refresh it from the tray menu.
+- Linux: enable and disable autostart plus system proxy from the app UI.

@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import 'autostart_manager.dart';
+import 'desktop_shell_controller.dart';
 import 'health_view.dart';
 import 'profile_store.dart';
 import 'system_proxy_manager.dart';
@@ -16,16 +18,20 @@ class WrongclApp extends StatelessWidget {
     ProfileStore? profileStore,
     AutostartManager? autostartManager,
     SystemProxyManager? systemProxyManager,
+    DesktopShellController? desktopShellController,
   })
     : client = client ?? NativeWrongclClient(),
       profileStore = profileStore ?? ProfileStore(),
       autostartManager = autostartManager ?? AutostartManager(),
-      systemProxyManager = systemProxyManager ?? SystemProxyManager();
+      systemProxyManager = systemProxyManager ?? SystemProxyManager(),
+      desktopShellController =
+          desktopShellController ?? const NoopDesktopShellController();
 
   final WrongclClient client;
   final ProfileStore profileStore;
   final AutostartManager autostartManager;
   final SystemProxyManager systemProxyManager;
+  final DesktopShellController desktopShellController;
 
   @override
   Widget build(BuildContext context) {
@@ -49,6 +55,7 @@ class WrongclApp extends StatelessWidget {
         profileStore: profileStore,
         autostartManager: autostartManager,
         systemProxyManager: systemProxyManager,
+        desktopShellController: desktopShellController,
       ),
     );
   }
@@ -61,12 +68,14 @@ class ClientHome extends StatefulWidget {
     required this.profileStore,
     required this.autostartManager,
     required this.systemProxyManager,
+    required this.desktopShellController,
   });
 
   final WrongclClient client;
   final ProfileStore profileStore;
   final AutostartManager autostartManager;
   final SystemProxyManager systemProxyManager;
+  final DesktopShellController desktopShellController;
 
   @override
   State<ClientHome> createState() => _ClientHomeState();
@@ -138,16 +147,19 @@ class _ClientHomeState extends State<ClientHome> {
   NativeResponse? _lastResponse;
   HealthProbeSnapshot? _lastProbe;
   HealthErrorSnapshot? _lastError;
+  bool _desktopShellSyncScheduled = false;
 
   @override
   void initState() {
     super.initState();
+    _profileName.addListener(_scheduleDesktopShellSync);
     final version = widget.client.version();
     _nativeInfo = version.ok ? _formatVersion(version.data) : version.message;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refreshStack();
-      _run('status', () => widget.client.status());
+      _refreshStatus();
     });
+    unawaited(_attachDesktopShell());
     _loadProfiles();
     _loadAutostartStatus();
     _loadSystemProxyStatus();
@@ -155,6 +167,8 @@ class _ClientHomeState extends State<ClientHome> {
 
   @override
   void dispose() {
+    _profileName.removeListener(_scheduleDesktopShellSync);
+    unawaited(widget.desktopShellController.dispose());
     _profileName.dispose();
     _clientConfigPath.dispose();
     _wrongsvConfigPath.dispose();
@@ -602,6 +616,43 @@ class _ClientHomeState extends State<ClientHome> {
     return '${local.year}-$month-$day $hour:$minute';
   }
 
+  DesktopShellState _desktopShellState() {
+    final profileName = _profileName.text.trim();
+    return DesktopShellState(
+      running: _running,
+      busy: _busy,
+      status: _status,
+      profileName: profileName.isEmpty ? 'default' : profileName,
+    );
+  }
+
+  Future<void> _attachDesktopShell() async {
+    await widget.desktopShellController.attach(
+      actions: DesktopShellActions(
+        startProxy: _startProxy,
+        stopProxy: _stopProxy,
+        refreshStatus: _refreshStatus,
+        prepareForQuit: _prepareForQuit,
+      ),
+      initialState: _desktopShellState(),
+    );
+    _scheduleDesktopShellSync();
+  }
+
+  void _scheduleDesktopShellSync() {
+    if (_desktopShellSyncScheduled || !mounted) {
+      return;
+    }
+    _desktopShellSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _desktopShellSyncScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      await widget.desktopShellController.sync(_desktopShellState());
+    });
+  }
+
   void _recordActivity(String title, String detail, {required bool success}) {
     final entry = _ActivityEntry(
       title: title,
@@ -633,11 +684,33 @@ class _ClientHomeState extends State<ClientHome> {
     }
   }
 
+  Future<void> _startProxy() {
+    return _run('start', () => widget.client.startProxy(_buildConfig()));
+  }
+
+  Future<void> _stopProxy() {
+    return _run('stop', () => widget.client.stopProxy());
+  }
+
+  Future<void> _refreshStatus() {
+    return _run('status', () => widget.client.status());
+  }
+
+  Future<void> _prepareForQuit() async {
+    if (!_running) {
+      return;
+    }
+    try {
+      await _stopProxy();
+    } catch (_) {}
+  }
+
   Future<void> _run(String action, NativeResponse Function() call) async {
     setState(() {
       _busy = true;
       _lastResponse = null;
     });
+    _scheduleDesktopShellSync();
 
     final response = await Future<NativeResponse>(call);
     if (!mounted) {
@@ -685,6 +758,7 @@ class _ClientHomeState extends State<ClientHome> {
       }
     });
     _recordActivity(action, response.message, success: response.ok);
+    _scheduleDesktopShellSync();
   }
 
   Future<void> _runUtility(
@@ -696,6 +770,7 @@ class _ClientHomeState extends State<ClientHome> {
       _busy = true;
       _lastResponse = null;
     });
+    _scheduleDesktopShellSync();
 
     final response = await Future<NativeResponse>(call);
     if (!mounted) {
@@ -719,6 +794,7 @@ class _ClientHomeState extends State<ClientHome> {
       }
     });
     _recordActivity(action, response.message, success: response.ok);
+    _scheduleDesktopShellSync();
   }
 
   Future<void> _runTask(String action, Future<void> Function() task) async {
@@ -726,6 +802,7 @@ class _ClientHomeState extends State<ClientHome> {
       _busy = true;
       _lastResponse = null;
     });
+    _scheduleDesktopShellSync();
 
     try {
       await task();
@@ -735,6 +812,7 @@ class _ClientHomeState extends State<ClientHome> {
         _status = '$action complete';
       });
       _recordActivity(action, 'completed', success: true);
+      _scheduleDesktopShellSync();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -752,6 +830,7 @@ class _ClientHomeState extends State<ClientHome> {
         );
       });
       _recordActivity(action, '$e', success: false);
+      _scheduleDesktopShellSync();
     }
   }
 
@@ -1538,32 +1617,21 @@ class _ClientHomeState extends State<ClientHome> {
                                 FilledButton.icon(
                                   onPressed: _busy
                                       ? null
-                                      : () => _run(
-                                          'start',
-                                          () => widget.client.startProxy(
-                                            _buildConfig(),
-                                          ),
-                                        ),
+                                      : _startProxy,
                                   icon: const Icon(Icons.play_arrow),
                                   label: const Text('Start proxy'),
                                 ),
                                 OutlinedButton.icon(
                                   onPressed: _busy
                                       ? null
-                                      : () => _run(
-                                          'stop',
-                                          () => widget.client.stopProxy(),
-                                        ),
+                                      : _stopProxy,
                                   icon: const Icon(Icons.stop),
                                   label: const Text('Stop'),
                                 ),
                                 OutlinedButton.icon(
                                   onPressed: _busy
                                       ? null
-                                      : () => _run(
-                                          'status',
-                                          () => widget.client.status(),
-                                        ),
+                                      : _refreshStatus,
                                   icon: const Icon(Icons.refresh),
                                   label: const Text('Refresh'),
                                 ),

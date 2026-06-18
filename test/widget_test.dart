@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wrongcl/app.dart';
 import 'package:wrongcl/autostart_manager.dart';
+import 'package:wrongcl/desktop_shell_controller.dart';
 import 'package:wrongcl/profile_store.dart';
 import 'package:wrongcl/system_proxy_manager.dart';
 import 'package:wrongcl/wrongcl_client.dart';
@@ -97,6 +98,7 @@ void main() {
 
   testWidgets('client controls start proxy and run probe', (tester) async {
     final client = FakeWrongclClient();
+    final desktopShellController = FakeDesktopShellController();
     final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
     final profileStore = ProfileStore(
       file: File('${tempDir.path}/profiles.json'),
@@ -121,6 +123,7 @@ void main() {
         profileStore: profileStore,
         autostartManager: autostartManager,
         systemProxyManager: systemProxyManager,
+        desktopShellController: desktopShellController,
       ),
     );
     await tester.pump(const Duration(milliseconds: 300));
@@ -137,6 +140,10 @@ void main() {
 
     expect(client.startCount, 1);
     expect(find.textContaining('local proxy started'), findsWidgets);
+    expect(
+      desktopShellController.syncedStates.any((state) => state.running),
+      isTrue,
+    );
 
     await tester.ensureVisible(probeButton);
     await tester.pumpAndSettle();
@@ -874,6 +881,32 @@ class FakeWrongclClient implements WrongclClient {
         'stack_summary': 'VLESS → raw → TCP',
       },
     );
+  }
+}
+
+class FakeDesktopShellController implements DesktopShellController {
+  DesktopShellActions? actions;
+  DesktopShellState? attachedState;
+  final List<DesktopShellState> syncedStates = [];
+
+  @override
+  Future<void> attach({
+    required DesktopShellActions actions,
+    required DesktopShellState initialState,
+  }) async {
+    this.actions = actions;
+    attachedState = initialState;
+  }
+
+  @override
+  Future<void> bootstrap() async {}
+
+  @override
+  Future<void> dispose() async {}
+
+  @override
+  Future<void> sync(DesktopShellState state) async {
+    syncedStates.add(state);
   }
 }
 

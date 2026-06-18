@@ -23,7 +23,7 @@ jobs:
       - name: Install Linux desktop build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev protobuf-compiler
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libayatana-appindicator3-dev protobuf-compiler
 
       - name: Verify Linux workflow
         run: bash scripts/verify-local.sh linux
