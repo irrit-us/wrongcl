@@ -17,7 +17,7 @@ cargo build --manifest-path "$ROOT_DIR/rust/Cargo.toml" --bin wrongcl-headless -
 rm -rf "$STAGING_DIR" "$ARCHIVE_PATH" "$CHECKSUM_PATH"
 mkdir -p "$STAGING_DIR"
 cp "$ROOT_DIR/rust/target/release/wrongcl-headless" "$STAGING_DIR/"
-cargo build --manifest-path "$ROOT_DIR/helpers/wireguard-client-bridge/Cargo.toml" --bin wireguard-client-bridge --release
-cp "$ROOT_DIR/helpers/wireguard-client-bridge/target/release/wireguard-client-bridge" "$STAGING_DIR/"
+cargo build --manifest-path "$ROOT_DIR/rust/Cargo.toml" --bin wireguard-client-bridge --release
+cp "$ROOT_DIR/rust/target/release/wireguard-client-bridge" "$STAGING_DIR/"
 tar -czf "$ARCHIVE_PATH" -C "$OUTPUT_DIR" "$ARCHIVE_BASENAME"
 sha256 -q "$ARCHIVE_PATH" | awk -v name="$(basename "$ARCHIVE_PATH")" '{print tolower($0) "  " name}' > "$CHECKSUM_PATH"

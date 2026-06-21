@@ -9,9 +9,7 @@ ARCHIVE_NAME="wrongcl-headless-macos-${MACOS_RELEASE_ARCH}-${VERSION//+/-}.zip"
 ARCHIVE_PATH="$OUTPUT_DIR/$ARCHIVE_NAME"
 CHECKSUM_PATH="$ARCHIVE_PATH.sha256"
 STAGING_DIR="$OUTPUT_DIR/wrongcl-headless-macos-${MACOS_RELEASE_ARCH}-${VERSION//+/-}"
-WIREGUARD_HELPER_DIR="$ROOT_DIR/helpers/wireguard-client-bridge"
 RUST_TARGET_DIR="$ROOT_DIR/build/macos/wrongcl_headless"
-WIREGUARD_HELPER_TARGET_DIR="$ROOT_DIR/build/macos/wireguard_client_bridge"
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -25,8 +23,8 @@ case "$MACOS_RELEASE_ARCH" in
     rustup target add x86_64-apple-darwin
     CARGO_TARGET_DIR="$RUST_TARGET_DIR" cargo build --manifest-path "$ROOT_DIR/rust/Cargo.toml" --bin wrongcl-headless --target x86_64-apple-darwin --release
     cp "$RUST_TARGET_DIR/x86_64-apple-darwin/release/wrongcl-headless" "$STAGING_DIR/wrongcl-headless"
-    CARGO_TARGET_DIR="$WIREGUARD_HELPER_TARGET_DIR" cargo build --manifest-path "$WIREGUARD_HELPER_DIR/Cargo.toml" --bin wireguard-client-bridge --target x86_64-apple-darwin --release
-    cp "$WIREGUARD_HELPER_TARGET_DIR/x86_64-apple-darwin/release/wireguard-client-bridge" "$STAGING_DIR/wireguard-client-bridge"
+    CARGO_TARGET_DIR="$RUST_TARGET_DIR" cargo build --manifest-path "$ROOT_DIR/rust/Cargo.toml" --bin wireguard-client-bridge --target x86_64-apple-darwin --release
+    cp "$RUST_TARGET_DIR/x86_64-apple-darwin/release/wireguard-client-bridge" "$STAGING_DIR/wireguard-client-bridge"
     ;;
   universal)
     rustup target add aarch64-apple-darwin x86_64-apple-darwin
@@ -36,11 +34,11 @@ case "$MACOS_RELEASE_ARCH" in
       "$RUST_TARGET_DIR/aarch64-apple-darwin/release/wrongcl-headless" \
       "$RUST_TARGET_DIR/x86_64-apple-darwin/release/wrongcl-headless" \
       -output "$STAGING_DIR/wrongcl-headless"
-    CARGO_TARGET_DIR="$WIREGUARD_HELPER_TARGET_DIR" cargo build --manifest-path "$WIREGUARD_HELPER_DIR/Cargo.toml" --bin wireguard-client-bridge --target aarch64-apple-darwin --release
-    CARGO_TARGET_DIR="$WIREGUARD_HELPER_TARGET_DIR" cargo build --manifest-path "$WIREGUARD_HELPER_DIR/Cargo.toml" --bin wireguard-client-bridge --target x86_64-apple-darwin --release
+    CARGO_TARGET_DIR="$RUST_TARGET_DIR" cargo build --manifest-path "$ROOT_DIR/rust/Cargo.toml" --bin wireguard-client-bridge --target aarch64-apple-darwin --release
+    CARGO_TARGET_DIR="$RUST_TARGET_DIR" cargo build --manifest-path "$ROOT_DIR/rust/Cargo.toml" --bin wireguard-client-bridge --target x86_64-apple-darwin --release
     lipo -create \
-      "$WIREGUARD_HELPER_TARGET_DIR/aarch64-apple-darwin/release/wireguard-client-bridge" \
-      "$WIREGUARD_HELPER_TARGET_DIR/x86_64-apple-darwin/release/wireguard-client-bridge" \
+      "$RUST_TARGET_DIR/aarch64-apple-darwin/release/wireguard-client-bridge" \
+      "$RUST_TARGET_DIR/x86_64-apple-darwin/release/wireguard-client-bridge" \
       -output "$STAGING_DIR/wireguard-client-bridge"
     ;;
   *)

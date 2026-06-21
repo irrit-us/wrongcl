@@ -15,9 +15,8 @@ ARCHIVE_BASENAME="wrongcl-macos-${MACOS_RELEASE_ARCH}-${VERSION//+/-}"
 APP_BUNDLE="$ROOT_DIR/build/macos/Build/Products/Release/wrongcl.app"
 ARCHIVE_PATH="$OUTPUT_DIR/$ARCHIVE_BASENAME.zip"
 CHECKSUM_PATH="$ARCHIVE_PATH.sha256"
-WIREGUARD_HELPER_DIR="$ROOT_DIR/helpers/wireguard-client-bridge"
 WIREGUARD_HELPER_BIN="$APP_BUNDLE/Contents/MacOS/wireguard-client-bridge"
-WIREGUARD_HELPER_SRC="$WIREGUARD_HELPER_DIR/target/release/wireguard-client-bridge"
+WIREGUARD_HELPER_SRC="$ROOT_DIR/rust/target/release/wireguard-client-bridge"
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -28,7 +27,7 @@ if [[ ! -d "$APP_BUNDLE" ]]; then
 fi
 
 cargo build \
-  --manifest-path "$WIREGUARD_HELPER_DIR/Cargo.toml" \
+  --manifest-path "$ROOT_DIR/rust/Cargo.toml" \
   --bin wireguard-client-bridge \
   --release
 cp "$WIREGUARD_HELPER_SRC" "$WIREGUARD_HELPER_BIN"

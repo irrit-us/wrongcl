@@ -220,10 +220,6 @@ fn write_runtime_config(
     Ok(path)
 }
 
-fn helper_directory() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../helpers/wireguard-client-bridge")
-}
-
 fn helper_binary_path() -> PathBuf {
     if let Some(packaged) = packaged_helper_binary() {
         return packaged;
@@ -238,7 +234,10 @@ fn helper_binary_path() -> PathBuf {
     } else {
         "release"
     };
-    helper_directory().join("target").join(profile).join(file)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join(profile)
+        .join(file)
 }
 
 fn packaged_helper_binary() -> Option<PathBuf> {
@@ -261,8 +260,8 @@ fn packaged_helper_binary() -> Option<PathBuf> {
 }
 
 fn build_helper_binary() -> Result<PathBuf> {
-    let helper_dir = helper_directory();
-    let manifest = helper_dir.join("Cargo.toml");
+    let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let manifest = crate_dir.join("Cargo.toml");
 
     let mut command = Command::new("cargo");
     command
@@ -271,7 +270,7 @@ fn build_helper_binary() -> Result<PathBuf> {
         .arg(&manifest)
         .arg("--bin")
         .arg("wireguard-client-bridge")
-        .current_dir(&helper_dir);
+        .current_dir(&crate_dir);
     if !cfg!(debug_assertions) {
         command.arg("--release");
     }
@@ -280,7 +279,7 @@ fn build_helper_binary() -> Result<PathBuf> {
     if !status.success() {
         return Err(ClientError::Io(io::Error::other(format!(
             "cargo build failed for {}",
-            helper_dir.display()
+            crate_dir.display()
         ))));
     }
     Ok(helper_binary_path())

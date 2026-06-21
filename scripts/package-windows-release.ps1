@@ -12,9 +12,8 @@ $ArchiveBaseName = "wrongcl-windows-x64-$($Version -replace '\+', '-')"
 $BundleDir = Join-Path $RootDir "build\windows\x64\runner\Release"
 $ArchivePath = Join-Path $OutputDir "$ArchiveBaseName.zip"
 $ChecksumPath = "$ArchivePath.sha256"
-$WireGuardHelperDir = Join-Path $RootDir "helpers\wireguard-client-bridge"
-$WireGuardHelperManifest = Join-Path $WireGuardHelperDir "Cargo.toml"
-$WireGuardHelperSrc = Join-Path $WireGuardHelperDir "target\release\wireguard-client-bridge.exe"
+$WireGuardHelperManifest = Join-Path $RootDir "rust\Cargo.toml"
+$WireGuardHelperSrc = Join-Path $RootDir "rust\target\release\wireguard-client-bridge.exe"
 $WireGuardHelperBin = Join-Path $BundleDir "wireguard-client-bridge.exe"
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null

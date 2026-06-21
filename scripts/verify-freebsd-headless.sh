@@ -9,8 +9,5 @@ sh scripts/ensure-wrongsv-sibling.sh
 cargo fmt --manifest-path rust/Cargo.toml --all -- --check
 cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path rust/Cargo.toml -- --test-threads=1
-cargo fmt --manifest-path helpers/wireguard-client-bridge/Cargo.toml --all -- --check
-cargo clippy --manifest-path helpers/wireguard-client-bridge/Cargo.toml -- -D warnings
-cargo check --manifest-path helpers/wireguard-client-bridge/Cargo.toml
 bash scripts/verify-shared-wrongsv.sh
 cargo build --manifest-path rust/Cargo.toml --bin wrongcl-headless --release
