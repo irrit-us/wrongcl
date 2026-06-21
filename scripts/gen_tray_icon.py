@@ -1,4 +1,4 @@
-"""Generate the tray icon as two sharp V shapes clipped by a reference circle.
+"""Generate the wrongcl W brand icons from one geometric source.
 
 Geometry rules:
 - The centerline is a single left-to-right stroke with alternating up/down turns.
@@ -10,7 +10,7 @@ Geometry rules:
   conjugate tau = (sqrt(5) - 1) / 2.
 
 Run:
-    python3 scripts/gen_tray_icon.py
+    python scripts/gen_tray_icon.py
 """
 
 from __future__ import annotations
@@ -24,12 +24,25 @@ from PIL import Image, ImageChops, ImageDraw
 # --- Parameters --------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PNG_OUTPUT_PATH = REPO_ROOT / "assets" / "tray_icon.png"
-ICO_OUTPUT_PATH = REPO_ROOT / "assets" / "tray_icon.ico"
-SVG_OUTPUT_PATH = REPO_ROOT / "assets" / "tray_icon.svg"
+LEGACY_PNG_OUTPUT_PATH = REPO_ROOT / "assets" / "tray_icon.png"
+LEGACY_ICO_OUTPUT_PATH = REPO_ROOT / "assets" / "tray_icon.ico"
+LEGACY_SVG_OUTPUT_PATH = REPO_ROOT / "assets" / "tray_icon.svg"
+
+BRAND_DIR = REPO_ROOT / "assets" / "brand"
+BRAND_MARK_OUTPUT_PATH = BRAND_DIR / "wrongcl_mark.png"
+BRAND_APP_MARK_OUTPUT_PATH = BRAND_DIR / "wrongcl_app_mark.png"
+BRAND_TRAY_PNG_OUTPUT_PATH = BRAND_DIR / "wrongcl_tray.png"
+BRAND_TRAY_ICO_OUTPUT_PATH = BRAND_DIR / "wrongcl_tray.ico"
+BRAND_LAUNCHER_ICO_OUTPUT_PATH = BRAND_DIR / "wrongcl_launcher.ico"
+
+LINUX_ICON_OUTPUT_PATH = REPO_ROOT / "linux" / "runner" / "resources" / "wrongcl.png"
+MACOS_APPICON_DIR = (
+    REPO_ROOT / "macos" / "Runner" / "Assets.xcassets" / "AppIcon.appiconset"
+)
 
 PNG_SIZE = 1024                       # large PNG for easier inspection/editing
 ICO_SOURCE_SIZE = 256                 # render size used to build the ICO
+LINUX_ICON_SIZE = 512
 BACKGROUND = (0, 0, 0, 0)             # transparent RGBA
 FILL_COLOR = (0x1A, 0x1A, 0x1A, 0xFF)
 
@@ -58,6 +71,15 @@ GUIDE_COLOR = (0, 0, 0, 48)
 
 SUPERSAMPLE = 4
 ICO_SIZES = [(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (24, 24), (16, 16)]
+MACOS_ICON_SIZES = {
+    "app_icon_16.png": 16,
+    "app_icon_32.png": 32,
+    "app_icon_64.png": 64,
+    "app_icon_128.png": 128,
+    "app_icon_256.png": 256,
+    "app_icon_512.png": 512,
+    "app_icon_1024.png": 1024,
+}
 
 
 # --- Drawing -----------------------------------------------------------------
@@ -375,19 +397,46 @@ def render_svg(size: int) -> str:
 
 
 def main() -> None:
-    PNG_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LEGACY_PNG_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    BRAND_DIR.mkdir(parents=True, exist_ok=True)
+    LINUX_ICON_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    MACOS_APPICON_DIR.mkdir(parents=True, exist_ok=True)
 
     png_img = render(PNG_SIZE)
-    png_img.save(PNG_OUTPUT_PATH, format="PNG")
+    for output_path in (
+        LEGACY_PNG_OUTPUT_PATH,
+        BRAND_MARK_OUTPUT_PATH,
+        BRAND_APP_MARK_OUTPUT_PATH,
+        BRAND_TRAY_PNG_OUTPUT_PATH,
+    ):
+        png_img.save(output_path, format="PNG")
+
+    png_img.resize((LINUX_ICON_SIZE, LINUX_ICON_SIZE), Image.LANCZOS).save(
+        LINUX_ICON_OUTPUT_PATH,
+        format="PNG",
+    )
+
+    for filename, size in MACOS_ICON_SIZES.items():
+        png_img.resize((size, size), Image.LANCZOS).save(
+            MACOS_APPICON_DIR / filename,
+            format="PNG",
+        )
 
     ico_img = render(ICO_SOURCE_SIZE)
-    ico_img.save(ICO_OUTPUT_PATH, format="ICO", sizes=ICO_SIZES)
+    for output_path in (
+        LEGACY_ICO_OUTPUT_PATH,
+        BRAND_TRAY_ICO_OUTPUT_PATH,
+        BRAND_LAUNCHER_ICO_OUTPUT_PATH,
+    ):
+        ico_img.save(output_path, format="ICO", sizes=ICO_SIZES)
 
-    SVG_OUTPUT_PATH.write_text(render_svg(PNG_SIZE), encoding="utf-8")
+    LEGACY_SVG_OUTPUT_PATH.write_text(render_svg(PNG_SIZE), encoding="utf-8")
 
-    print(f"Wrote {PNG_OUTPUT_PATH} ({PNG_SIZE}x{PNG_SIZE})")
-    print(f"Wrote {ICO_OUTPUT_PATH} ({ICO_SOURCE_SIZE} source, {len(ICO_SIZES)} sizes)")
-    print(f"Wrote {SVG_OUTPUT_PATH} ({PNG_SIZE} viewBox)")
+    print(f"Wrote shared PNG brand assets ({PNG_SIZE}x{PNG_SIZE})")
+    print(f"Wrote shared ICO brand assets ({ICO_SOURCE_SIZE} source, {len(ICO_SIZES)} sizes)")
+    print(f"Wrote {LINUX_ICON_OUTPUT_PATH} ({LINUX_ICON_SIZE}x{LINUX_ICON_SIZE})")
+    print(f"Wrote macOS AppIcon PNG set in {MACOS_APPICON_DIR}")
+    print(f"Wrote {LEGACY_SVG_OUTPUT_PATH} ({PNG_SIZE} viewBox)")
 
 
 if __name__ == "__main__":

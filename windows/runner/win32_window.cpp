@@ -37,6 +37,12 @@ int Scale(int source, double scale_factor) {
   return static_cast<int>(source * scale_factor);
 }
 
+HICON LoadAppIcon(int width, int height) {
+  return reinterpret_cast<HICON>(LoadImage(
+      GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON,
+      width, height, LR_DEFAULTCOLOR));
+}
+
 // Dynamically loads the |EnableNonClientDpiScaling| from the User32 module.
 // This API is only needed for PerMonitor V1 awareness mode.
 void EnableFullDpiSupportIfAvailable(HWND hwnd) {
@@ -95,8 +101,8 @@ const wchar_t* WindowClassRegistrar::GetWindowClass() {
     window_class.cbClsExtra = 0;
     window_class.cbWndExtra = 0;
     window_class.hInstance = GetModuleHandle(nullptr);
-    window_class.hIcon =
-        LoadIcon(window_class.hInstance, MAKEINTRESOURCE(IDI_APP_ICON));
+    window_class.hIcon = LoadAppIcon(GetSystemMetrics(SM_CXICON),
+                                     GetSystemMetrics(SM_CYICON));
     window_class.hbrBackground = 0;
     window_class.lpszMenuName = nullptr;
     window_class.lpfnWndProc = Win32Window::WndProc;
@@ -143,6 +149,13 @@ bool Win32Window::Create(const std::wstring& title,
   if (!window) {
     return false;
   }
+
+  SendMessage(window, WM_SETICON, ICON_BIG,
+              reinterpret_cast<LPARAM>(LoadAppIcon(GetSystemMetrics(SM_CXICON),
+                                                   GetSystemMetrics(SM_CYICON))));
+  SendMessage(window, WM_SETICON, ICON_SMALL,
+              reinterpret_cast<LPARAM>(LoadAppIcon(GetSystemMetrics(SM_CXSMICON),
+                                                   GetSystemMetrics(SM_CYSMICON))));
 
   UpdateTheme(window);
 

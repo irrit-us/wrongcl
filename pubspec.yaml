@@ -63,6 +63,10 @@ flutter:
   assets:
     - assets/tray_icon.png
     - assets/tray_icon.ico
+    - assets/brand/wrongcl_mark.png
+    - assets/brand/wrongcl_app_mark.png
+    - assets/brand/wrongcl_tray.png
+    - assets/brand/wrongcl_tray.ico
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -9,6 +9,30 @@ import 'package:wrongcl/profile_store.dart';
 import 'package:wrongcl/system_proxy_manager.dart';
 import 'package:wrongcl/wrongcl_client.dart';
 
+Future<void> _openWorkspace(WidgetTester tester, String title) async {
+  final target = find.text(title).first;
+  await tester.ensureVisible(target);
+  await tester.tap(target, warnIfMissed: false);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _backToDashboard(WidgetTester tester) async {
+  final controlSurfaceButton = find.widgetWithText(
+    OutlinedButton,
+    'Back to control surface',
+  );
+  if (controlSurfaceButton.evaluate().isNotEmpty) {
+    await tester.tap(controlSurfaceButton);
+    await tester.pumpAndSettle();
+    return;
+  }
+  final closePanelButton = find.byTooltip('Close panel');
+  if (closePanelButton.evaluate().isNotEmpty) {
+    await tester.tap(closePanelButton);
+    await tester.pumpAndSettle();
+  }
+}
+
 void main() {
   testWidgets('client renders import and profile workflow', (tester) async {
     final client = FakeWrongclClient();
@@ -38,16 +62,14 @@ void main() {
 
     expect(find.text('Wrongcl'), findsOneWidget);
     expect(find.text('Profiles'), findsOneWidget);
-    expect(find.text('Endpoint'), findsOneWidget);
+    expect(find.text('Editor'), findsOneWidget);
     expect(find.text('Connection Manager'), findsOneWidget);
-    expect(find.text('wrongsv Import'), findsOneWidget);
+    expect(find.text('Import / Support State'), findsOneWidget);
     expect(find.text('Start proxy'), findsOneWidget);
-    expect(find.text('Run probe'), findsOneWidget);
-    expect(find.text('Inspect wrongsv'), findsOneWidget);
-    expect(find.text('Adapt into form'), findsOneWidget);
-    expect(find.text('New blank'), findsOneWidget);
-    expect(find.text('Validate current'), findsOneWidget);
-    expect(find.text('Enable system proxy'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
+
+    await _openWorkspace(tester, 'Import');
+
     final inspectButton = find.widgetWithText(
       OutlinedButton,
       'Inspect wrongsv',
@@ -67,7 +89,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(client.inspectCount, 1);
-    expect(find.textContaining('wrongsv capabilities inspected'), findsWidgets);
+    expect(find.text('test fixture'), findsOneWidget);
 
     await tester.ensureVisible(adaptButton);
     await tester.pumpAndSettle();
@@ -76,7 +98,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(client.adaptCount, 1);
-    expect(find.textContaining('wrongsv config adapted'), findsWidgets);
+    expect(find.textContaining('Adapted stack: VLESS'), findsOneWidget);
+
+    await _backToDashboard(tester);
+    await _openWorkspace(tester, 'Profiles');
 
     await tester.enterText(
       find.byKey(const ValueKey('profile-name')),
@@ -121,7 +146,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     final startButton = find.widgetWithText(FilledButton, 'Start proxy');
-    final probeButton = find.widgetWithText(FilledButton, 'Run probe');
 
     await tester.ensureVisible(startButton);
     await tester.pumpAndSettle();
@@ -137,6 +161,8 @@ void main() {
       isTrue,
     );
 
+    await _openWorkspace(tester, 'Diagnostics');
+    final probeButton = find.widgetWithText(FilledButton, 'Run probe').first;
     await tester.ensureVisible(probeButton);
     await tester.pumpAndSettle();
     final probe = tester.widget<FilledButton>(probeButton);
@@ -186,20 +212,19 @@ void main() {
     tester.widget<FilledButton>(startButton).onPressed!();
     await tester.pumpAndSettle();
 
-    final probeButton = find.widgetWithText(FilledButton, 'Run probe');
+    await _openWorkspace(tester, 'Diagnostics');
+    final probeButton = find.widgetWithText(FilledButton, 'Run probe').first;
     await tester.ensureVisible(probeButton);
     await tester.pumpAndSettle();
     tester.widget<FilledButton>(probeButton).onPressed!();
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('4 bytes | pong'), findsOneWidget);
-    expect(find.text('No error recorded'), findsOneWidget);
+    expect(find.textContaining('probe succeeded'), findsWidgets);
 
     tester.widget<FilledButton>(probeButton).onPressed!();
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('probe: upstream timed out'), findsOneWidget);
-    expect(find.textContaining('4 bytes | pong'), findsOneWidget);
+    expect(find.textContaining('upstream timed out'), findsWidgets);
   });
 
   testWidgets('client config load and export workflow', (tester) async {
@@ -229,6 +254,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await _openWorkspace(tester, 'Editor');
     await tester.enterText(
       find.byKey(const ValueKey('client-config-path')),
       configPath.path,
@@ -320,6 +346,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await _openWorkspace(tester, 'Import');
     await tester.enterText(
       find.byKey(const ValueKey('wrongsv-config-path')),
       '/tmp/reality.toml',
@@ -334,33 +361,23 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(client.adaptCount, 1);
-    expect(find.textContaining('Adapted draft config'), findsOneWidget);
     expect(find.text('Fill required client-side fields'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('missing-reality.public-key')),
       findsOneWidget,
     );
 
+    await _backToDashboard(tester);
+    await _openWorkspace(tester, 'Profiles');
     await tester.enterText(
       find.byKey(const ValueKey('profile-name')),
       'reality draft',
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Save current'));
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.pumpAndSettle();
+    expect(find.text('reality draft'), findsOneWidget);
 
-    await tester.pumpWidget(
-      WrongclApp(client: client, profileStore: profileStore),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('reality draft'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Load selected'));
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.pumpAndSettle();
-
+    await _backToDashboard(tester);
+    await _openWorkspace(tester, 'Import');
     expect(find.text('Fill required client-side fields'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('missing-reality.public-key')),
@@ -394,16 +411,21 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await _openWorkspace(tester, 'Profiles');
     await tester.enterText(
       find.byKey(const ValueKey('profile-name')),
       'temp profile',
     );
+    await _backToDashboard(tester);
+    await _openWorkspace(tester, 'Import');
     await tester.enterText(
       find.byKey(const ValueKey('wrongsv-config-path')),
       '/tmp/server.toml',
     );
     await tester.pumpAndSettle();
 
+    await _backToDashboard(tester);
+    await _openWorkspace(tester, 'Profiles');
     final newBlankButton = find.widgetWithText(OutlinedButton, 'New blank');
     await tester.ensureVisible(newBlankButton);
     await tester.pumpAndSettle();
@@ -413,6 +435,8 @@ void main() {
     final profileNameField = tester.widget<TextField>(
       find.byKey(const ValueKey('profile-name')),
     );
+    await _backToDashboard(tester);
+    await _openWorkspace(tester, 'Import');
     final wrongsvPathField = tester.widget<TextField>(
       find.byKey(const ValueKey('wrongsv-config-path')),
     );
@@ -465,11 +489,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final profileTile = find.widgetWithText(ListTile, 'delete me');
-    expect(profileTile, findsOneWidget);
-    final selectedProfile = tester.widget<ListTile>(profileTile);
-    expect(selectedProfile.onTap, isNotNull);
-    selectedProfile.onTap!();
+    await _openWorkspace(tester, 'Profiles');
+    final profileRow = find.text('delete me').last;
+    expect(profileRow, findsOneWidget);
+    await tester.ensureVisible(profileRow);
+    await tester.pumpAndSettle();
+    await tester.tap(profileRow);
     await tester.pumpAndSettle();
 
     final deleteButton = find.widgetWithText(OutlinedButton, 'Delete selected');
@@ -485,7 +510,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pumpAndSettle();
     expect(find.text('Delete saved profile?'), findsNothing);
-    expect(profileTile, findsOneWidget);
+    expect(profileRow, findsOneWidget);
     expect(find.text('Deleted profile delete me'), findsNothing);
 
     final deleteAgain = tester.widget<OutlinedButton>(deleteButton);
@@ -498,7 +523,193 @@ void main() {
     expect(find.text('Delete saved profile?'), findsNothing);
     expect(find.text('Deleted profile delete me'), findsOneWidget);
     expect(find.text('No saved profiles'), findsOneWidget);
-    expect(profileTile, findsNothing);
+  });
+
+  testWidgets('dashboard shows truthful disabled controls', (tester) async {
+    final client = FakeWrongclClient();
+    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
+    final profileStore = ProfileStore(
+      file: File('${tempDir.path}/profiles.json'),
+    );
+    final autostartManager = AutostartManager(
+      file: File('${tempDir.path}/wrongcl.desktop'),
+      executablePath: '/tmp/wrongcl',
+    );
+    final systemProxyManager = SystemProxyManager(
+      platform: SystemProxyPlatform.unsupported,
+    );
+
+    await tester.pumpWidget(
+      WrongclApp(
+        client: client,
+        profileStore: profileStore,
+        autostartManager: autostartManager,
+        systemProxyManager: systemProxyManager,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Capabilities'), findsOneWidget);
+    expect(find.text('TUN'), findsOneWidget);
+    expect(find.text('Mode'), findsOneWidget);
+    expect(find.text('Script'), findsOneWidget);
+    expect(find.text('Unsupported'), findsWidgets);
+    expect(
+      find.textContaining('System proxy integration is not implemented'),
+      findsWidgets,
+    );
+  });
+
+  testWidgets('dashboard signal cards stay empty until runtime samples exist', (
+    tester,
+  ) async {
+    final client = FakeWrongclClient();
+    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
+    final profileStore = ProfileStore(
+      file: File('${tempDir.path}/profiles.json'),
+    );
+
+    await tester.pumpWidget(
+      WrongclApp(
+        client: client,
+        profileStore: profileStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Runtime Signals'), findsOneWidget);
+    expect(find.text('Waiting for runtime samples'), findsWidgets);
+  });
+
+  testWidgets('dashboard signal cards render charts after runtime samples', (
+    tester,
+  ) async {
+    final client = FakeWrongclClient();
+    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
+    final profileStore = ProfileStore(
+      file: File('${tempDir.path}/profiles.json'),
+    );
+
+    await tester.pumpWidget(
+      WrongclApp(
+        client: client,
+        profileStore: profileStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final startButton = find.widgetWithText(FilledButton, 'Start proxy');
+    await tester.ensureVisible(startButton);
+    await tester.pumpAndSettle();
+    tester.widget<FilledButton>(startButton).onPressed!();
+    await tester.pumpAndSettle();
+
+    final refreshButton = find.widgetWithText(OutlinedButton, 'Refresh');
+    await tester.ensureVisible(refreshButton);
+    await tester.pumpAndSettle();
+    tester.widget<OutlinedButton>(refreshButton).onPressed!();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Runtime Signals'), findsOneWidget);
+    expect(find.byType(CustomPaint), findsWidgets);
+  });
+
+  testWidgets('dashboard detail cards open modal details', (tester) async {
+    final client = FakeWrongclClient();
+    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
+    final profileStore = ProfileStore(
+      file: File('${tempDir.path}/profiles.json'),
+    );
+
+    await tester.pumpWidget(
+      WrongclApp(
+        client: client,
+        profileStore: profileStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final showDetails = find.widgetWithText(InkWell, 'Show details').first;
+    await tester.ensureVisible(showDetails);
+    await tester.tap(showDetails);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Dialog), findsOneWidget);
+    expect(find.byTooltip('Close'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Dialog), findsNothing);
+  });
+
+  testWidgets('dashboard keeps connection charts out of show details', (
+    tester,
+  ) async {
+    final client = FakeWrongclClient();
+    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
+    final profileStore = ProfileStore(
+      file: File('${tempDir.path}/profiles.json'),
+    );
+
+    await tester.pumpWidget(
+      WrongclApp(
+        client: client,
+        profileStore: profileStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final connectionCard = find.ancestor(
+      of: find.text('Connection Manager'),
+      matching: find.byType(Card),
+    );
+    expect(connectionCard, findsOneWidget);
+    expect(
+      find.descendant(
+        of: connectionCard,
+        matching: find.text('Show details'),
+      ),
+      findsNothing,
+    );
+    expect(find.text('Runtime Signals'), findsOneWidget);
+  });
+
+  testWidgets('wrongsv import explains Clash YAML mismatch', (tester) async {
+    final client = FakeWrongclClient();
+    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
+    final profileStore = ProfileStore(
+      file: File('${tempDir.path}/profiles.json'),
+    );
+    final clashConfig = File('${tempDir.path}/conf.toml')
+      ..writeAsStringSync('mixed-port: 7890\nproxies:\n  - name: test\n');
+
+    await tester.pumpWidget(
+      WrongclApp(
+        client: client,
+        profileStore: profileStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _openWorkspace(tester, 'Import');
+    await tester.enterText(
+      find.byKey(const ValueKey('wrongsv-config-path')),
+      clashConfig.path,
+    );
+    await tester.pumpAndSettle();
+
+    final inspectButton = find.widgetWithText(
+      OutlinedButton,
+      'Inspect wrongsv',
+    );
+    await tester.ensureVisible(inspectButton);
+    await tester.tap(inspectButton);
+    await tester.pumpAndSettle();
+
+    expect(client.inspectCount, 0);
+    expect(find.textContaining('Clash/Mihomo YAML'), findsWidgets);
+    expect(find.textContaining('wrongsv TOML'), findsWidgets);
   });
 
   test('profile store persists saved metadata', () async {

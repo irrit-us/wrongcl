@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'control_state.dart';
+import 'signal_widgets.dart';
+
 class HealthProbeSnapshot {
   const HealthProbeSnapshot({
     required this.bytesRead,
@@ -31,12 +34,16 @@ class HealthSummaryView extends StatelessWidget {
     required this.stats,
     required this.lastProbe,
     required this.lastError,
+    required this.signalSnapshot,
+    this.expanded = false,
   });
 
   final bool running;
   final Map<String, Object?> stats;
   final HealthProbeSnapshot? lastProbe;
   final HealthErrorSnapshot? lastError;
+  final DashboardSignalSnapshot signalSnapshot;
+  final bool expanded;
 
   String _formatTime(DateTime value) {
     final local = value.toLocal();
@@ -68,6 +75,30 @@ class HealthSummaryView extends StatelessWidget {
     );
   }
 
+  Widget _factBlock(
+    BuildContext context,
+    String label,
+    String value, {
+    int maxLines = 2,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelLarge,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: Theme.of(context).textTheme.bodySmall,
+          maxLines: maxLines,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final errorColor = Theme.of(context).colorScheme.error;
@@ -94,6 +125,56 @@ class HealthSummaryView extends StatelessWidget {
         ? 'No error recorded'
         : '${_formatTime(lastError!.timestamp)} | ${lastError!.action}: ${lastError!.message}';
 
+    if (!expanded) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _pill(context, 'State', stateLabel, stateColor),
+              _pill(context, 'Listener', listener, Colors.blueGrey.shade700),
+              _pill(context, 'Failed', failedConnections, errorColor),
+            ],
+          ),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 520;
+              final itemWidth = compact
+                  ? constraints.maxWidth
+                  : (constraints.maxWidth - 12) / 2;
+              return Wrap(
+                spacing: 12,
+                runSpacing: 10,
+                children: [
+                  SizedBox(
+                    width: itemWidth,
+                    child: _factBlock(
+                      context,
+                      'Probe',
+                      probeText,
+                      maxLines: 1,
+                    ),
+                  ),
+                  SizedBox(
+                    width: itemWidth,
+                    child: _factBlock(
+                      context,
+                      'Error',
+                      errorText,
+                      maxLines: 1,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -107,16 +188,24 @@ class HealthSummaryView extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
-        Text(
-          'Last successful probe',
-          style: Theme.of(context).textTheme.labelLarge,
-        ),
-        const SizedBox(height: 4),
-        Text(probeText, style: Theme.of(context).textTheme.bodySmall),
+        _factBlock(context, 'Last successful probe', probeText),
         const SizedBox(height: 12),
-        Text('Last error', style: Theme.of(context).textTheme.labelLarge),
-        const SizedBox(height: 4),
-        Text(errorText, style: Theme.of(context).textTheme.bodySmall),
+        _factBlock(context, 'Last error', errorText),
+        if (expanded) ...[
+          const SizedBox(height: 12),
+          Text('Recent probe lane', style: Theme.of(context).textTheme.labelLarge),
+          const SizedBox(height: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 72),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.vertical,
+              child: SignalEventLane(
+                events: signalSnapshot.recentProbeOutcomes,
+                emptyText: 'Waiting for runtime samples',
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
