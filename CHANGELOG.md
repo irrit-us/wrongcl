@@ -9,7 +9,7 @@
   wiring for mobile builds.
 - Added release assets for both the Flutter UI app bundles and the headless
   `wrongcl-headless` terminal client.
-- Added WireGuard helper packaging for desktop/headless bundles.
+- Moved the WireGuard client runtime into the main Rust crate.
 - Fixed server-side TLS relay handling in wrongsv so Naive client support is
   stable on macOS runners.
 - Added FreeBSD headless packaging and verification entry points as host-side

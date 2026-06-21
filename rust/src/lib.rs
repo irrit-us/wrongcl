@@ -24,6 +24,7 @@ pub mod tuic;
 pub mod vision;
 pub mod webtransport;
 pub mod wireguard;
+mod wireguard_runtime;
 pub mod xhttp;
 
 pub use adapter::{adapt_wrongsv_config, inspect_wrongsv_config, AdaptedConfig, CapabilityReport};

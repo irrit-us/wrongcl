@@ -1,23 +1,24 @@
+mod config;
 mod device;
 mod engine;
 mod port_pool;
 mod tcp;
 mod udp;
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, bail, Context, Result};
 use bytes::Bytes;
 use smoltcp::iface::{Interface, SocketSet};
 use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address, Ipv6Address};
-use tokio::net::lookup_host;
+use tokio::runtime::{Builder, Runtime};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, Instant};
 
-use crate::config::AppConfig;
-use crate::socks::TargetAddress;
+use crate::protocol::Target;
 
+pub(crate) use self::config::WireGuardRuntimeConfig;
 use self::device::ChannelIpDevice;
 use self::engine::WireGuardEngine;
 use self::port_pool::{PortPool, PortProtocol, VirtualPort};
@@ -31,7 +32,8 @@ pub struct TargetRoute {
 }
 
 pub struct WireGuardRuntime {
-    config: Arc<AppConfig>,
+    config: Arc<WireGuardRuntimeConfig>,
+    _runtime: Runtime,
     tcp_commands: mpsc::UnboundedSender<TcpCommand>,
     udp_commands: mpsc::UnboundedSender<UdpCommand>,
     tcp_ports: Arc<PortPool>,
@@ -54,6 +56,10 @@ struct TcpSessionState {
     pool: Arc<PortPool>,
 }
 
+pub struct TcpSessionReader {
+    inbound_rx: mpsc::UnboundedReceiver<Bytes>,
+}
+
 pub struct UdpSession {
     writer: UdpSessionWriter,
     inbound_rx: mpsc::UnboundedReceiver<Bytes>,
@@ -70,12 +76,14 @@ struct UdpSessionState {
     pool: Arc<PortPool>,
 }
 
-pub struct UdpSessionReader {
-    inbound_rx: mpsc::UnboundedReceiver<Bytes>,
-}
-
 impl WireGuardRuntime {
-    pub async fn start(config: AppConfig) -> Result<Self> {
+    pub fn start(config: WireGuardRuntimeConfig) -> Result<Self> {
+        let runtime = Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .context("build WireGuard runtime")?;
+        let handle = runtime.handle().clone();
+
         let config = Arc::new(config);
         let tcp_ports = Arc::new(PortPool::new(PortProtocol::Tcp));
         let udp_ports = Arc::new(PortPool::new(PortProtocol::Udp));
@@ -84,17 +92,29 @@ impl WireGuardRuntime {
         let (tcp_device, tcp_feed) = ChannelIpDevice::new(config.mtu, outbound_tx.clone());
         let (udp_device, udp_feed) = ChannelIpDevice::new(config.mtu, outbound_tx);
 
-        let engine = Arc::new(WireGuardEngine::new(config.clone(), tcp_feed, udp_feed)?);
-        engine.spawn(outbound_rx);
+        let engine =
+            Arc::new(runtime.block_on(WireGuardEngine::new(config.clone(), tcp_feed, udp_feed))?);
+        engine.spawn(&handle, outbound_rx);
 
         let (tcp_commands, tcp_command_rx) = mpsc::unbounded_channel();
         let (udp_commands, udp_command_rx) = mpsc::unbounded_channel();
 
-        TcpInterface::spawn(config.client_addresses.clone(), tcp_device, tcp_command_rx);
-        UdpInterface::spawn(config.client_addresses.clone(), udp_device, udp_command_rx);
+        TcpInterface::spawn(
+            &handle,
+            config.client_addresses.clone(),
+            tcp_device,
+            tcp_command_rx,
+        );
+        UdpInterface::spawn(
+            &handle,
+            config.client_addresses.clone(),
+            udp_device,
+            udp_command_rx,
+        );
 
         Ok(Self {
             config,
+            _runtime: runtime,
             tcp_commands,
             udp_commands,
             tcp_ports,
@@ -102,13 +122,13 @@ impl WireGuardRuntime {
         })
     }
 
-    pub async fn resolve_target(&self, target: &TargetAddress) -> Result<TargetRoute> {
+    pub fn resolve_target(&self, target: &Target) -> Result<TargetRoute> {
         if let Ok(ip) = target.host.parse::<IpAddr>() {
             return self.route_for(SocketAddr::new(ip, target.port));
         }
 
-        let addrs = lookup_host(format!("{}:{}", target.host, target.port))
-            .await
+        let addrs = format!("{}:{}", target.host, target.port)
+            .to_socket_addrs()
             .with_context(|| format!("failed to resolve {}", target.host))?;
 
         for addr in addrs {
@@ -185,16 +205,13 @@ impl WireGuardRuntime {
 }
 
 impl TcpSession {
-    pub fn send(&self, data: Bytes) -> Result<()> {
-        self.writer.send(data)
-    }
-
-    pub fn shutdown(&self) {
-        self.writer.shutdown();
-    }
-
-    pub async fn recv(&mut self) -> Option<Bytes> {
-        self.inbound_rx.recv().await
+    pub fn split(self) -> (TcpSessionWriter, TcpSessionReader) {
+        (
+            self.writer,
+            TcpSessionReader {
+                inbound_rx: self.inbound_rx,
+            },
+        )
     }
 }
 
@@ -235,19 +252,28 @@ impl Drop for TcpSessionState {
     }
 }
 
+impl TcpSessionReader {
+    pub fn blocking_recv(&mut self) -> Option<Bytes> {
+        self.inbound_rx.blocking_recv()
+    }
+}
+
 impl UdpSession {
-    pub fn split(self) -> (UdpSessionWriter, UdpSessionReader) {
-        (
-            self.writer,
-            UdpSessionReader {
-                inbound_rx: self.inbound_rx,
-            },
-        )
+    pub fn send(&self, data: Bytes) -> Result<()> {
+        self.writer.send(data)
+    }
+
+    pub fn try_recv(&mut self) -> Result<Option<Bytes>> {
+        match self.inbound_rx.try_recv() {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty) => Ok(None),
+            Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => Ok(None),
+        }
     }
 }
 
 impl UdpSessionWriter {
-    pub fn send(&self, data: Bytes) -> Result<()> {
+    fn send(&self, data: Bytes) -> Result<()> {
         let Some(port) = self.current_port()? else {
             bail!("UDP session is closed");
         };
@@ -274,12 +300,6 @@ impl Drop for UdpSessionState {
                 self.pool.release(port);
             }
         }
-    }
-}
-
-impl UdpSessionReader {
-    pub async fn recv(&mut self) -> Option<Bytes> {
-        self.inbound_rx.recv().await
     }
 }
 

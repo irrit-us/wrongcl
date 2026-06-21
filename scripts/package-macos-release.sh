@@ -15,8 +15,6 @@ ARCHIVE_BASENAME="wrongcl-macos-${MACOS_RELEASE_ARCH}-${VERSION//+/-}"
 APP_BUNDLE="$ROOT_DIR/build/macos/Build/Products/Release/wrongcl.app"
 ARCHIVE_PATH="$OUTPUT_DIR/$ARCHIVE_BASENAME.zip"
 CHECKSUM_PATH="$ARCHIVE_PATH.sha256"
-WIREGUARD_HELPER_BIN="$APP_BUNDLE/Contents/MacOS/wireguard-client-bridge"
-WIREGUARD_HELPER_SRC="$ROOT_DIR/rust/target/release/wireguard-client-bridge"
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -25,12 +23,6 @@ bash "$ROOT_DIR/scripts/ensure-wrongsv-sibling.sh"
 if [[ ! -d "$APP_BUNDLE" ]]; then
   "$FLUTTER_BIN" build macos
 fi
-
-cargo build \
-  --manifest-path "$ROOT_DIR/rust/Cargo.toml" \
-  --bin wireguard-client-bridge \
-  --release
-cp "$WIREGUARD_HELPER_SRC" "$WIREGUARD_HELPER_BIN"
 
 rm -f "$ARCHIVE_PATH" "$CHECKSUM_PATH"
 ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "$ARCHIVE_PATH"

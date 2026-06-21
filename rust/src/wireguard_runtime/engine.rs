@@ -10,11 +10,11 @@ use boringtun::x25519::{PublicKey, StaticSecret};
 use bytes::Bytes;
 use smoltcp::wire::{IpProtocol, IpVersion, Ipv4Packet, Ipv6Packet};
 use tokio::net::UdpSocket;
+use tokio::runtime::Handle;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, trace, warn};
 
-use crate::config::AppConfig;
-
+use super::config::WireGuardRuntimeConfig;
 use super::device::DeviceFeed;
 use super::port_pool::PortProtocol;
 
@@ -30,7 +30,11 @@ pub struct WireGuardEngine {
 }
 
 impl WireGuardEngine {
-    pub fn new(config: Arc<AppConfig>, tcp_feed: DeviceFeed, udp_feed: DeviceFeed) -> Result<Self> {
+    pub async fn new(
+        config: Arc<WireGuardRuntimeConfig>,
+        tcp_feed: DeviceFeed,
+        udp_feed: DeviceFeed,
+    ) -> Result<Self> {
         let peer = Tunn::new(
             StaticSecret::from(config.private_key),
             PublicKey::from(config.peer_public_key),
@@ -46,9 +50,7 @@ impl WireGuardEngine {
             "[::]:0"
         };
 
-        let udp = std::net::UdpSocket::bind(bind_addr)?;
-        udp.set_nonblocking(true)?;
-        let udp = UdpSocket::from_std(udp)?;
+        let udp = UdpSocket::bind(bind_addr).await?;
 
         Ok(Self {
             local_addrs: config.client_addresses.iter().copied().collect(),
@@ -60,15 +62,15 @@ impl WireGuardEngine {
         })
     }
 
-    pub fn spawn(self: Arc<Self>, outbound_rx: mpsc::UnboundedReceiver<Vec<u8>>) {
+    pub fn spawn(self: Arc<Self>, handle: &Handle, outbound_rx: mpsc::UnboundedReceiver<Vec<u8>>) {
         let produce = Arc::clone(&self);
-        tokio::spawn(async move { produce.run_producer(outbound_rx).await });
+        handle.spawn(async move { produce.run_producer(outbound_rx).await });
 
         let routine = Arc::clone(&self);
-        tokio::spawn(async move { routine.run_routine().await });
+        handle.spawn(async move { routine.run_routine().await });
 
         let consume = Arc::clone(&self);
-        tokio::spawn(async move { consume.run_consumer().await });
+        handle.spawn(async move { consume.run_consumer().await });
     }
 
     async fn run_producer(self: Arc<Self>, mut outbound_rx: mpsc::UnboundedReceiver<Vec<u8>>) {

@@ -12,9 +12,6 @@ $ArchiveBaseName = "wrongcl-windows-x64-$($Version -replace '\+', '-')"
 $BundleDir = Join-Path $RootDir "build\windows\x64\runner\Release"
 $ArchivePath = Join-Path $OutputDir "$ArchiveBaseName.zip"
 $ChecksumPath = "$ArchivePath.sha256"
-$WireGuardHelperManifest = Join-Path $RootDir "rust\Cargo.toml"
-$WireGuardHelperSrc = Join-Path $RootDir "rust\target\release\wireguard-client-bridge.exe"
-$WireGuardHelperBin = Join-Path $BundleDir "wireguard-client-bridge.exe"
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
@@ -28,9 +25,6 @@ if (-not (Test-Path (Join-Path $WrongsvDir "Cargo.toml"))) {
 if (-not (Test-Path $BundleDir)) {
   & $FlutterBin build windows
 }
-
-cargo build --manifest-path $WireGuardHelperManifest --bin wireguard-client-bridge --release
-Copy-Item $WireGuardHelperSrc $WireGuardHelperBin -Force
 
 if (Test-Path $ArchivePath) {
   Remove-Item $ArchivePath -Force

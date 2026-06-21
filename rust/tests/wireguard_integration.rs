@@ -140,7 +140,7 @@ fn spawn_udp_echo_server() -> SocketAddr {
 #[test]
 #[cfg_attr(
     not(target_os = "linux"),
-    ignore = "WireGuard helper runtime is currently verified on Linux"
+    ignore = "WireGuard runtime is currently verified on Linux"
 )]
 fn probe_works_against_wireguard_server() {
     let server_private = [7u8; 32];
@@ -171,7 +171,7 @@ fn probe_works_against_wireguard_server() {
 #[test]
 #[cfg_attr(
     not(target_os = "linux"),
-    ignore = "WireGuard helper runtime is currently verified on Linux"
+    ignore = "WireGuard runtime is currently verified on Linux"
 )]
 fn socks_proxy_works_against_wireguard_server() {
     let server_private = [7u8; 32];
@@ -207,7 +207,7 @@ fn socks_proxy_works_against_wireguard_server() {
 #[test]
 #[cfg_attr(
     not(target_os = "linux"),
-    ignore = "WireGuard helper runtime is currently verified on Linux"
+    ignore = "WireGuard runtime is currently verified on Linux"
 )]
 fn socks_proxy_udp_works_against_wireguard_server() {
     let server_private = [7u8; 32];

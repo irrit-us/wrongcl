@@ -6,6 +6,7 @@ use bytes::Bytes;
 use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet};
 use smoltcp::socket::udp::{self, UdpMetadata};
 use smoltcp::wire::{HardwareAddress, IpAddress};
+use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 use tracing::{debug, error};
 
@@ -46,11 +47,12 @@ pub struct UdpInterface {
 
 impl UdpInterface {
     pub fn spawn(
+        handle: &Handle,
         source_ips: Vec<IpAddr>,
         device: ChannelIpDevice,
         commands: mpsc::UnboundedReceiver<UdpCommand>,
     ) {
-        tokio::spawn(async move {
+        handle.spawn(async move {
             let runtime = Self {
                 source_ips,
                 device,
