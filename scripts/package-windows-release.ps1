@@ -13,6 +13,8 @@ $BundleDir = Join-Path $RootDir "build\windows\x64\runner\Release"
 $ArchivePath = Join-Path $OutputDir "$ArchiveBaseName.zip"
 $ChecksumPath = "$ArchivePath.sha256"
 $WireGuardHelperDir = Join-Path $RootDir "helpers\wireguard-client-bridge"
+$WireGuardHelperManifest = Join-Path $WireGuardHelperDir "Cargo.toml"
+$WireGuardHelperSrc = Join-Path $WireGuardHelperDir "target\release\wireguard-client-bridge.exe"
 $WireGuardHelperBin = Join-Path $BundleDir "wireguard-client-bridge.exe"
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
@@ -28,13 +30,8 @@ if (-not (Test-Path $BundleDir)) {
   & $FlutterBin build windows
 }
 
-Push-Location $WireGuardHelperDir
-try {
-  $env:GOTOOLCHAIN = "auto"
-  go build -o $WireGuardHelperBin .
-} finally {
-  Pop-Location
-}
+cargo build --manifest-path $WireGuardHelperManifest --bin wireguard-client-bridge --release
+Copy-Item $WireGuardHelperSrc $WireGuardHelperBin -Force
 
 if (Test-Path $ArchivePath) {
   Remove-Item $ArchivePath -Force

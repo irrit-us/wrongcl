@@ -32,7 +32,9 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+/dist/
 /rust/target/
+/helpers/wireguard-client-bridge/target/
 
 # Symbolication related
 app.*.symbols

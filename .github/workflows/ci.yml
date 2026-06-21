@@ -14,10 +14,6 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26'
-
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.2'
@@ -27,7 +23,7 @@ jobs:
       - name: Install Linux desktop build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libayatana-appindicator3-dev protobuf-compiler
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libayatana-appindicator3-dev musl-tools protobuf-compiler
 
       - name: Verify Linux workflow
         run: bash scripts/verify-local.sh linux
@@ -54,10 +50,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26'
 
       - uses: subosito/flutter-action@v2
         with:
@@ -94,10 +86,6 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26'
-
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.2'
@@ -133,10 +121,6 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26'
-
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.2'
@@ -171,10 +155,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26'
 
       - uses: subosito/flutter-action@v2
         with:

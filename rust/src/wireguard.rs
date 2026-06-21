@@ -233,9 +233,12 @@ fn helper_binary_path() -> PathBuf {
     } else {
         "wireguard-client-bridge"
     };
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../target")
-        .join(file)
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    helper_directory().join("target").join(profile).join(file)
 }
 
 fn packaged_helper_binary() -> Option<PathBuf> {
@@ -259,26 +262,28 @@ fn packaged_helper_binary() -> Option<PathBuf> {
 
 fn build_helper_binary() -> Result<PathBuf> {
     let helper_dir = helper_directory();
-    let output = helper_binary_path();
-    if let Some(parent) = output.parent() {
-        std::fs::create_dir_all(parent)?;
+    let manifest = helper_dir.join("Cargo.toml");
+
+    let mut command = Command::new("cargo");
+    command
+        .arg("build")
+        .arg("--manifest-path")
+        .arg(&manifest)
+        .arg("--bin")
+        .arg("wireguard-client-bridge")
+        .current_dir(&helper_dir);
+    if !cfg!(debug_assertions) {
+        command.arg("--release");
     }
 
-    let status = Command::new("go")
-        .env("GOTOOLCHAIN", "auto")
-        .arg("build")
-        .arg("-o")
-        .arg(&output)
-        .arg(".")
-        .current_dir(&helper_dir)
-        .status()?;
+    let status = command.status()?;
     if !status.success() {
         return Err(ClientError::Io(io::Error::other(format!(
-            "go build failed for {}",
+            "cargo build failed for {}",
             helper_dir.display()
         ))));
     }
-    Ok(output)
+    Ok(helper_binary_path())
 }
 
 fn spawn_helper(binary: &Path, config_path: &Path) -> Result<Child> {

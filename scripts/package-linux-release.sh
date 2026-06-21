@@ -17,6 +17,8 @@ ARCHIVE_PATH="$OUTPUT_DIR/$ARCHIVE_BASENAME.tar.gz"
 CHECKSUM_PATH="$ARCHIVE_PATH.sha256"
 WIREGUARD_HELPER_DIR="$ROOT_DIR/helpers/wireguard-client-bridge"
 WIREGUARD_HELPER_BIN="$BUNDLE_DIR/wireguard-client-bridge"
+LINUX_MUSL_TARGET="x86_64-unknown-linux-musl"
+WIREGUARD_HELPER_SRC="$WIREGUARD_HELPER_DIR/target/$LINUX_MUSL_TARGET/release/wireguard-client-bridge"
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -26,10 +28,13 @@ if [[ ! -d "$BUNDLE_DIR" ]]; then
   "$FLUTTER_BIN" build linux
 fi
 
-(
-  cd "$WIREGUARD_HELPER_DIR"
-  GOTOOLCHAIN=auto go build -o "$WIREGUARD_HELPER_BIN" .
-)
+rustup target add "$LINUX_MUSL_TARGET"
+cargo build \
+  --manifest-path "$WIREGUARD_HELPER_DIR/Cargo.toml" \
+  --bin wireguard-client-bridge \
+  --target "$LINUX_MUSL_TARGET" \
+  --release
+cp "$WIREGUARD_HELPER_SRC" "$WIREGUARD_HELPER_BIN"
 
 rm -rf "$STAGING_DIR" "$ARCHIVE_PATH" "$CHECKSUM_PATH"
 mkdir -p "$STAGING_DIR"
