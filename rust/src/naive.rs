@@ -1,24 +1,28 @@
-use std::io::{self, Read, Write};
-use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::io;
+use std::sync::mpsc;
 use std::sync::Arc;
-use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use bytes::Bytes;
 use http::{HeaderName, Method};
-use rand::RngCore;
 
-use crate::client::{Tunnel, TunnelReader, TunnelWriter};
+use crate::client::Tunnel;
 use crate::endpoint::{NaiveOptions, TlsOptions};
 use crate::error::{ClientError, Result};
 use crate::tls;
+
+mod padding;
+mod tunnel;
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const CONNECT_RETRY_TIMEOUT: Duration = Duration::from_secs(3);
 const CONNECT_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 const NAIVE_PAD_OPS: usize = 8;
 const NAIVE_PAD_MAX_PAYLOAD: usize = u16::MAX as usize;
+
+use padding::{random_padding_header_value, NaivePadDecoder, NaivePadEncoder};
+use tunnel::NaiveTunnel;
 
 pub fn connect_naive(
     server_host: &str,
@@ -315,284 +319,12 @@ async fn stream_loop(
     }
 }
 
-enum PadDecodeState {
-    Header,
-    Payload { remaining: usize, padding: usize },
-    Padding(usize),
-    Passthrough,
-}
-
-struct NaivePadDecoder {
-    buf: Vec<u8>,
-    state: PadDecodeState,
-    ops_remaining: usize,
-}
-
-impl NaivePadDecoder {
-    fn new() -> Self {
-        Self {
-            buf: Vec::new(),
-            state: PadDecodeState::Header,
-            ops_remaining: NAIVE_PAD_OPS,
-        }
-    }
-
-    fn feed_into(&mut self, input: &[u8], out: &mut Vec<u8>) {
-        self.buf.extend_from_slice(input);
-        loop {
-            let next = match self.state {
-                PadDecodeState::Passthrough => {
-                    out.extend_from_slice(&self.buf);
-                    self.buf.clear();
-                    return;
-                }
-                PadDecodeState::Header => {
-                    if self.buf.len() < 3 {
-                        return;
-                    }
-                    let payload_len = u16::from_be_bytes([self.buf[0], self.buf[1]]) as usize;
-                    let padding = self.buf[2] as usize;
-                    self.buf.drain(..3);
-                    PadDecodeState::Payload {
-                        remaining: payload_len,
-                        padding,
-                    }
-                }
-                PadDecodeState::Payload { remaining, padding } => {
-                    let take = remaining.min(self.buf.len());
-                    out.extend_from_slice(&self.buf[..take]);
-                    self.buf.drain(..take);
-                    let remaining = remaining - take;
-                    if remaining == 0 {
-                        PadDecodeState::Padding(padding)
-                    } else {
-                        self.state = PadDecodeState::Payload { remaining, padding };
-                        return;
-                    }
-                }
-                PadDecodeState::Padding(remaining) => {
-                    let take = remaining.min(self.buf.len());
-                    self.buf.drain(..take);
-                    let remaining = remaining - take;
-                    if remaining == 0 {
-                        self.ops_remaining = self.ops_remaining.saturating_sub(1);
-                        if self.ops_remaining == 0 {
-                            PadDecodeState::Passthrough
-                        } else {
-                            PadDecodeState::Header
-                        }
-                    } else {
-                        self.state = PadDecodeState::Padding(remaining);
-                        return;
-                    }
-                }
-            };
-            self.state = next;
-        }
-    }
-}
-
-struct NaivePadEncoder {
-    ops_remaining: usize,
-}
-
-impl NaivePadEncoder {
-    fn new() -> Self {
-        Self {
-            ops_remaining: NAIVE_PAD_OPS,
-        }
-    }
-
-    fn encode(&mut self, payload: &[u8]) -> Vec<u8> {
-        if self.ops_remaining == 0 || payload.is_empty() {
-            return payload.to_vec();
-        }
-        let mut rng = rand::thread_rng();
-        let mut out = Vec::with_capacity(payload.len() + 256);
-        let mut cursor = 0usize;
-        while cursor < payload.len() && self.ops_remaining > 0 {
-            let chunk_len = (payload.len() - cursor).min(NAIVE_PAD_MAX_PAYLOAD);
-            let pad_len = (rng.next_u32() & 0xff) as u8;
-            out.push((chunk_len >> 8) as u8);
-            out.push(chunk_len as u8);
-            out.push(pad_len);
-            out.extend_from_slice(&payload[cursor..cursor + chunk_len]);
-            if pad_len > 0 {
-                let mut pad = vec![0u8; pad_len as usize];
-                rng.fill_bytes(&mut pad);
-                out.extend_from_slice(&pad);
-            }
-            cursor += chunk_len;
-            self.ops_remaining -= 1;
-        }
-        if cursor < payload.len() {
-            out.extend_from_slice(&payload[cursor..]);
-        }
-        out
-    }
-}
-
-fn random_padding_header_value() -> String {
-    let mut rng = rand::thread_rng();
-    let len = 30 + (rng.next_u32() as usize % 33);
-    let mut out = String::with_capacity(len);
-    for _ in 0..len {
-        let digit = b'0' + (rng.next_u32() % 10) as u8;
-        out.push(digit as char);
-    }
-    out
-}
-
 fn connect_authority(host: &str, port: u16) -> String {
     if host.contains(':') && !host.starts_with('[') {
         format!("[{host}]:{port}")
     } else {
         format!("{host}:{port}")
     }
-}
-
-struct NaiveTunnel {
-    read_rx: Receiver<Vec<u8>>,
-    write_tx: SyncSender<Vec<u8>>,
-    read_buf: Vec<u8>,
-    eof: bool,
-    _handle: JoinHandle<()>,
-}
-
-struct NaiveReadHalf {
-    read_rx: Receiver<Vec<u8>>,
-    read_buf: Vec<u8>,
-    eof: bool,
-    _handle: JoinHandle<()>,
-}
-
-#[derive(Clone)]
-struct NaiveWriteHalf {
-    write_tx: SyncSender<Vec<u8>>,
-}
-
-impl Read for NaiveTunnel {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        read_channel(&self.read_rx, &mut self.read_buf, &mut self.eof, buf)
-    }
-}
-
-impl Write for NaiveTunnel {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if buf.is_empty() {
-            return Ok(0);
-        }
-        self.write_tx
-            .send(buf.to_vec())
-            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "Naive write channel closed"))?;
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-impl Read for NaiveReadHalf {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        read_channel(&self.read_rx, &mut self.read_buf, &mut self.eof, buf)
-    }
-}
-
-impl Write for NaiveWriteHalf {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if buf.is_empty() {
-            return Ok(0);
-        }
-        self.write_tx
-            .send(buf.to_vec())
-            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "Naive write channel closed"))?;
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-impl TunnelWriter for NaiveWriteHalf {
-    fn shutdown_write(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-impl Tunnel for NaiveTunnel {
-    fn try_clone_box(&self) -> io::Result<Box<dyn Tunnel>> {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "Naive tunnel cannot be cloned (single h2 CONNECT stream)",
-        ))
-    }
-
-    fn split_box(self: Box<Self>) -> io::Result<(Box<dyn TunnelReader>, Box<dyn TunnelWriter>)> {
-        let Self {
-            read_rx,
-            write_tx,
-            read_buf,
-            eof,
-            _handle,
-        } = *self;
-        Ok((
-            Box::new(NaiveReadHalf {
-                read_rx,
-                read_buf,
-                eof,
-                _handle,
-            }),
-            Box::new(NaiveWriteHalf { write_tx }),
-        ))
-    }
-
-    fn shutdown_write(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-
-    fn set_socket_timeouts(
-        &self,
-        _read: Option<Duration>,
-        _write: Option<Duration>,
-    ) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-fn read_channel(
-    read_rx: &Receiver<Vec<u8>>,
-    read_buf: &mut Vec<u8>,
-    eof: &mut bool,
-    buf: &mut [u8],
-) -> io::Result<usize> {
-    if !read_buf.is_empty() {
-        let n = read_buf.len().min(buf.len());
-        buf[..n].copy_from_slice(&read_buf[..n]);
-        read_buf.drain(..n);
-        return Ok(n);
-    }
-    if *eof {
-        return Ok(0);
-    }
-    let data = match read_rx.recv() {
-        Ok(data) => data,
-        Err(_) => {
-            *eof = true;
-            return Ok(0);
-        }
-    };
-    if data.is_empty() {
-        *eof = true;
-        return Ok(0);
-    }
-    let n = data.len().min(buf.len());
-    buf[..n].copy_from_slice(&data[..n]);
-    if n < data.len() {
-        read_buf.extend_from_slice(&data[n..]);
-    }
-    Ok(n)
 }
 
 #[cfg(test)]
