@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=wrongcl
+Comment=Control-first desktop client for wrongsv proxy stacks
+Exec=wrongcl
+Icon=us.irrit.wrongcl
+Terminal=false
+Categories=Network;
+StartupWMClass=us.irrit.wrongcl

@@ -27,6 +27,11 @@ fi
 rm -rf "$STAGING_DIR" "$ARCHIVE_PATH" "$CHECKSUM_PATH"
 mkdir -p "$STAGING_DIR"
 cp -R "$BUNDLE_DIR"/. "$STAGING_DIR"/
+mkdir -p "$STAGING_DIR/share/applications" "$STAGING_DIR/share/icons/hicolor/512x512/apps"
+mkdir -p "$STAGING_DIR/data"
+cp "$ROOT_DIR/linux/runner/resources/wrongcl.png" "$STAGING_DIR/data/wrongcl.png"
+cp "$ROOT_DIR/linux/packaging/us.irrit.wrongcl.desktop" "$STAGING_DIR/share/applications/us.irrit.wrongcl.desktop"
+cp "$ROOT_DIR/linux/runner/resources/wrongcl.png" "$STAGING_DIR/share/icons/hicolor/512x512/apps/us.irrit.wrongcl.png"
 
 tar -C "$OUTPUT_DIR" -czf "$ARCHIVE_PATH" "$ARCHIVE_BASENAME"
 (cd "$OUTPUT_DIR" && sha256sum "$(basename "$ARCHIVE_PATH")") > "$CHECKSUM_PATH"

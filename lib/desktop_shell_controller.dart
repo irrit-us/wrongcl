@@ -238,7 +238,9 @@ class TrayDesktopShellController
   }
 
   String _trayIconPath() {
-    return Platform.isWindows ? 'assets/tray_icon.ico' : 'assets/tray_icon.png';
+    return Platform.isWindows
+        ? 'assets/brand/wrongcl_tray.ico'
+        : 'assets/brand/wrongcl_tray.png';
   }
 
   String _toolTip() {
