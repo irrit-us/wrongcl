@@ -100,6 +100,7 @@ impl TunStatus {
 }
 
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 #[derive(Clone, Debug, Deserialize)]
 struct TunEnableConfig {
     #[serde(default = "default_tun_name")]
