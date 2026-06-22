@@ -3,7 +3,8 @@ use super::*;
 pub(super) fn relay_udp_associate(
     mut client: TcpStream,
     tunnel_client: WrongsvClient,
-    metrics: &ProxyMetrics,
+    bytes_up: &AtomicU64,
+    bytes_down: &AtomicU64,
 ) -> Result<()> {
     let bind_ip = client.local_addr()?.ip();
     let udp_socket = UdpSocket::bind((bind_ip, 0))?;
@@ -33,9 +34,7 @@ pub(super) fn relay_udp_associate(
                     }
                     if let Some(session) = sessions.get_mut(&target) {
                         session.send_packet(&payload)?;
-                        metrics
-                            .bytes_uploaded
-                            .fetch_add(payload.len() as u64, Ordering::Relaxed);
+                        bytes_up.fetch_add(payload.len() as u64, Ordering::Relaxed);
                         did_work = true;
                     }
                 }
@@ -53,9 +52,7 @@ pub(super) fn relay_udp_associate(
                 while let Some(packet) = session.try_recv_packet()? {
                     let payload = encode_socks5_udp_datagram(&packet.target, &packet.payload)?;
                     udp_socket.send_to(&payload, peer)?;
-                    metrics
-                        .bytes_downloaded
-                        .fetch_add(packet.payload.len() as u64, Ordering::Relaxed);
+                    bytes_down.fetch_add(packet.payload.len() as u64, Ordering::Relaxed);
                     did_work = true;
                 }
             }

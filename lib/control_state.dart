@@ -152,3 +152,77 @@ class DashboardSnapshot {
   final String importSummary;
   final DashboardSignalSnapshot signalSnapshot;
 }
+
+class ModeSlot {
+  const ModeSlot({
+    required this.id,
+    required this.name,
+    required this.builtin,
+  });
+
+  final String id;
+  final String name;
+  final bool builtin;
+}
+
+const List<ModeSlot> kBuiltinModeSlots = [
+  ModeSlot(id: 'global', name: 'Global', builtin: true),
+  ModeSlot(id: 'rule', name: 'Rule', builtin: true),
+  ModeSlot(id: 'direct', name: 'Direct', builtin: true),
+];
+
+const int kMaxModeSlots = 6;
+
+class ConnectionInfo {
+  const ConnectionInfo({
+    required this.id,
+    required this.target,
+    required this.sourceApp,
+    required this.bytesUp,
+    required this.bytesDown,
+    required this.startedAt,
+  });
+
+  final int id;
+  final String target;
+  final String sourceApp;
+  final int bytesUp;
+  final int bytesDown;
+  final DateTime startedAt;
+}
+
+class RequestInfo {
+  const RequestInfo({
+    required this.id,
+    required this.target,
+    required this.sourceApp,
+    required this.timestamp,
+    this.method = '',
+    this.url,
+    this.host,
+    this.sourcePid,
+  });
+
+  final int id;
+  final String target;
+  final String sourceApp;
+  final DateTime timestamp;
+  final String method;
+  final String? url;
+  final String? host;
+  final int? sourcePid;
+}
+
+class LogEntry {
+  const LogEntry({
+    required this.timestamp,
+    required this.level,
+    required this.target,
+    required this.message,
+  });
+
+  final DateTime timestamp;
+  final String level;
+  final String target;
+  final String message;
+}

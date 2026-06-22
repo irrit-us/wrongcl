@@ -107,8 +107,8 @@ fn client_config_from_document(
     document: &wrongsv::WrongclClientConfigDocument,
     validate: bool,
 ) -> Result<crate::config::ClientConfig> {
-    let value = serde_json::to_value(document)?;
-    let config: crate::config::ClientConfig = serde_json::from_value(value)?;
+    let text = serde_json::to_string(document)?;
+    let config = crate::config::ClientConfig::from_legacy_document_json(&text)?;
     if validate {
         config.validate()?;
     }

@@ -60,6 +60,8 @@ add_subdirectory("runner")
 # Rust native library used by Dart FFI.
 set(WRONGCL_NATIVE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust")
 set(WRONGCL_NATIVE_TARGET_DIR "${CMAKE_BINARY_DIR}/wrongcl_native")
+set(WRONGCL_TUN_HELPER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../helpers/tun-proxy-bridge")
+set(WRONGCL_TUN_HELPER_BIN "${CMAKE_BINARY_DIR}/tun-proxy-bridge")
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
   set(WRONGCL_NATIVE_PROFILE_DIR "debug")
   set(WRONGCL_NATIVE_CARGO_FLAGS "")
@@ -79,6 +81,14 @@ add_custom_target(wrongcl_native ALL
   VERBATIM
 )
 add_dependencies(${BINARY_NAME} wrongcl_native)
+
+add_custom_target(wrongcl_tun_helper ALL
+  COMMAND go build -o ${WRONGCL_TUN_HELPER_BIN} .
+  BYPRODUCTS ${WRONGCL_TUN_HELPER_BIN}
+  WORKING_DIRECTORY ${WRONGCL_TUN_HELPER_DIR}
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} wrongcl_tun_helper)
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
@@ -133,6 +143,9 @@ install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 install(FILES "${WRONGCL_NATIVE_LIB}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
+install(FILES "${WRONGCL_TUN_HELPER_BIN}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})

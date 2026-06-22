@@ -17,6 +17,9 @@ bash scripts/ensure-wrongsv-sibling.sh
 cargo fmt --manifest-path rust/Cargo.toml --all -- --check
 cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path rust/Cargo.toml -- --test-threads=1
+if [[ "$BUILD_PLATFORM" == "linux" ]] && command -v unshare >/dev/null 2>&1; then
+  unshare -Urn bash -lc 'ip link set lo up && cargo test --manifest-path rust/Cargo.toml --test tun_integration -- --ignored --test-threads=1'
+fi
 bash scripts/verify-shared-wrongsv.sh
 "$FLUTTER_BIN" analyze
 "$FLUTTER_BIN" test

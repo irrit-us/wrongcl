@@ -24,7 +24,7 @@ disable_udp = false
     assert_eq!(assessment.base_carriers, vec![BaseCarrier::Udp]);
 
     let config = client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
-    match &config.server.endpoint.proxy {
+    match &config.endpoints[0].server.endpoint.proxy {
         ProxyProtocol::Hysteria2(opts) => {
             assert_eq!(opts.server_name, "foo.cloudfront.net");
             assert_eq!(opts.password, "secret");
@@ -33,7 +33,7 @@ disable_udp = false
         other => panic!("expected Hysteria2, got {other:?}"),
     }
     assert_eq!(
-        config.server.endpoint.stack_summary(),
+        config.endpoints[0].server.endpoint.stack_summary(),
         "Hysteria2 → QUIC → TLS → TCP"
     );
 }
@@ -64,7 +64,7 @@ password = "tuic-pass"
     assert_eq!(assessment.base_carriers, vec![BaseCarrier::Udp]);
 
     let config = client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
-    match &config.server.endpoint.proxy {
+    match &config.endpoints[0].server.endpoint.proxy {
         ProxyProtocol::Tuic(opts) => {
             assert_eq!(opts.server_name, "foo.cloudfront.net");
             assert_eq!(opts.uuid, "12345678-1234-1234-1234-123456789abc");
@@ -73,7 +73,7 @@ password = "tuic-pass"
         other => panic!("expected TUIC, got {other:?}"),
     }
     assert_eq!(
-        config.server.endpoint.stack_summary(),
+        config.endpoints[0].server.endpoint.stack_summary(),
         "TUIC → QUIC → TLS → TCP"
     );
 }
@@ -104,7 +104,7 @@ udp_relay = true
     assert_eq!(assessment.base_carriers, vec![BaseCarrier::Udp]);
 
     let config = client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
-    match &config.server.endpoint.transport {
+    match &config.endpoints[0].server.endpoint.transport {
         Transport::Quic(opts) => {
             assert_eq!(opts.server_name, "cloudfront.net");
             assert!(opts.udp_enabled);
@@ -112,11 +112,11 @@ udp_relay = true
         other => panic!("expected QUIC transport, got {other:?}"),
     }
     assert!(matches!(
-        config.server.endpoint.outer_security,
+        config.endpoints[0].server.endpoint.outer_security,
         OuterSecurity::None
     ));
     assert_eq!(
-        config.server.endpoint.stack_summary(),
+        config.endpoints[0].server.endpoint.stack_summary(),
         "VLESS → QUIC → TLS → TCP"
     );
 }
@@ -147,7 +147,7 @@ tti = 20
     assert_eq!(assessment.base_carriers, vec![BaseCarrier::Udp]);
 
     let config = client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
-    match &config.server.endpoint.transport {
+    match &config.endpoints[0].server.endpoint.transport {
         Transport::Kcp(opts) => {
             assert_eq!(opts.seed, "kcp-seed");
             assert_eq!(opts.mtu, 1400);
@@ -156,10 +156,13 @@ tti = 20
         other => panic!("expected KCP transport, got {other:?}"),
     }
     assert!(matches!(
-        config.server.endpoint.outer_security,
+        config.endpoints[0].server.endpoint.outer_security,
         OuterSecurity::None
     ));
-    assert_eq!(config.server.endpoint.stack_summary(), "VLESS → KCP → TCP");
+    assert_eq!(
+        config.endpoints[0].server.endpoint.stack_summary(),
+        "VLESS → KCP → TCP"
+    );
 }
 
 #[test]
@@ -190,7 +193,7 @@ udp_relay = true
     assert_eq!(assessment.base_carriers, vec![BaseCarrier::Udp]);
 
     let config = client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
-    match &config.server.endpoint.transport {
+    match &config.endpoints[0].server.endpoint.transport {
         Transport::Webtransport(WebTransportOptions {
             authority,
             path,
@@ -203,11 +206,11 @@ udp_relay = true
         other => panic!("expected WebTransport transport, got {other:?}"),
     }
     assert!(matches!(
-        config.server.endpoint.outer_security,
+        config.endpoints[0].server.endpoint.outer_security,
         OuterSecurity::None
     ));
     assert_eq!(
-        config.server.endpoint.stack_summary(),
+        config.endpoints[0].server.endpoint.stack_summary(),
         "VLESS → WebTransport → QUIC → TLS → TCP"
     );
 }
@@ -242,14 +245,14 @@ dest = "cover.example:443"
     assert_eq!(assessment.base_carriers, vec![BaseCarrier::Tcp]);
 
     let config = client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
-    match &config.server.endpoint.transport {
+    match &config.endpoints[0].server.endpoint.transport {
         Transport::Meek(opts) => {
             assert_eq!(opts.path, "/meek");
             assert_eq!(opts.host.as_deref(), Some("cdn.example"));
         }
         other => panic!("expected Meek transport, got {other:?}"),
     }
-    match &config.server.endpoint.outer_security {
+    match &config.endpoints[0].server.endpoint.outer_security {
         OuterSecurity::Tls(tls) => {
             assert_eq!(tls.server_name, "cover.example");
             assert!(tls.insecure_skip_verify);
@@ -257,7 +260,7 @@ dest = "cover.example:443"
         other => panic!("expected TLS outer security, got {other:?}"),
     }
     assert_eq!(
-        config.server.endpoint.stack_summary(),
+        config.endpoints[0].server.endpoint.stack_summary(),
         "VLESS → Meek → TLS → TCP"
     );
 }
@@ -290,7 +293,7 @@ email = "alice@example.com"
     assert_eq!(assessment.base_carriers, vec![BaseCarrier::Tcp]);
 
     let config = client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
-    match &config.server.endpoint.proxy {
+    match &config.endpoints[0].server.endpoint.proxy {
         ProxyProtocol::Naive(opts) => {
             assert_eq!(opts.username, "alice");
             assert_eq!(opts.password, "secret");
@@ -298,7 +301,7 @@ email = "alice@example.com"
         }
         other => panic!("expected Naive proxy, got {other:?}"),
     }
-    match &config.server.endpoint.outer_security {
+    match &config.endpoints[0].server.endpoint.outer_security {
         OuterSecurity::Tls(tls) => {
             assert_eq!(tls.server_name, "cover.example");
             assert!(tls.insecure_skip_verify);
@@ -307,7 +310,7 @@ email = "alice@example.com"
         other => panic!("expected TLS outer security, got {other:?}"),
     }
     assert_eq!(
-        config.server.endpoint.stack_summary(),
+        config.endpoints[0].server.endpoint.stack_summary(),
         "Naive → h2 CONNECT → TLS → TCP"
     );
 }
@@ -388,7 +391,7 @@ dest = "cover.example:443"
     assert_eq!(assessment.base_carriers, vec![BaseCarrier::Tcp]);
 
     let config = client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
-    match &config.server.endpoint.transport {
+    match &config.endpoints[0].server.endpoint.transport {
         Transport::Gdocsviewer(GdocsViewerOptions {
             path_prefix,
             shared_key,
@@ -401,7 +404,7 @@ dest = "cover.example:443"
         }
         other => panic!("expected Google Docs Viewer transport, got {other:?}"),
     }
-    match &config.server.endpoint.outer_security {
+    match &config.endpoints[0].server.endpoint.outer_security {
         OuterSecurity::Tls(tls) => {
             assert_eq!(tls.server_name, "cover.example");
             assert!(tls.insecure_skip_verify);
@@ -409,7 +412,7 @@ dest = "cover.example:443"
         other => panic!("expected TLS outer security, got {other:?}"),
     }
     assert_eq!(
-        config.server.endpoint.stack_summary(),
+        config.endpoints[0].server.endpoint.stack_summary(),
         "VLESS → Google Docs Viewer → TLS → TCP"
     );
 }

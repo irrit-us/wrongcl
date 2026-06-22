@@ -127,8 +127,9 @@ fn socks_proxy_works_against_hysteria2_server() {
     let server = spawn_hysteria2_server(true);
     let echo_addr = spawn_tcp_echo_server();
 
-    let mut proxy = ProxyHandle::start(ClientConfig {
-        server: ServerConfig {
+    let mut proxy = ProxyHandle::start(ClientConfig::single_server(
+        "default",
+        ServerConfig {
             host: "127.0.0.1".into(),
             port: server.port,
             endpoint: Endpoint {
@@ -141,11 +142,13 @@ fn socks_proxy_works_against_hysteria2_server() {
                 outer_security: OuterSecurity::None,
             },
         },
-        local: LocalProxyConfig {
+        LocalProxyConfig {
             host: "127.0.0.1".into(),
             port: 0,
+            allow_socks: true,
+            allow_http: true,
         },
-    })
+    ))
     .unwrap();
 
     let response = run_socks_echo(

@@ -12,7 +12,56 @@ import 'profile_store.dart';
 import 'system_proxy_manager.dart';
 import 'wrongcl_client.dart';
 
-enum HomeRoute { dashboard, profiles, importView, editor, runtime, settings }
+export 'control_state.dart' show ConnectionInfo, RequestInfo, LogEntry;
+
+enum HomeRoute {
+  dashboard,
+  profiles,
+  proxies,
+  connections,
+  requests,
+  logs,
+  modePicker,
+  settingsBasic,
+  settingsNetwork,
+  settingsDns,
+  settingsAdvanced,
+}
+
+enum LogLevelFilter {
+  all('All logs'),
+  error('Error only'),
+  warn('Warn and error'),
+  info('Info and above'),
+  debug('Debug and above');
+
+  const LogLevelFilter(this.label);
+
+  final String label;
+
+  bool allows(String level) {
+    if (this == LogLevelFilter.all) {
+      return true;
+    }
+    return _severity(level) >= _minimumSeverity;
+  }
+
+  int get _minimumSeverity => switch (this) {
+    LogLevelFilter.all => -1,
+    LogLevelFilter.debug => 0,
+    LogLevelFilter.info => 1,
+    LogLevelFilter.warn => 2,
+    LogLevelFilter.error => 3,
+  };
+
+  static int _severity(String level) => switch (level.toUpperCase()) {
+    'ERROR' => 3,
+    'WARN' => 2,
+    'INFO' => 1,
+    'DEBUG' => 0,
+    _ => 0,
+  };
+}
 
 class ClientHomeController extends ChangeNotifier {
   static const _maxSignalHistoryPoints = 60;
@@ -24,16 +73,20 @@ class ClientHomeController extends ChangeNotifier {
     required this.autostartManager,
     required this.systemProxyManager,
     required this.desktopShellController,
-  });
+  }) {
+    _draftConfig = _defaultDraftConfig();
+  }
 
   final WrongclClient client;
   final ProfileStore profileStore;
   final AutostartManager autostartManager;
   final SystemProxyManager systemProxyManager;
   final DesktopShellController desktopShellController;
+  late ClientConfigInput _draftConfig;
 
   final profileName = TextEditingController(text: 'default');
   final clientConfigPath = TextEditingController();
+  final rawConfigEditor = TextEditingController();
   final wrongsvConfigPath = TextEditingController();
   final wrongsvServerHost = TextEditingController(text: '127.0.0.1');
   final wrongsvListenHost = TextEditingController(text: '127.0.0.1');
@@ -109,6 +162,8 @@ class ClientHomeController extends ChangeNotifier {
   bool tlsInsecure = false;
   bool vlessVisionFlow = false;
   bool anytlsInsecureSkipVerify = true;
+  bool localSocksEnabled = true;
+  bool localHttpEnabled = true;
 
   bool busy = false;
   bool running = false;
@@ -139,12 +194,97 @@ class ClientHomeController extends ChangeNotifier {
 
   AgentMode selectedAgentMode = AgentMode.rule;
 
+  RouterSnapshot get currentRouterSnapshot =>
+      running ? routerSnapshot : RouterSnapshot.fromConfig(buildConfig());
+
+  ProxyGroupsSnapshot get currentProxyGroups =>
+      running ? proxyGroups : ProxyGroupsSnapshot.fromConfig(buildConfig());
+
+  List<ModeSlot> get modeSlots {
+    final modes = currentRouterSnapshot.modes;
+    if (modes.isEmpty) {
+      return const [...kBuiltinModeSlots];
+    }
+    return [
+      for (final m in modes)
+        ModeSlot(
+          id: m.name,
+          name: _displayModeName(m.name),
+          builtin: m.kind != 'user',
+        ),
+    ];
+  }
+
+  String get activeModeId => currentRouterSnapshot.activeMode ?? 'global';
+
+  static String _displayModeName(String id) {
+    if (id.isEmpty) return id;
+    return id[0].toUpperCase() + id.substring(1);
+  }
+
+  static ClientConfigInput _defaultDraftConfig() {
+    return const ClientConfigInput(
+      endpoints: [
+        NamedEndpointInput(
+          name: 'default',
+          host: '127.0.0.1',
+          port: 443,
+          endpoint: EndpointConfig(
+            proxy: {
+              'type': 'vless',
+              'uuid': '12345678-1234-1234-1234-123456789abc',
+              'flow': '',
+            },
+            transport: {'type': 'raw'},
+            outerSecurity: {'type': 'none'},
+          ),
+        ),
+      ],
+      active: ActiveSelectionInput.endpoint('default'),
+      localHost: '127.0.0.1',
+      localPort: 1080,
+    );
+  }
+
+  List<ConnectionInfo> activeConnections = const [];
+  List<RequestInfo> recentRequests = const [];
+  List<LogEntry> recentLogs = const [];
+  ProxyGroupsSnapshot proxyGroups = ProxyGroupsSnapshot.empty;
+  String proxyGroupsStatus = '';
+  RouterSnapshot routerSnapshot = RouterSnapshot.empty;
+  String routerStatus = '';
+  String dnsStatus = '';
+  LogLevelFilter logLevelFilter = LogLevelFilter.all;
+  bool tunPreparationAvailable = false;
+  ControlAvailability tunStatus = const ControlAvailability(
+    supported: false,
+    enabled: false,
+    disabledReason: 'Loading TUN status...',
+  );
+
+  Timer? _statusPollTimer;
+  Timer? _connectionsPollTimer;
+  Timer? _logsPollTimer;
+  Timer? _requestsPollTimer;
+  Timer? _proxyGroupsPollTimer;
+  Timer? _routerPollTimer;
+  int _logCursor = 0;
+  int _requestCursor = 0;
+  bool _pollingConnections = false;
+  bool _pollingLogs = false;
+  bool _pollingRequests = false;
+  bool _pollingProxyGroups = false;
+  bool _pollingRouter = false;
+  static const int _maxLogEntries = 500;
+  static const int _maxRequestEntries = 500;
+
   Future<void> init() async {
     profileName.addListener(_scheduleDesktopShellSync);
     final version = client.version();
     nativeInfo = version.ok ? _formatVersion(version.data) : version.message;
     _attachFieldListeners();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      syncRawConfigEditorFromDraft();
       refreshStack();
       unawaited(refreshStatus());
     });
@@ -152,15 +292,29 @@ class ClientHomeController extends ChangeNotifier {
     unawaited(loadProfiles());
     unawaited(loadAutostartStatus());
     unawaited(loadSystemProxyStatus());
+    unawaited(loadTunStatus());
   }
 
   @override
   void dispose() {
+    _statusPollTimer?.cancel();
+    _statusPollTimer = null;
+    _connectionsPollTimer?.cancel();
+    _connectionsPollTimer = null;
+    _logsPollTimer?.cancel();
+    _logsPollTimer = null;
+    _requestsPollTimer?.cancel();
+    _requestsPollTimer = null;
+    _proxyGroupsPollTimer?.cancel();
+    _proxyGroupsPollTimer = null;
+    _routerPollTimer?.cancel();
+    _routerPollTimer = null;
     profileName.removeListener(_scheduleDesktopShellSync);
     unawaited(desktopShellController.dispose());
     for (final controller in [
       profileName,
       clientConfigPath,
+      rawConfigEditor,
       wrongsvConfigPath,
       wrongsvServerHost,
       wrongsvListenHost,
@@ -245,11 +399,7 @@ class ClientHomeController extends ChangeNotifier {
       stackSummary: stackSummary,
       nativeInfo: nativeInfo,
       systemProxy: systemProxy,
-      tun: const ControlAvailability(
-        supported: false,
-        enabled: false,
-        disabledReason: 'TUN runtime control is not exposed by wrongcl yet',
-      ),
+      tun: tunAvailability,
       agentModeSupported: false,
       selectedAgentMode: selectedAgentMode,
       agentModeDisabledReason:
@@ -321,13 +471,7 @@ class ClientHomeController extends ChangeNotifier {
     return null;
   }
 
-  bool get showingSecondaryPanel =>
-      activeRoute == HomeRoute.profiles ||
-      activeRoute == HomeRoute.importView ||
-      activeRoute == HomeRoute.settings;
-
-  bool get showingHeavyMode =>
-      activeRoute == HomeRoute.editor || activeRoute == HomeRoute.runtime;
+  bool get showingSubpage => activeRoute != HomeRoute.dashboard;
 
   String get activeRouteLabel {
     switch (activeRoute) {
@@ -335,14 +479,24 @@ class ClientHomeController extends ChangeNotifier {
         return 'Dashboard';
       case HomeRoute.profiles:
         return 'Profiles';
-      case HomeRoute.importView:
-        return 'Import';
-      case HomeRoute.editor:
-        return 'Editor';
-      case HomeRoute.runtime:
-        return 'Diagnostics';
-      case HomeRoute.settings:
-        return 'Settings';
+      case HomeRoute.proxies:
+        return 'Proxies';
+      case HomeRoute.connections:
+        return 'Connections';
+      case HomeRoute.requests:
+        return 'Requests';
+      case HomeRoute.logs:
+        return 'Logs';
+      case HomeRoute.modePicker:
+        return 'Add mode';
+      case HomeRoute.settingsBasic:
+        return 'Basic';
+      case HomeRoute.settingsNetwork:
+        return 'Network';
+      case HomeRoute.settingsDns:
+        return 'DNS';
+      case HomeRoute.settingsAdvanced:
+        return 'Advanced';
     }
   }
 
@@ -354,6 +508,576 @@ class ClientHomeController extends ChangeNotifier {
   void closeSubView() {
     activeRoute = HomeRoute.dashboard;
     notifyListeners();
+  }
+
+  ControlAvailability get tunAvailability => tunStatus;
+
+  String get modeStripDisabledReason => '';
+
+  DnsSettingsInput get currentDnsSettings =>
+      DnsSettingsInput.fromMap(buildConfig().dns);
+
+  void setActiveMode(String modeId) {
+    if (modeId == activeModeId) {
+      return;
+    }
+    if (!running) {
+      final response = _setDraftActiveMode(modeId);
+      routerStatus = response.message;
+      notifyListeners();
+      return;
+    }
+    unawaited(_setActiveModeAsync(modeId));
+  }
+
+  Future<void> _setActiveModeAsync(String modeId) async {
+    final response = await Future<NativeResponse>(
+      () => client.routerSetActiveMode(modeId),
+    );
+    if (!response.ok) {
+      routerStatus = response.message;
+      notifyListeners();
+      return;
+    }
+    _setDraftActiveMode(modeId);
+    await _pollRouterNow();
+  }
+
+  void openAddMode() {
+    if (modeSlots.length >= kMaxModeSlots) {
+      return;
+    }
+    openRoute(HomeRoute.modePicker);
+  }
+
+  Future<NativeResponse> upsertUserMode(RouterMode mode) async {
+    final local = _upsertDraftUserMode(mode, commit: !running);
+    if (!local.ok) {
+      routerStatus = local.message;
+      notifyListeners();
+      return local;
+    }
+    if (!running) {
+      routerStatus = local.message;
+      notifyListeners();
+      return local;
+    }
+    final response = await Future<NativeResponse>(
+      () => client.routerUpsertUserMode(mode.toMap()),
+    );
+    if (response.ok) {
+      _upsertDraftUserMode(mode);
+      await _pollRouterNow();
+    } else {
+      routerStatus = response.message;
+      notifyListeners();
+    }
+    return response;
+  }
+
+  Future<NativeResponse> removeUserMode(String name) async {
+    final local = _removeDraftUserMode(name, commit: !running);
+    if (!local.ok) {
+      routerStatus = local.message;
+      notifyListeners();
+      return local;
+    }
+    if (!running) {
+      routerStatus = local.message;
+      notifyListeners();
+      return local;
+    }
+    final response = await Future<NativeResponse>(
+      () => client.routerRemoveUserMode(name),
+    );
+    if (response.ok) {
+      _removeDraftUserMode(name);
+      await _pollRouterNow();
+    } else {
+      routerStatus = response.message;
+      notifyListeners();
+    }
+    return response;
+  }
+
+  Future<NativeResponse> upsertScript(RouterScript script) async {
+    final local = _upsertDraftScript(script, commit: !running);
+    if (!local.ok) {
+      routerStatus = local.message;
+      notifyListeners();
+      return local;
+    }
+    if (!running) {
+      routerStatus = local.message;
+      notifyListeners();
+      return local;
+    }
+    final response = await Future<NativeResponse>(
+      () => client.routerSetScript(script.toMap()),
+    );
+    if (response.ok) {
+      _upsertDraftScript(script);
+      await _pollRouterNow();
+    } else {
+      routerStatus = response.message;
+      notifyListeners();
+    }
+    return response;
+  }
+
+  Future<NativeResponse> removeScript(String name) async {
+    final local = _removeDraftScript(name, commit: !running);
+    if (!local.ok) {
+      routerStatus = local.message;
+      notifyListeners();
+      return local;
+    }
+    if (!running) {
+      routerStatus = local.message;
+      notifyListeners();
+      return local;
+    }
+    final response = await Future<NativeResponse>(
+      () => client.routerRemoveScript(name),
+    );
+    if (response.ok) {
+      _removeDraftScript(name);
+      await _pollRouterNow();
+    } else {
+      routerStatus = response.message;
+      notifyListeners();
+    }
+    return response;
+  }
+
+  void closeConnection(int id) {
+    final response = client.connectionClose(id);
+    if (response.ok) {
+      activeConnections = activeConnections
+          .where((c) => c.id != id)
+          .toList(growable: false);
+      notifyListeners();
+    }
+    unawaited(_pollConnectionsNow());
+  }
+
+  void closeAllConnections() {
+    if (activeConnections.isEmpty) {
+      return;
+    }
+    final response = client.connectionsCloseMatching(const {});
+    if (response.ok) {
+      activeConnections = const [];
+      notifyListeners();
+    }
+    unawaited(_pollConnectionsNow());
+  }
+
+  Future<void> refreshConnections() => _pollConnectionsNow();
+  Future<void> refreshLogs() => _pollLogsNow();
+  Future<void> refreshRequests() => _pollRequestsNow();
+  Future<void> refreshProxyGroups() => _pollProxyGroupsNow();
+
+  List<LogEntry> get visibleLogs => recentLogs
+      .where((entry) => logLevelFilter.allows(entry.level))
+      .toList(growable: false);
+
+  void setLogLevelFilter(LogLevelFilter value) {
+    if (logLevelFilter == value) {
+      return;
+    }
+    logLevelFilter = value;
+    notifyListeners();
+  }
+
+  void setLocalSocksEnabled(bool value) {
+    if (!value && !localHttpEnabled) {
+      profilesStatus = 'At least one local proxy protocol must remain enabled.';
+      notifyListeners();
+      return;
+    }
+    localSocksEnabled = value;
+    notifyListeners();
+  }
+
+  void setLocalHttpEnabled(bool value) {
+    if (!value && !localSocksEnabled) {
+      profilesStatus = 'At least one local proxy protocol must remain enabled.';
+      notifyListeners();
+      return;
+    }
+    localHttpEnabled = value;
+    notifyListeners();
+  }
+
+  Future<void> selectProxyGroupMember(String group, String member) async {
+    final local = _selectDraftProxyGroupMember(group, member, commit: !running);
+    if (!local.ok) {
+      proxyGroupsStatus = local.message;
+      notifyListeners();
+      return;
+    }
+    if (!running) {
+      proxyGroupsStatus = local.message;
+      notifyListeners();
+      return;
+    }
+    final response = await Future<NativeResponse>(
+      () => client.proxyGroupSelect(group, member),
+    );
+    if (!response.ok) {
+      proxyGroupsStatus = response.message;
+      notifyListeners();
+      return;
+    }
+    _selectDraftProxyGroupMember(group, member);
+    proxyGroupsStatus = 'Selected $member in $group';
+    await _pollProxyGroupsNow();
+  }
+
+  Future<NativeResponse> setDnsSettings(DnsSettingsInput settings) async {
+    final local = _setDraftDnsSettings(settings, commit: !running);
+    if (!local.ok) {
+      dnsStatus = local.message;
+      notifyListeners();
+      return local;
+    }
+    if (!running) {
+      dnsStatus = local.message;
+      notifyListeners();
+      return local;
+    }
+    final response = await Future<NativeResponse>(
+      () => client.dnsSettingsSet(settings.toMap()),
+    );
+    if (response.ok) {
+      final applied = response.data.isEmpty
+          ? settings
+          : DnsSettingsInput.fromMap(response.data);
+      _setDraftDnsSettings(applied);
+      dnsStatus = response.message;
+      notifyListeners();
+    } else {
+      dnsStatus = response.message;
+      notifyListeners();
+    }
+    return response;
+  }
+
+  double get upRatePerSecond => _latestRate(uploadedBytesHistory);
+  double get downRatePerSecond => _latestRate(downloadedBytesHistory);
+
+  int get bytesUploaded => (stats['bytes_uploaded'] as num?)?.toInt() ?? 0;
+  int get bytesDownloaded => (stats['bytes_downloaded'] as num?)?.toInt() ?? 0;
+
+  double _latestRate(List<DashboardSeriesPoint> points) {
+    if (points.length < 2) {
+      return 0;
+    }
+    final a = points[points.length - 2];
+    final b = points[points.length - 1];
+    final dt = b.timestamp.difference(a.timestamp).inMilliseconds / 1000;
+    if (dt <= 0) {
+      return 0;
+    }
+    final delta = b.value - a.value;
+    return delta < 0 ? 0 : delta / dt;
+  }
+
+  void _ensureStatusPolling() {
+    _statusPollTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!running || busy) {
+        return;
+      }
+      unawaited(refreshStatus());
+    });
+    if (_connectionsPollTimer == null) {
+      _connectionsPollTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!running) {
+          return;
+        }
+        unawaited(_pollConnectionsNow());
+      });
+      unawaited(_pollConnectionsNow());
+    }
+    if (_logsPollTimer == null) {
+      _logsPollTimer = Timer.periodic(const Duration(milliseconds: 750), (_) {
+        unawaited(_pollLogsNow());
+      });
+      unawaited(_pollLogsNow());
+    }
+    if (_requestsPollTimer == null) {
+      _requestsPollTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        unawaited(_pollRequestsNow());
+      });
+      unawaited(_pollRequestsNow());
+    }
+    if (_proxyGroupsPollTimer == null) {
+      _proxyGroupsPollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        if (!running) {
+          return;
+        }
+        unawaited(_pollProxyGroupsNow());
+      });
+      unawaited(_pollProxyGroupsNow());
+    }
+    if (_routerPollTimer == null) {
+      _routerPollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        if (!running) {
+          return;
+        }
+        unawaited(_pollRouterNow());
+      });
+      unawaited(_pollRouterNow());
+    }
+  }
+
+  void _stopStatusPolling() {
+    _statusPollTimer?.cancel();
+    _statusPollTimer = null;
+    _connectionsPollTimer?.cancel();
+    _connectionsPollTimer = null;
+    _logsPollTimer?.cancel();
+    _logsPollTimer = null;
+    _requestsPollTimer?.cancel();
+    _requestsPollTimer = null;
+    _proxyGroupsPollTimer?.cancel();
+    _proxyGroupsPollTimer = null;
+    _routerPollTimer?.cancel();
+    _routerPollTimer = null;
+    proxyGroups = ProxyGroupsSnapshot.empty;
+    routerSnapshot = RouterSnapshot.empty;
+  }
+
+  Future<void> _pollConnectionsNow() async {
+    if (_pollingConnections) {
+      return;
+    }
+    _pollingConnections = true;
+    try {
+      final response = await Future<NativeResponse>(
+        () => client.connectionsList(),
+      );
+      if (!response.ok) {
+        return;
+      }
+      final parsed = _parseConnections(response.data);
+      final changed = !_connectionsEqual(activeConnections, parsed);
+      if (changed) {
+        activeConnections = parsed;
+        notifyListeners();
+      }
+    } finally {
+      _pollingConnections = false;
+    }
+  }
+
+  Future<void> _pollLogsNow() async {
+    if (_pollingLogs) {
+      return;
+    }
+    _pollingLogs = true;
+    try {
+      final response = await Future<NativeResponse>(
+        () => client.logsSince(_logCursor),
+      );
+      if (!response.ok) {
+        return;
+      }
+      final nextCursor =
+          (response.data['cursor'] as num?)?.toInt() ?? _logCursor;
+      final entries = response.data['entries'];
+      if (entries is! List || entries.isEmpty) {
+        _logCursor = nextCursor;
+        return;
+      }
+      final appended = <LogEntry>[];
+      for (final raw in entries) {
+        if (raw is! Map) continue;
+        final map = Map<String, Object?>.from(raw);
+        final tsMs = (map['ts_unix_ms'] as num?)?.toInt() ?? 0;
+        appended.add(
+          LogEntry(
+            timestamp: DateTime.fromMillisecondsSinceEpoch(
+              tsMs,
+              isUtc: true,
+            ).toLocal(),
+            level: (map['level'] as String? ?? '').toString(),
+            target: (map['target'] as String? ?? '').toString(),
+            message: (map['message'] as String? ?? '').toString(),
+          ),
+        );
+      }
+      _logCursor = nextCursor;
+      if (appended.isEmpty) {
+        return;
+      }
+      final combined = [...recentLogs, ...appended];
+      final overflow = combined.length - _maxLogEntries;
+      recentLogs = overflow > 0
+          ? combined.sublist(overflow)
+          : List<LogEntry>.unmodifiable(combined);
+      notifyListeners();
+    } finally {
+      _pollingLogs = false;
+    }
+  }
+
+  Future<void> _pollRequestsNow() async {
+    if (_pollingRequests) {
+      return;
+    }
+    _pollingRequests = true;
+    try {
+      final response = await Future<NativeResponse>(
+        () => client.requestsSince(_requestCursor),
+      );
+      if (!response.ok) {
+        return;
+      }
+      final nextCursor =
+          (response.data['cursor'] as num?)?.toInt() ?? _requestCursor;
+      final entries = response.data['entries'];
+      if (entries is! List || entries.isEmpty) {
+        _requestCursor = nextCursor;
+        return;
+      }
+      final appended = <RequestInfo>[];
+      for (final raw in entries) {
+        if (raw is! Map) continue;
+        final map = Map<String, Object?>.from(raw);
+        final id = (map['conn_id'] as num?)?.toInt() ?? 0;
+        final tsMs = (map['ts_unix_ms'] as num?)?.toInt() ?? 0;
+        appended.add(
+          RequestInfo(
+            id: id,
+            target: (map['target'] as String?) ?? '',
+            sourceApp: (map['source_app'] as String?) ?? '',
+            timestamp: DateTime.fromMillisecondsSinceEpoch(
+              tsMs,
+              isUtc: true,
+            ).toLocal(),
+            method: (map['method'] as String?) ?? '',
+            url: map['url'] as String?,
+            host: map['host'] as String?,
+            sourcePid: (map['source_pid'] as num?)?.toInt(),
+          ),
+        );
+      }
+      _requestCursor = nextCursor;
+      if (appended.isEmpty) {
+        return;
+      }
+      final combined = [...recentRequests, ...appended];
+      final overflow = combined.length - _maxRequestEntries;
+      recentRequests = overflow > 0
+          ? combined.sublist(overflow)
+          : List<RequestInfo>.unmodifiable(combined);
+      notifyListeners();
+    } finally {
+      _pollingRequests = false;
+    }
+  }
+
+  Future<void> _pollProxyGroupsNow() async {
+    if (_pollingProxyGroups) {
+      return;
+    }
+    _pollingProxyGroups = true;
+    try {
+      final response = await Future<NativeResponse>(
+        () => client.proxyGroupsJson(),
+      );
+      if (!response.ok) {
+        proxyGroupsStatus = response.message;
+        notifyListeners();
+        return;
+      }
+      proxyGroups = ProxyGroupsSnapshot.fromMap(response.data);
+      _syncDraftProxyGroups(proxyGroups);
+      notifyListeners();
+    } finally {
+      _pollingProxyGroups = false;
+    }
+  }
+
+  Future<void> _pollRouterNow() async {
+    if (_pollingRouter) {
+      return;
+    }
+    _pollingRouter = true;
+    try {
+      final response = await Future<NativeResponse>(
+        () => client.routerSnapshotJson(),
+      );
+      if (!response.ok) {
+        routerStatus = response.message;
+        notifyListeners();
+        return;
+      }
+      routerSnapshot = RouterSnapshot.fromMap(response.data);
+      _syncDraftRouter(routerSnapshot);
+      routerStatus = '';
+      notifyListeners();
+    } finally {
+      _pollingRouter = false;
+    }
+  }
+
+  Future<void> refreshRouter() => _pollRouterNow();
+
+  ControlAvailability _parseTunStatus(Map<String, Object?> data) {
+    tunPreparationAvailable = data['preparable'] == true;
+    return ControlAvailability(
+      supported: data['supported'] == true,
+      enabled: data['enabled'] == true,
+      disabledReason: data['disabled_reason'] as String? ?? '',
+    );
+  }
+
+  List<ConnectionInfo> _parseConnections(Map<String, Object?> data) {
+    final list = data['connections'];
+    if (list is! List) {
+      return const [];
+    }
+    final out = <ConnectionInfo>[];
+    for (final raw in list) {
+      if (raw is! Map) continue;
+      final map = Map<String, Object?>.from(raw);
+      final id = (map['id'] as num?)?.toInt();
+      if (id == null) continue;
+      final startedMs = (map['started_at_unix_ms'] as num?)?.toInt() ?? 0;
+      out.add(
+        ConnectionInfo(
+          id: id,
+          target: (map['target'] as String?) ?? '(handshaking)',
+          sourceApp: (map['source_app'] as String?) ?? '',
+          bytesUp: (map['bytes_up'] as num?)?.toInt() ?? 0,
+          bytesDown: (map['bytes_down'] as num?)?.toInt() ?? 0,
+          startedAt: DateTime.fromMillisecondsSinceEpoch(
+            startedMs,
+            isUtc: true,
+          ).toLocal(),
+        ),
+      );
+    }
+    return List<ConnectionInfo>.unmodifiable(out);
+  }
+
+  bool _connectionsEqual(List<ConnectionInfo> a, List<ConnectionInfo> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final x = a[i];
+      final y = b[i];
+      if (x.id != y.id ||
+          x.target != y.target ||
+          x.sourceApp != y.sourceApp ||
+          x.bytesUp != y.bytesUp ||
+          x.bytesDown != y.bytesDown) {
+        return false;
+      }
+    }
+    return true;
   }
 
   String formatVersion(Map<String, Object?> data) => _formatVersion(data);
@@ -424,16 +1148,30 @@ class ClientHomeController extends ChangeNotifier {
   }
 
   ClientConfigInput buildConfig() {
-    return ClientConfigInput(
-      serverHost: serverHost.text,
-      serverPort: int.tryParse(serverPort.text) ?? 0,
-      localHost: localHost.text,
-      localPort: int.tryParse(localPort.text) ?? 0,
+    final draft = _draftConfig;
+    final primaryName = draft.endpoints.isEmpty
+        ? 'default'
+        : draft.endpoints.first.name;
+    final endpoint = NamedEndpointInput(
+      name: primaryName,
+      host: serverHost.text,
+      port: int.tryParse(serverPort.text) ?? 0,
       endpoint: EndpointConfig(
         proxy: _proxyJson(),
         transport: _transportJson(),
         outerSecurity: _outerSecurityJson(),
       ),
+    );
+    final endpoints = <NamedEndpointInput>[
+      endpoint,
+      ...draft.endpoints.skip(1),
+    ];
+    return draft.copyWith(
+      endpoints: endpoints,
+      localHost: localHost.text,
+      localPort: int.tryParse(localPort.text) ?? 0,
+      allowSocks: localSocksEnabled,
+      allowHttp: localHttpEnabled,
     );
   }
 
@@ -452,6 +1190,294 @@ class ClientHomeController extends ChangeNotifier {
       serverHost: wrongsvServerHost.text,
       listenHost: wrongsvListenHost.text,
       listenPort: int.tryParse(wrongsvListenPort.text) ?? 1080,
+    );
+  }
+
+  NativeResponse _okResponse(
+    String message, [
+    Map<String, Object?> data = const {},
+  ]) {
+    return NativeResponse(ok: true, message: message, data: data);
+  }
+
+  NativeResponse _errorResponse(String message) {
+    return NativeResponse(ok: false, message: message, data: const {});
+  }
+
+  RouterMode? _findMode(List<RouterMode> modes, String name) {
+    for (final mode in modes) {
+      if (mode.name == name) {
+        return mode;
+      }
+    }
+    return null;
+  }
+
+  bool _hasProxyTarget(ClientConfigInput config, String name) {
+    for (final endpoint in config.endpoints) {
+      if (endpoint.name == name) {
+        return true;
+      }
+    }
+    for (final group in config.groups) {
+      if (group.name == name) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  RouterMode _normalizeUserMode(RouterMode mode) {
+    final proxy = mode.proxy?.trim();
+    final script = mode.script?.trim();
+    return RouterMode(
+      name: mode.name.trim(),
+      kind: mode.kind,
+      proxy: proxy == null || proxy.isEmpty ? null : proxy,
+      script: script == null || script.isEmpty ? null : script,
+    );
+  }
+
+  NativeResponse _setDraftActiveMode(String modeId, {bool commit = true}) {
+    final config = buildConfig();
+    if (_findMode(config.modes, modeId) == null) {
+      return _errorResponse("mode '$modeId' is not defined");
+    }
+    if (commit) {
+      _draftConfig = config.copyWith(activeMode: modeId);
+    }
+    return _okResponse('active mode set', {'active_mode': modeId});
+  }
+
+  NativeResponse _setDraftDnsSettings(
+    DnsSettingsInput settings, {
+    bool commit = true,
+  }) {
+    final normalized = settings.normalized();
+    final error = normalized.validateMessage();
+    if (error != null) {
+      return _errorResponse(error);
+    }
+    if (commit) {
+      final config = buildConfig();
+      _draftConfig = config.copyWith(dns: normalized.toMap());
+    }
+    return _okResponse('DNS settings saved', normalized.toMap());
+  }
+
+  NativeResponse _upsertDraftUserMode(RouterMode mode, {bool commit = true}) {
+    final normalized = _normalizeUserMode(mode);
+    if (normalized.kind != 'user') {
+      return _errorResponse('upsert_user_mode only accepts user-kind modes');
+    }
+    if (normalized.name.isEmpty) {
+      return _errorResponse('mode name must not be empty');
+    }
+    if (normalized.name == 'global' ||
+        normalized.name == 'rule' ||
+        normalized.name == 'direct') {
+      return _errorResponse(
+        "'${normalized.name}' is a built-in mode name and cannot be redefined",
+      );
+    }
+    final config = buildConfig();
+    final existing = _findMode(config.modes, normalized.name);
+    if (existing != null && existing.kind != 'user') {
+      return _errorResponse(
+        "cannot overwrite built-in mode '${normalized.name}'",
+      );
+    }
+    if (existing == null && config.modes.length >= kMaxModeSlots) {
+      return _errorResponse('cannot add more than $kMaxModeSlots modes');
+    }
+    final proxy = normalized.proxy;
+    if (proxy == null) {
+      return _errorResponse(
+        "user mode '${normalized.name}' must specify a proxy",
+      );
+    }
+    if (!_hasProxyTarget(config, proxy)) {
+      return _errorResponse(
+        "mode '${normalized.name}' references unknown proxy '$proxy'",
+      );
+    }
+    final script = normalized.script;
+    if (script != null &&
+        !config.scripts.any((value) => value.name == script)) {
+      return _errorResponse(
+        "mode '${normalized.name}' references unknown script '$script'",
+      );
+    }
+    if (commit) {
+      final modes = [...config.modes];
+      final index = modes.indexWhere((value) => value.name == normalized.name);
+      if (index >= 0) {
+        modes[index] = normalized;
+      } else {
+        modes.add(normalized);
+      }
+      _draftConfig = config.copyWith(modes: modes);
+    }
+    return _okResponse('mode saved', {'name': normalized.name});
+  }
+
+  NativeResponse _removeDraftUserMode(String name, {bool commit = true}) {
+    final normalized = name.trim();
+    final config = buildConfig();
+    final mode = _findMode(config.modes, normalized);
+    if (mode == null) {
+      return _errorResponse("mode '$normalized' is not defined");
+    }
+    if (mode.kind != 'user') {
+      return _errorResponse("cannot remove built-in mode '$normalized'");
+    }
+    if (commit) {
+      _draftConfig = config.copyWith(
+        modes: [
+          for (final entry in config.modes)
+            if (entry.name != normalized) entry,
+        ],
+        activeMode: config.activeMode == normalized
+            ? 'global'
+            : config.activeMode,
+      );
+    }
+    return _okResponse('mode removed', {'name': normalized});
+  }
+
+  NativeResponse _upsertDraftScript(RouterScript script, {bool commit = true}) {
+    final normalized = RouterScript(
+      name: script.name.trim(),
+      rules: script.rules,
+    );
+    if (normalized.name.isEmpty) {
+      return _errorResponse('script name must not be empty');
+    }
+    final config = buildConfig();
+    for (final rule in normalized.rules) {
+      if (rule.action != 'proxy') {
+        continue;
+      }
+      final proxy = rule.proxyName?.trim();
+      if (proxy == null || proxy.isEmpty || !_hasProxyTarget(config, proxy)) {
+        return _errorResponse(
+          "script '${normalized.name}' references unknown proxy '${rule.proxyName ?? ''}'",
+        );
+      }
+    }
+    if (commit) {
+      final scripts = [...config.scripts];
+      final index = scripts.indexWhere(
+        (value) => value.name == normalized.name,
+      );
+      if (index >= 0) {
+        scripts[index] = normalized;
+      } else {
+        scripts.add(normalized);
+      }
+      _draftConfig = config.copyWith(scripts: scripts);
+    }
+    return _okResponse('script saved', {'name': normalized.name});
+  }
+
+  NativeResponse _removeDraftScript(String name, {bool commit = true}) {
+    final normalized = name.trim();
+    final config = buildConfig();
+    for (final mode in config.modes) {
+      if (mode.script == normalized) {
+        return _errorResponse(
+          "script '$normalized' is still used by mode '${mode.name}'",
+        );
+      }
+    }
+    if (commit) {
+      _draftConfig = config.copyWith(
+        scripts: [
+          for (final script in config.scripts)
+            if (script.name != normalized) script,
+        ],
+      );
+    }
+    return _okResponse('script removed', {'name': normalized});
+  }
+
+  NativeResponse _selectDraftProxyGroupMember(
+    String group,
+    String member, {
+    bool commit = true,
+  }) {
+    final groupName = group.trim();
+    final memberName = member.trim();
+    final config = buildConfig();
+    ProxyGroupInput? target;
+    for (final entry in config.groups) {
+      if (entry.name == groupName) {
+        target = entry;
+        break;
+      }
+    }
+    if (target == null) {
+      return _errorResponse("group '$groupName' is not defined");
+    }
+    if (target.kind != ProxyGroupKind.select) {
+      return _errorResponse(
+        "group '$groupName' does not allow manual selection",
+      );
+    }
+    if (!target.members.contains(memberName)) {
+      return _errorResponse(
+        "group '$groupName' does not contain member '$memberName'",
+      );
+    }
+    if (commit) {
+      _draftConfig = config.copyWith(
+        groups: [
+          for (final entry in config.groups)
+            if (entry.name == groupName)
+              ProxyGroupInput(
+                name: entry.name,
+                kind: entry.kind,
+                members: entry.members,
+                selected: memberName,
+              )
+            else
+              entry,
+        ],
+      );
+    }
+    return _okResponse('group member selected', {
+      'group': groupName,
+      'member': memberName,
+    });
+  }
+
+  void _syncDraftRouter(RouterSnapshot snapshot) {
+    final config = buildConfig();
+    _draftConfig = config.copyWith(
+      scripts: snapshot.scripts,
+      modes: snapshot.modes.isEmpty ? kBuiltinRouterModes : snapshot.modes,
+      activeMode: snapshot.activeMode ?? config.activeMode,
+    );
+  }
+
+  void _syncDraftProxyGroups(ProxyGroupsSnapshot snapshot) {
+    final config = buildConfig();
+    final active = snapshot.active;
+    _draftConfig = config.copyWith(
+      groups: [
+        for (final group in snapshot.groups)
+          ProxyGroupInput(
+            name: group.name,
+            kind: group.kind,
+            members: group.members,
+            selected: group.selected,
+          ),
+      ],
+      active: active == null
+          ? config.active
+          : active.kind == 'group'
+          ? ActiveSelectionInput.group(active.name)
+          : ActiveSelectionInput.endpoint(active.name),
     );
   }
 
@@ -666,6 +1692,28 @@ class ClientHomeController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> loadTunStatus() async {
+    try {
+      final response = client.tunStatusJson();
+      if (!response.ok) {
+        tunStatus = ControlAvailability(
+          supported: false,
+          enabled: false,
+          disabledReason: response.message,
+        );
+      } else {
+        tunStatus = _parseTunStatus(response.data);
+      }
+    } catch (e) {
+      tunStatus = ControlAvailability(
+        supported: false,
+        enabled: false,
+        disabledReason: 'Failed to inspect TUN status: $e',
+      );
+    }
+    notifyListeners();
+  }
+
   Future<void> loadClientConfigFile() async {
     final response = client.loadClientConfigFile(clientConfigPath.text);
     if (!response.ok) {
@@ -681,6 +1729,7 @@ class ClientHomeController extends ChangeNotifier {
     wrongsvAdaptResult = null;
     selectedProfileId = null;
     profilesStatus = 'Loaded client config from ${clientConfigPath.text}';
+    syncRawConfigEditorFromDraft(notify: false);
     refreshStack();
     notifyListeners();
   }
@@ -712,6 +1761,32 @@ class ClientHomeController extends ChangeNotifier {
     file.parent.createSync(recursive: true);
     file.writeAsStringSync(response.data['toml'] as String? ?? '');
     profilesStatus = 'Exported current TOML to $path';
+    notifyListeners();
+  }
+
+  void syncRawConfigEditorFromDraft({bool notify = true}) {
+    const encoder = JsonEncoder.withIndent('  ');
+    rawConfigEditor.text = encoder.convert(buildConfig().toJson());
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
+  Future<void> applyRawConfigEditorJson() async {
+    final raw = rawConfigEditor.text.trim();
+    if (raw.isEmpty) {
+      throw const FormatException('raw config JSON is required');
+    }
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) {
+      throw const FormatException('raw config must be a JSON object');
+    }
+    applyConfigMap(Map<String, Object?>.from(decoded));
+    selectedProfileId = null;
+    wrongsvReport = null;
+    wrongsvAdaptResult = null;
+    profilesStatus = 'Applied raw JSON config to the current draft';
+    refreshStack();
     notifyListeners();
   }
 
@@ -868,6 +1943,37 @@ class ClientHomeController extends ChangeNotifier {
   Future<void> disableSystemProxy() async {
     await systemProxyManager.disable();
     await loadSystemProxyStatus();
+  }
+
+  Future<void> enableTun() async {
+    if (!localSocksEnabled) {
+      throw Exception('Enable the local SOCKS5 listener before preparing TUN.');
+    }
+    final proxyHost = switch (localHost.text.trim()) {
+      '0.0.0.0' || '' => '127.0.0.1',
+      '::' => '::1',
+      final value => value,
+    };
+    final response = await Future<NativeResponse>(
+      () => client.tunEnable({
+        'proxy_host': proxyHost,
+        'proxy_port': int.tryParse(localPort.text) ?? 1080,
+      }),
+    );
+    if (!response.ok) {
+      throw Exception(response.message);
+    }
+    tunStatus = _parseTunStatus(response.data);
+    notifyListeners();
+  }
+
+  Future<void> disableTun() async {
+    final response = await Future<NativeResponse>(() => client.tunDisable());
+    if (!response.ok) {
+      throw Exception(response.message);
+    }
+    tunStatus = _parseTunStatus(response.data);
+    notifyListeners();
   }
 
   Future<void> inspectWrongsv() {
@@ -1071,6 +2177,11 @@ class ClientHomeController extends ChangeNotifier {
       status = nextRunning
           ? 'Running at $nextLocalHost:$nextLocalPort'
           : 'Stopped';
+      if (nextRunning) {
+        _ensureStatusPolling();
+      } else {
+        _stopStatusPolling();
+      }
     } else if (!response.ok) {
       status = '$action failed';
     }
@@ -1260,6 +2371,7 @@ class ClientHomeController extends ChangeNotifier {
   }
 
   void _resetToBlankProfile() {
+    _draftConfig = _defaultDraftConfig();
     profileName.text = 'default';
     clientConfigPath.text = '';
     wrongsvConfigPath.text = '';
@@ -1323,6 +2435,8 @@ class ClientHomeController extends ChangeNotifier {
     shadowTlsPassword.clear();
     localHost.text = '127.0.0.1';
     localPort.text = '1080';
+    localSocksEnabled = true;
+    localHttpEnabled = true;
     targetHost.text = 'example.com';
     targetPort.text = '80';
     payload.text =
@@ -1333,6 +2447,9 @@ class ClientHomeController extends ChangeNotifier {
     selectedProfileId = null;
     wrongsvReport = null;
     wrongsvAdaptResult = null;
+    proxyGroupsStatus = '';
+    routerStatus = '';
+    dnsStatus = '';
     stackSummary = '';
   }
 
@@ -1446,8 +2563,17 @@ class ClientHomeController extends ChangeNotifier {
   }
 
   void applyConfigMap(Map<String, Object?> map) {
-    final server = Map<String, Object?>.from(map['server'] as Map? ?? const {});
-    final local = Map<String, Object?>.from(map['local'] as Map? ?? const {});
+    _draftConfig = ClientConfigInput.fromMap(map);
+    final endpoints = _draftConfig.endpoints;
+    final server = endpoints.isEmpty
+        ? const <String, Object?>{}
+        : endpoints.first.toJson();
+    final local = <String, Object?>{
+      'host': _draftConfig.localHost,
+      'port': _draftConfig.localPort,
+      'allow_socks': _draftConfig.allowSocks,
+      'allow_http': _draftConfig.allowHttp,
+    };
     final proxy = Map<String, Object?>.from(
       server['proxy'] as Map? ?? const {},
     );
@@ -1461,6 +2587,8 @@ class ClientHomeController extends ChangeNotifier {
     serverPort.text = '${server['port'] ?? serverPort.text}';
     localHost.text = local['host'] as String? ?? localHost.text;
     localPort.text = '${local['port'] ?? localPort.text}';
+    localSocksEnabled = local['allow_socks'] != false;
+    localHttpEnabled = local['allow_http'] != false;
 
     final proxyType = proxy['type'] as String? ?? 'vless';
     proxyKind = ProxyKind.fromId(proxyType);
@@ -1603,6 +2731,9 @@ class ClientHomeController extends ChangeNotifier {
             outer['password'] as String? ?? shadowTlsPassword.text;
         break;
     }
+    proxyGroupsStatus = '';
+    routerStatus = '';
+    dnsStatus = '';
     notifyListeners();
   }
 

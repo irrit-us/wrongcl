@@ -3,34 +3,33 @@ use super::*;
 pub(super) fn relay(
     client: TcpStream,
     upstream: Box<dyn Tunnel>,
-    metrics: &ProxyMetrics,
+    bytes_up: &AtomicU64,
+    bytes_down: &AtomicU64,
 ) -> Result<()> {
-    relay_with_initial(client, upstream, metrics, &[])
+    relay_with_initial(client, upstream, bytes_up, bytes_down, &[])
 }
 
 pub(super) fn relay_with_initial(
     mut client: TcpStream,
     upstream: Box<dyn Tunnel>,
-    metrics: &ProxyMetrics,
+    bytes_up: &AtomicU64,
+    bytes_down: &AtomicU64,
     initial_upload: &[u8],
 ) -> Result<()> {
     let (mut upstream_reader, mut upstream_writer) = upstream.split_box()?;
     let mut client_writer = client.try_clone()?;
-    let download_counter = &metrics.bytes_downloaded;
     let downstream = thread::scope(|scope| {
         let downstream = scope.spawn(move || {
-            let _ = copy_counted(&mut upstream_reader, &mut client_writer, download_counter);
+            let _ = copy_counted(&mut upstream_reader, &mut client_writer, bytes_down);
             let _ = client_writer.shutdown(Shutdown::Write);
         });
 
         let upload_result = (|| -> io::Result<u64> {
             if !initial_upload.is_empty() {
                 upstream_writer.write_all(initial_upload)?;
-                metrics
-                    .bytes_uploaded
-                    .fetch_add(initial_upload.len() as u64, Ordering::Relaxed);
+                bytes_up.fetch_add(initial_upload.len() as u64, Ordering::Relaxed);
             }
-            copy_counted(&mut client, &mut upstream_writer, &metrics.bytes_uploaded)
+            copy_counted(&mut client, &mut upstream_writer, bytes_up)
         })();
         let _ = upstream_writer.shutdown_write();
         let _ = downstream.join();

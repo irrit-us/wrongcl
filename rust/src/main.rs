@@ -128,7 +128,11 @@ fn serve(args: ServeArgs) -> Result<()> {
         args.listen_host,
         args.listen_port,
     )?;
-    let stack_summary = config.server.endpoint.stack_summary();
+    let stack_summary = config
+        .resolve_active_endpoint()?
+        .server
+        .endpoint
+        .stack_summary();
     let manager = ConnectionManager::new();
     let snapshot = manager.start_proxy(config)?;
     println!(
@@ -169,7 +173,8 @@ fn probe(args: ProbeArgs) -> Result<()> {
         None,
     )?;
     let target = Target::new(args.target_host, args.target_port)?;
-    let client = WrongsvClient::new(config.server)?;
+    let server = config.resolve_active_endpoint()?.server.clone();
+    let client = WrongsvClient::new(server)?;
     let stack = client.stack_summary();
     let result = client.probe(&target, &args.payload)?;
     println!(
@@ -210,13 +215,14 @@ fn stack(args: StackArgs) -> Result<()> {
         None,
         None,
     )?;
+    let ep = config.resolve_active_endpoint()?;
     println!(
         "{}",
         serde_json::to_string_pretty(&json!({
-            "stack": config.server.endpoint.stack_summary(),
-            "proxy": config.server.endpoint.proxy.id(),
-            "transport": config.server.endpoint.transport.id(),
-            "outer_security": config.server.endpoint.outer_security.id(),
+            "stack": ep.server.endpoint.stack_summary(),
+            "proxy": ep.server.endpoint.proxy.id(),
+            "transport": ep.server.endpoint.transport.id(),
+            "outer_security": ep.server.endpoint.outer_security.id(),
         }))?
     );
     Ok(())
@@ -252,22 +258,38 @@ fn resolve_config(
                     adapted.report.active_profile, adapted.report.active_reason
                 ))
             })?;
-            let value = serde_json::to_value(document)?;
-            let config: ClientConfig = serde_json::from_value(value)?;
-            config
+            let document_json = serde_json::to_string(&document)?;
+            ClientConfig::from_legacy_document_json(&document_json)?
         }
         (None, None) => default_config(),
         (Some(_), Some(_)) => unreachable!("checked above"),
     };
 
+    let active_name = match &config.active {
+        wrongcl_native::ActiveSelection::Endpoint { name } => name.clone(),
+        wrongcl_native::ActiveSelection::Group { name } => {
+            config.find_group(name)?.selected.clone().ok_or_else(|| {
+                wrongcl_native::ClientError::Config(format!(
+                    "group '{name}' has no selected member"
+                ))
+            })?
+        }
+    };
+    let ep = config
+        .endpoints
+        .iter_mut()
+        .find(|e| e.name == active_name)
+        .ok_or_else(|| {
+            wrongcl_native::ClientError::Config(format!("endpoint '{active_name}' is not defined"))
+        })?;
     if let Some(value) = server_host {
-        config.server.host = value;
+        ep.server.host = value;
     }
     if let Some(value) = server_port {
-        config.server.port = value;
+        ep.server.port = value;
     }
     if let Some(value) = uuid {
-        if let ProxyProtocol::Vless(opts) = &mut config.server.endpoint.proxy {
+        if let ProxyProtocol::Vless(opts) = &mut ep.server.endpoint.proxy {
             opts.uuid = value;
         } else {
             return Err(wrongcl_native::ClientError::Config(

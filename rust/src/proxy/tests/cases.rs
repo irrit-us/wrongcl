@@ -47,13 +47,16 @@ fn socks_handshake_survives_nonblocking_client_socket() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let local_addr = listener.local_addr().unwrap();
     let worker = thread::spawn(move || {
-        let shared = ProxyShared {
+        let shared = Arc::new(ProxyShared {
             stop: AtomicBool::new(false),
-            metrics: ProxyMetrics::new(),
-        };
-        let (stream, _) = listener.accept().unwrap();
+            started_at_unix: 0,
+            registry: Arc::new(ConnRegistry::new()),
+            config: RwLock::new(config),
+        });
+        let (stream, peer) = listener.accept().unwrap();
         stream.set_nonblocking(true).unwrap();
-        handle_socks_client(stream, config, &shared)
+        let conn = shared.registry.register(peer, None);
+        handle_socks_client(stream, &shared, &conn)
     });
 
     let response = run_socks_echo(local_addr).unwrap();
@@ -66,8 +69,9 @@ fn socks_handshake_survives_nonblocking_client_socket() {
 #[test]
 fn socks_proxy_relays_through_remote_http_connect_backend() {
     let backend = spawn_fake_http_connect_backend(None, None);
-    let config = ClientConfig {
-        server: ServerConfig {
+    let config = ClientConfig::single_server(
+        "default",
+        ServerConfig {
             host: "127.0.0.1".into(),
             port: backend.port,
             endpoint: Endpoint {
@@ -79,11 +83,13 @@ fn socks_proxy_relays_through_remote_http_connect_backend() {
                 outer_security: OuterSecurity::None,
             },
         },
-        local: LocalProxyConfig {
+        LocalProxyConfig {
             host: "127.0.0.1".into(),
             port: 0,
+            allow_socks: true,
+            allow_http: true,
         },
-    };
+    );
     let mut proxy = ProxyHandle::start(config).unwrap();
 
     let response = run_socks_echo(proxy.snapshot().socket_addr()).unwrap();
@@ -122,6 +128,56 @@ fn http_proxy_forwards_absolute_form_requests() {
         !text.to_ascii_lowercase().contains("proxy-connection"),
         "{text}"
     );
+}
+
+#[test]
+fn socks_proxy_can_be_disabled_per_listener() {
+    let server = spawn_fake_vless_server();
+    let config = ClientConfig::single_server(
+        "default",
+        ServerConfig {
+            host: "127.0.0.1".into(),
+            port: server.port,
+            endpoint: Endpoint::default(),
+        },
+        LocalProxyConfig {
+            host: "127.0.0.1".into(),
+            port: 0,
+            allow_socks: false,
+            allow_http: true,
+        },
+    );
+    let mut proxy = ProxyHandle::start(config).unwrap();
+
+    let reply = run_socks_greeting_reply(proxy.snapshot().socket_addr()).unwrap();
+    proxy.stop().unwrap();
+
+    assert_eq!(reply, 0xff);
+}
+
+#[test]
+fn http_proxy_can_be_disabled_per_listener() {
+    let server = spawn_fake_vless_server();
+    let config = ClientConfig::single_server(
+        "default",
+        ServerConfig {
+            host: "127.0.0.1".into(),
+            port: server.port,
+            endpoint: Endpoint::default(),
+        },
+        LocalProxyConfig {
+            host: "127.0.0.1".into(),
+            port: 0,
+            allow_socks: true,
+            allow_http: false,
+        },
+    );
+    let mut proxy = ProxyHandle::start(config).unwrap();
+
+    let response = run_http_connect_status(proxy.snapshot().socket_addr()).unwrap();
+    proxy.stop().unwrap();
+
+    assert!(response.starts_with("HTTP/1.1 403 Forbidden"));
 }
 
 #[test]
@@ -170,4 +226,96 @@ fn socks_proxy_relays_shadowsocks_aead_2022_udp() {
     proxy.stop().unwrap();
 
     assert_eq!(response, b"ping-udp".to_vec());
+}
+
+#[test]
+fn direct_mode_bypasses_tunnel() {
+    let echo = spawn_tcp_echo_server();
+    let mut config = ClientConfig::raw_vless("127.0.0.1", 1, TEST_UUID, "127.0.0.1", 0).unwrap();
+    config.set_active_mode("direct").unwrap();
+    let mut proxy = ProxyHandle::start(config).unwrap();
+
+    let response =
+        run_socks_echo_to(proxy.snapshot().socket_addr(), "127.0.0.1", echo.port).unwrap();
+    proxy.stop().unwrap();
+
+    assert_eq!(response, b"hello".to_vec());
+}
+
+#[test]
+fn reject_mode_returns_socks_failure() {
+    use crate::config::{Mode, ModeKind};
+    use crate::router::{Rule, RuleAction, Script};
+
+    let server = spawn_fake_vless_server();
+    let mut config =
+        ClientConfig::raw_vless("127.0.0.1", server.port, TEST_UUID, "127.0.0.1", 0).unwrap();
+    config
+        .upsert_script(Script {
+            name: "deny-all".into(),
+            rules: vec![Rule::Match {
+                action: RuleAction::Reject,
+            }],
+        })
+        .unwrap();
+    config
+        .upsert_user_mode(Mode {
+            name: "reject".into(),
+            kind: ModeKind::User,
+            proxy: Some("default".into()),
+            script: Some("deny-all".into()),
+        })
+        .unwrap();
+    config.set_active_mode("reject").unwrap();
+    let mut proxy = ProxyHandle::start(config).unwrap();
+
+    let reply = run_socks_connect_reply(proxy.snapshot().socket_addr(), "example.com", 80).unwrap();
+    proxy.stop().unwrap();
+
+    assert_eq!(reply, 0x02, "expected SOCKS connection-not-allowed reply");
+}
+
+#[test]
+fn script_routes_per_rule_match() {
+    use crate::config::{Mode, ModeKind};
+    use crate::router::{Rule, RuleAction, Script};
+
+    let server = spawn_fake_vless_server();
+    let echo = spawn_tcp_echo_server();
+    let mut config =
+        ClientConfig::raw_vless("127.0.0.1", server.port, TEST_UUID, "127.0.0.1", 0).unwrap();
+    config
+        .upsert_script(Script {
+            name: "split".into(),
+            rules: vec![
+                Rule::Domain {
+                    value: "127.0.0.1".into(),
+                    action: RuleAction::Direct,
+                },
+                Rule::Match {
+                    action: RuleAction::Proxy {
+                        name: "default".into(),
+                    },
+                },
+            ],
+        })
+        .unwrap();
+    config
+        .upsert_user_mode(Mode {
+            name: "split".into(),
+            kind: ModeKind::User,
+            proxy: Some("default".into()),
+            script: Some("split".into()),
+        })
+        .unwrap();
+    config.set_active_mode("split").unwrap();
+    let mut proxy = ProxyHandle::start(config).unwrap();
+    let local_addr = proxy.snapshot().socket_addr();
+
+    let direct_response = run_socks_echo_to(local_addr, "127.0.0.1", echo.port).unwrap();
+    let proxied_response = run_socks_echo_to(local_addr, "example.com", 80).unwrap();
+    proxy.stop().unwrap();
+
+    assert_eq!(direct_response, b"hello".to_vec());
+    assert_eq!(proxied_response, b"hello".to_vec());
 }

@@ -122,8 +122,9 @@ fn probe_works_against_trojan_over_tls_server() {
 fn socks_proxy_works_against_vless_over_tls_server() {
     let server = spawn_tls_server(handle_vless_echo);
 
-    let mut proxy = ProxyHandle::start(ClientConfig {
-        server: ServerConfig {
+    let mut proxy = ProxyHandle::start(ClientConfig::single_server(
+        "default",
+        ServerConfig {
             host: "127.0.0.1".into(),
             port: server.port,
             endpoint: Endpoint {
@@ -139,11 +140,13 @@ fn socks_proxy_works_against_vless_over_tls_server() {
                 }),
             },
         },
-        local: LocalProxyConfig {
+        LocalProxyConfig {
             host: "127.0.0.1".into(),
             port: 0,
+            allow_socks: true,
+            allow_http: true,
         },
-    })
+    ))
     .unwrap();
 
     let response = run_socks_echo(proxy.snapshot().socket_addr(), b"hello-tls").unwrap();
@@ -156,8 +159,9 @@ fn socks_proxy_works_against_vless_over_tls_server() {
 fn socks_proxy_works_against_trojan_over_tls_server() {
     let server = spawn_tls_server(handle_trojan_echo);
 
-    let mut proxy = ProxyHandle::start(ClientConfig {
-        server: ServerConfig {
+    let mut proxy = ProxyHandle::start(ClientConfig::single_server(
+        "default",
+        ServerConfig {
             host: "127.0.0.1".into(),
             port: server.port,
             endpoint: Endpoint {
@@ -172,11 +176,13 @@ fn socks_proxy_works_against_trojan_over_tls_server() {
                 }),
             },
         },
-        local: LocalProxyConfig {
+        LocalProxyConfig {
             host: "127.0.0.1".into(),
             port: 0,
+            allow_socks: true,
+            allow_http: true,
         },
-    })
+    ))
     .unwrap();
 
     let response = run_socks_echo(proxy.snapshot().socket_addr(), b"hello-trojan").unwrap();
@@ -260,8 +266,9 @@ fn socks_proxy_udp_works_against_trojan_over_tls_server() {
 fn socks_proxy_works_against_vless_over_httpupgrade_over_tls_server() {
     let server = spawn_tls_server(handle_httpupgrade_echo);
 
-    let mut proxy = ProxyHandle::start(ClientConfig {
-        server: ServerConfig {
+    let mut proxy = ProxyHandle::start(ClientConfig::single_server(
+        "default",
+        ServerConfig {
             host: "127.0.0.1".into(),
             port: server.port,
             endpoint: Endpoint {
@@ -280,11 +287,13 @@ fn socks_proxy_works_against_vless_over_httpupgrade_over_tls_server() {
                 }),
             },
         },
-        local: LocalProxyConfig {
+        LocalProxyConfig {
             host: "127.0.0.1".into(),
             port: 0,
+            allow_socks: true,
+            allow_http: true,
         },
-    })
+    ))
     .unwrap();
 
     let response = run_socks_echo(proxy.snapshot().socket_addr(), b"hello-httpup-tls").unwrap();

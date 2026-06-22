@@ -23,16 +23,19 @@ password = "hunter2"
     );
 
     let config = client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
-    match &config.server.endpoint.proxy {
+    match &config.endpoints[0].server.endpoint.proxy {
         ProxyProtocol::Shadowsocks(opts) => {
             assert_eq!(opts.method, "chacha20-ietf-poly1305");
             assert_eq!(opts.password, "hunter2");
         }
         other => panic!("unexpected proxy {other:?}"),
     }
-    assert!(matches!(config.server.endpoint.transport, Transport::Raw));
     assert!(matches!(
-        config.server.endpoint.outer_security,
+        config.endpoints[0].server.endpoint.transport,
+        Transport::Raw
+    ));
+    assert!(matches!(
+        config.endpoints[0].server.endpoint.outer_security,
         OuterSecurity::None
     ));
 }
@@ -62,7 +65,7 @@ dest = "www.microsoft.com:443"
     assert_eq!(assessment.payload_networks, vec![PayloadNetwork::Tcp]);
 
     let config = client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
-    match &config.server.endpoint.proxy {
+    match &config.endpoints[0].server.endpoint.proxy {
         ProxyProtocol::Vless(opts) => assert_eq!(opts.flow, "xtls-rprx-vision"),
         other => panic!("expected VLESS, got {other:?}"),
     }
@@ -114,7 +117,7 @@ dest = "www.microsoft.com:443"
 
     assert_eq!(active_profile(&cfg), "reality");
     let config = client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
-    match &config.server.endpoint.outer_security {
+    match &config.endpoints[0].server.endpoint.outer_security {
         OuterSecurity::Reality(opts) => {
             assert_eq!(opts.server_name, "www.microsoft.com");
             assert_eq!(opts.short_id, "aaaaaaaa");
@@ -126,7 +129,7 @@ dest = "www.microsoft.com:443"
         other => panic!("expected REALITY, got {other:?}"),
     }
     assert_eq!(
-        config.server.endpoint.stack_summary(),
+        config.endpoints[0].server.endpoint.stack_summary(),
         "VLESS → raw → REALITY → TCP"
     );
 }
@@ -180,7 +183,7 @@ server_name = "cloudfront.net"
     );
 
     let config = client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
-    match &config.server.endpoint.outer_security {
+    match &config.endpoints[0].server.endpoint.outer_security {
         OuterSecurity::AnyTls(opts) => {
             assert_eq!(opts.password, "hunter2");
             assert_eq!(opts.server_name, "cloudfront.net");
@@ -189,7 +192,7 @@ server_name = "cloudfront.net"
         other => panic!("expected AnyTLS, got {other:?}"),
     }
     assert_eq!(
-        config.server.endpoint.stack_summary(),
+        config.endpoints[0].server.endpoint.stack_summary(),
         "VLESS → raw → AnyTLS → TCP"
     );
 }
@@ -219,7 +222,7 @@ password = "shadow-pass"
     );
 
     let config = client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
-    match &config.server.endpoint.outer_security {
+    match &config.endpoints[0].server.endpoint.outer_security {
         OuterSecurity::ShadowTls(opts) => {
             assert_eq!(opts.server_name, "cloudfront.net");
             assert_eq!(opts.password, "shadow-pass");
@@ -227,7 +230,7 @@ password = "shadow-pass"
         other => panic!("expected ShadowTLS, got {other:?}"),
     }
     assert_eq!(
-        config.server.endpoint.stack_summary(),
+        config.endpoints[0].server.endpoint.stack_summary(),
         "VLESS → raw → ShadowTLS → TCP"
     );
 }

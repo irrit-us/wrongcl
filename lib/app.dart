@@ -1,51 +1,133 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'app_settings_store.dart';
 import 'autostart_manager.dart';
 import 'client_home_controller.dart';
-import 'dashboard_view.dart';
 import 'desktop_shell_controller.dart';
+import 'main_view.dart';
 import 'profile_store.dart';
-import 'subviews/editor_view.dart';
-import 'subviews/import_view.dart';
+import 'subviews/connections_view.dart';
+import 'subviews/logs_view.dart';
+import 'subviews/mode_picker_view.dart';
 import 'subviews/profiles_view.dart';
-import 'subviews/runtime_view.dart';
-import 'subviews/settings_view.dart';
+import 'subviews/proxies_view.dart';
+import 'subviews/requests_view.dart';
+import 'subviews/settings/advanced_view.dart';
+import 'subviews/settings/basic_view.dart';
+import 'subviews/settings/dns_view.dart';
+import 'subviews/settings/network_view.dart';
 import 'system_proxy_manager.dart';
 import 'wrongcl_client.dart';
 
-class WrongclApp extends StatelessWidget {
-  WrongclApp({
+class WrongclApp extends StatefulWidget {
+  const WrongclApp({
     super.key,
-    WrongclClient? client,
-    ProfileStore? profileStore,
-    AutostartManager? autostartManager,
-    SystemProxyManager? systemProxyManager,
-    DesktopShellController? desktopShellController,
-  }) : client = client ?? NativeWrongclClient(),
-       profileStore = profileStore ?? ProfileStore(),
-       autostartManager = autostartManager ?? AutostartManager(),
-       systemProxyManager = systemProxyManager ?? SystemProxyManager(),
-       desktopShellController =
-           desktopShellController ?? const NoopDesktopShellController();
+    this.client,
+    this.profileStore,
+    this.autostartManager,
+    this.systemProxyManager,
+    this.desktopShellController,
+    this.appSettingsStore,
+  });
 
-  final WrongclClient client;
-  final ProfileStore profileStore;
-  final AutostartManager autostartManager;
-  final SystemProxyManager systemProxyManager;
-  final DesktopShellController desktopShellController;
+  final WrongclClient? client;
+  final ProfileStore? profileStore;
+  final AutostartManager? autostartManager;
+  final SystemProxyManager? systemProxyManager;
+  final DesktopShellController? desktopShellController;
+  final AppSettingsStore? appSettingsStore;
+
+  @override
+  State<WrongclApp> createState() => _WrongclAppState();
+}
+
+class _WrongclAppState extends State<WrongclApp> {
+  late final WrongclClient _client;
+  late final ProfileStore _profileStore;
+  late final AutostartManager _autostartManager;
+  late final SystemProxyManager _systemProxyManager;
+  late final DesktopShellController _desktopShellController;
+  late final AppSettingsStore _appSettingsStore;
+  ThemeMode _themeMode = ThemeMode.system;
+  Locale _locale = const Locale('en');
+
+  @override
+  void initState() {
+    super.initState();
+    _client = widget.client ?? NativeWrongclClient();
+    _profileStore = widget.profileStore ?? ProfileStore();
+    _autostartManager = widget.autostartManager ?? AutostartManager();
+    _systemProxyManager = widget.systemProxyManager ?? SystemProxyManager();
+    _desktopShellController =
+        widget.desktopShellController ?? const NoopDesktopShellController();
+    _appSettingsStore = widget.appSettingsStore ?? AppSettingsStore();
+    unawaited(_loadAppSettings());
+  }
+
+  Future<void> _loadAppSettings() async {
+    try {
+      final settings = await _appSettingsStore.load();
+      if (!mounted) return;
+      setState(() {
+        _themeMode = settings.themeMode;
+        _locale = _localeFromCode(settings.localeCode);
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _setThemeMode(ThemeMode value) async {
+    setState(() {
+      _themeMode = value;
+    });
+    await _appSettingsStore.save(
+      AppSettings(themeMode: value, localeCode: _locale.languageCode),
+    );
+  }
+
+  Future<void> _setLocaleCode(String value) async {
+    final locale = _localeFromCode(value);
+    setState(() {
+      _locale = locale;
+    });
+    await _appSettingsStore.save(
+      AppSettings(themeMode: _themeMode, localeCode: locale.languageCode),
+    );
+  }
+
+  Locale _localeFromCode(String code) {
+    switch (code) {
+      case 'zh':
+        return const Locale('zh', 'CN');
+      default:
+        return const Locale('en');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = ColorScheme.fromSeed(
+    final lightScheme = ColorScheme.fromSeed(
       seedColor: const Color(0xFF006D77),
       brightness: Brightness.light,
     );
+    final darkScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF4A8C8A),
+      brightness: Brightness.dark,
+    );
     return MaterialApp(
       title: 'Wrongcl',
+      themeMode: _themeMode,
+      locale: _locale,
+      supportedLocales: const [Locale('en'), Locale('zh', 'CN')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: ThemeData(
-        colorScheme: scheme.copyWith(
+        colorScheme: lightScheme.copyWith(
           surface: const Color(0xFFF7F6F2),
           surfaceContainerHighest: const Color(0xFFE5E2DA),
         ),
@@ -92,12 +174,64 @@ class WrongclApp extends StatelessWidget {
           ),
         ),
       ),
+      darkTheme: ThemeData(
+        colorScheme: darkScheme.copyWith(
+          surface: const Color(0xFF171C1F),
+          surfaceContainerHighest: const Color(0xFF253038),
+        ),
+        scaffoldBackgroundColor: const Color(0xFF101417),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF101417),
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+        ),
+        inputDecorationTheme: const InputDecorationTheme(
+          border: OutlineInputBorder(),
+          isDense: true,
+        ),
+        cardTheme: const CardThemeData(
+          margin: EdgeInsets.zero,
+          color: Color(0xFF171C1F),
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(18)),
+          ),
+        ),
+        dividerTheme: const DividerThemeData(
+          color: Color(0xFF2F3940),
+          thickness: 1,
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFFE6F1EF),
+            foregroundColor: const Color(0xFF101417),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFFE6F1EF),
+            side: const BorderSide(color: Color(0xFF4B5963)),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        ),
+      ),
       home: ClientHome(
-        client: client,
-        profileStore: profileStore,
-        autostartManager: autostartManager,
-        systemProxyManager: systemProxyManager,
-        desktopShellController: desktopShellController,
+        client: _client,
+        profileStore: _profileStore,
+        autostartManager: _autostartManager,
+        systemProxyManager: _systemProxyManager,
+        desktopShellController: _desktopShellController,
+        themeMode: _themeMode,
+        onThemeModeChanged: _setThemeMode,
+        locale: _locale,
+        onLocaleCodeChanged: _setLocaleCode,
       ),
     );
   }
@@ -111,6 +245,10 @@ class ClientHome extends StatefulWidget {
     required this.autostartManager,
     required this.systemProxyManager,
     required this.desktopShellController,
+    required this.themeMode,
+    required this.onThemeModeChanged,
+    required this.locale,
+    required this.onLocaleCodeChanged,
   });
 
   final WrongclClient client;
@@ -118,6 +256,10 @@ class ClientHome extends StatefulWidget {
   final AutostartManager autostartManager;
   final SystemProxyManager systemProxyManager;
   final DesktopShellController desktopShellController;
+  final ThemeMode themeMode;
+  final Future<void> Function(ThemeMode value) onThemeModeChanged;
+  final Locale locale;
+  final Future<void> Function(String value) onLocaleCodeChanged;
 
   @override
   State<ClientHome> createState() => _ClientHomeState();
@@ -151,156 +293,50 @@ class _ClientHomeState extends State<ClientHome> {
       animation: controller,
       builder: (context, _) {
         return Scaffold(
-          appBar: AppBar(
-            title: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.asset(
-                    'assets/brand/wrongcl_app_mark.png',
-                    width: 30,
-                    height: 30,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Wrongcl',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    Text(
-                      'Control surface',
-                      style: Theme.of(context).textTheme.labelSmall,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            titleSpacing: 18,
-            actions: [
-              if (controller.showingSecondaryPanel || controller.showingHeavyMode)
-                Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: Center(
-                    child: Text(
-                      controller.activeRouteLabel,
-                      style: Theme.of(context).textTheme.labelLarge,
-                    ),
-                  ),
-                ),
+          body: Stack(
+            children: [
+              MainView(controller: controller),
+              if (controller.showingSubpage)
+                Positioned.fill(child: _buildActiveSubpage()),
             ],
-          ),
-          body: SafeArea(
-            child: controller.showingHeavyMode
-                ? _buildHeavyModeShell(context)
-                : _buildPrimarySurfaceShell(context),
           ),
         );
       },
     );
   }
 
-  Widget _buildPrimarySurfaceShell(BuildContext context) {
-    return Stack(
-      children: [
-        DashboardView(
-          controller: controller,
-          snapshot: controller.dashboardSnapshot,
-        ),
-        if (controller.showingSecondaryPanel) ...[
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: controller.closeSubView,
-              child: Container(color: Colors.black.withAlpha(40)),
-            ),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Material(
-              elevation: 16,
-              color: Theme.of(context).colorScheme.surface,
-              child: SizedBox(
-                width: MediaQuery.sizeOf(context).width > 1100 ? 520 : 440,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 12, 0),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              controller.activeRouteLabel,
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: 'Close panel',
-                            onPressed: controller.closeSubView,
-                            icon: const Icon(Icons.close),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    Expanded(child: _buildActiveView()),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildHeavyModeShell(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Row(
-            children: [
-              OutlinedButton.icon(
-                onPressed: controller.closeSubView,
-                icon: const Icon(Icons.arrow_back),
-                label: const Text('Back to control surface'),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                controller.activeRouteLabel,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ],
-          ),
-        ),
-        Expanded(child: _buildActiveView()),
-      ],
-    );
-  }
-
-  Widget _buildActiveView() {
+  Widget _buildActiveSubpage() {
+    final close = controller.closeSubView;
     switch (controller.activeRoute) {
       case HomeRoute.dashboard:
-        return DashboardView(
-          controller: controller,
-          snapshot: controller.dashboardSnapshot,
-        );
+        return const SizedBox.shrink();
       case HomeRoute.profiles:
-        return ProfilesView(controller: controller);
-      case HomeRoute.importView:
-        return ImportView(controller: controller);
-      case HomeRoute.editor:
-        return EditorView(controller: controller);
-      case HomeRoute.runtime:
-        return RuntimeView(controller: controller);
-      case HomeRoute.settings:
-        return SettingsView(controller: controller);
+        return ProfilesView(controller: controller, onClose: close);
+      case HomeRoute.proxies:
+        return ProxiesView(controller: controller, onClose: close);
+      case HomeRoute.connections:
+        return ConnectionsView(controller: controller, onClose: close);
+      case HomeRoute.requests:
+        return RequestsView(controller: controller, onClose: close);
+      case HomeRoute.logs:
+        return LogsView(controller: controller, onClose: close);
+      case HomeRoute.modePicker:
+        return ModePickerView(controller: controller, onClose: close);
+      case HomeRoute.settingsBasic:
+        return BasicSettingsView(
+          controller: controller,
+          onClose: close,
+          themeMode: widget.themeMode,
+          onThemeModeChanged: widget.onThemeModeChanged,
+          locale: widget.locale,
+          onLocaleCodeChanged: widget.onLocaleCodeChanged,
+        );
+      case HomeRoute.settingsNetwork:
+        return NetworkSettingsView(controller: controller, onClose: close);
+      case HomeRoute.settingsDns:
+        return DnsSettingsView(controller: controller, onClose: close);
+      case HomeRoute.settingsAdvanced:
+        return AdvancedSettingsView(controller: controller, onClose: close);
     }
   }
 }

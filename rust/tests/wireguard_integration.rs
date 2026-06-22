@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -18,6 +19,11 @@ struct WireGuardServer {
     port: u16,
     _shutdown: ShutdownSignal,
     _handle: wrongsv_server::ServerHandle,
+}
+
+fn wireguard_test_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
 }
 
 fn spawn_wireguard_server(server_private_key: &str, client_public_key: &str) -> WireGuardServer {
@@ -143,6 +149,7 @@ fn spawn_udp_echo_server() -> SocketAddr {
     ignore = "WireGuard runtime is currently verified on Linux"
 )]
 fn probe_works_against_wireguard_server() {
+    let _guard = wireguard_test_lock().lock().unwrap();
     let server_private = [7u8; 32];
     let client_private = [9u8; 32];
     let server_private_b64 = encode_private_key_b64(server_private);
@@ -174,6 +181,7 @@ fn probe_works_against_wireguard_server() {
     ignore = "WireGuard runtime is currently verified on Linux"
 )]
 fn socks_proxy_works_against_wireguard_server() {
+    let _guard = wireguard_test_lock().lock().unwrap();
     let server_private = [7u8; 32];
     let client_private = [9u8; 32];
     let server_private_b64 = encode_private_key_b64(server_private);
@@ -184,13 +192,16 @@ fn socks_proxy_works_against_wireguard_server() {
     let server = spawn_wireguard_server(&server_private_b64, &client_public_b64);
     let echo_addr = spawn_tcp_echo_server();
 
-    let mut proxy = ProxyHandle::start(ClientConfig {
-        server: wireguard_client_config(server.port, &client_private_b64, &server_public_b64),
-        local: LocalProxyConfig {
+    let mut proxy = ProxyHandle::start(ClientConfig::single_server(
+        "default",
+        wireguard_client_config(server.port, &client_private_b64, &server_public_b64),
+        LocalProxyConfig {
             host: "127.0.0.1".into(),
             port: 0,
+            allow_socks: true,
+            allow_http: true,
         },
-    })
+    ))
     .unwrap();
 
     let response = run_socks_echo(
@@ -210,6 +221,7 @@ fn socks_proxy_works_against_wireguard_server() {
     ignore = "WireGuard runtime is currently verified on Linux"
 )]
 fn socks_proxy_udp_works_against_wireguard_server() {
+    let _guard = wireguard_test_lock().lock().unwrap();
     let server_private = [7u8; 32];
     let client_private = [9u8; 32];
     let server_private_b64 = encode_private_key_b64(server_private);

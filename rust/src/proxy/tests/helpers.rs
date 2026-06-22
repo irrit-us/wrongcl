@@ -17,8 +17,9 @@ pub(super) struct FakeServer {
 }
 
 pub(super) fn shadowsocks_client_config(port: u16, method: &str, password: &str) -> ClientConfig {
-    ClientConfig {
-        server: ServerConfig {
+    ClientConfig::single_server(
+        "default",
+        ServerConfig {
             host: "127.0.0.1".into(),
             port,
             endpoint: Endpoint {
@@ -30,11 +31,13 @@ pub(super) fn shadowsocks_client_config(port: u16, method: &str, password: &str)
                 outer_security: OuterSecurity::None,
             },
         },
-        local: LocalProxyConfig {
+        LocalProxyConfig {
             host: "127.0.0.1".into(),
             port: 0,
+            allow_socks: true,
+            allow_http: true,
         },
-    }
+    )
 }
 
 pub(super) fn spawn_fake_vless_server() -> FakeServer {
@@ -301,6 +304,14 @@ fn read_http_headers_from_stream(stream: &mut impl Read) -> io::Result<String> {
 }
 
 pub(super) fn run_socks_echo(local_addr: SocketAddr) -> io::Result<Vec<u8>> {
+    run_socks_echo_to(local_addr, "example.com", 80)
+}
+
+pub(super) fn run_socks_echo_to(
+    local_addr: SocketAddr,
+    host: &str,
+    port: u16,
+) -> io::Result<Vec<u8>> {
     let mut stream = TcpStream::connect_timeout(&local_addr, Duration::from_secs(2))?;
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;
     stream.write_all(&[0x05, 0x01, 0x00])?;
@@ -309,10 +320,10 @@ pub(super) fn run_socks_echo(local_addr: SocketAddr) -> io::Result<Vec<u8>> {
     stream.read_exact(&mut greeting)?;
     assert_eq!(greeting, [0x05, 0x00]);
 
-    let host = b"example.com";
-    let mut request = vec![0x05, 0x01, 0x00, 0x03, host.len() as u8];
-    request.extend_from_slice(host);
-    request.extend_from_slice(&80u16.to_be_bytes());
+    let host_bytes = host.as_bytes();
+    let mut request = vec![0x05, 0x01, 0x00, 0x03, host_bytes.len() as u8];
+    request.extend_from_slice(host_bytes);
+    request.extend_from_slice(&port.to_be_bytes());
     stream.write_all(&request)?;
 
     let mut reply = [0u8; 10];
@@ -323,6 +334,68 @@ pub(super) fn run_socks_echo(local_addr: SocketAddr) -> io::Result<Vec<u8>> {
     let mut response = [0u8; 5];
     stream.read_exact(&mut response)?;
     Ok(response.to_vec())
+}
+
+pub(super) fn run_socks_connect_reply(
+    local_addr: SocketAddr,
+    host: &str,
+    port: u16,
+) -> io::Result<u8> {
+    let mut stream = TcpStream::connect_timeout(&local_addr, Duration::from_secs(2))?;
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    stream.write_all(&[0x05, 0x01, 0x00])?;
+
+    let mut greeting = [0u8; 2];
+    stream.read_exact(&mut greeting)?;
+    assert_eq!(greeting, [0x05, 0x00]);
+
+    let host_bytes = host.as_bytes();
+    let mut request = vec![0x05, 0x01, 0x00, 0x03, host_bytes.len() as u8];
+    request.extend_from_slice(host_bytes);
+    request.extend_from_slice(&port.to_be_bytes());
+    stream.write_all(&request)?;
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply)?;
+    Ok(reply[1])
+}
+
+pub(super) fn run_socks_greeting_reply(local_addr: SocketAddr) -> io::Result<u8> {
+    let mut stream = TcpStream::connect_timeout(&local_addr, Duration::from_secs(2))?;
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    stream.write_all(&[0x05, 0x01, 0x00])?;
+
+    let mut greeting = [0u8; 2];
+    stream.read_exact(&mut greeting)?;
+    Ok(greeting[1])
+}
+
+pub(super) fn spawn_tcp_echo_server() -> FakeServer {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (ready_tx, ready_rx) = mpsc::channel();
+    thread::spawn(move || {
+        ready_tx.send(()).unwrap();
+        for stream in listener.incoming().flatten() {
+            thread::spawn(move || {
+                let _ = handle_tcp_echo(stream);
+            });
+        }
+    });
+    ready_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+    FakeServer { port }
+}
+
+fn handle_tcp_echo(mut stream: TcpStream) -> io::Result<()> {
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    let mut buf = [0u8; 1024];
+    loop {
+        match stream.read(&mut buf) {
+            Ok(0) => return Ok(()),
+            Ok(n) => stream.write_all(&buf[..n])?,
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 pub(super) fn run_http_connect_echo(local_addr: SocketAddr) -> io::Result<Vec<u8>> {
@@ -353,6 +426,28 @@ pub(super) fn run_http_get_rejected(local_addr: SocketAddr) -> io::Result<String
     let mut stream = TcpStream::connect_timeout(&local_addr, Duration::from_secs(2))?;
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;
     stream.write_all(b"GET ftp://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n")?;
+
+    let mut response = Vec::with_capacity(128);
+    let mut byte = [0u8; 1];
+    loop {
+        match stream.read_exact(&mut byte) {
+            Ok(()) => {
+                response.push(byte[0]);
+                if response.ends_with(b"\r\n\r\n") {
+                    break;
+                }
+            }
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(String::from_utf8_lossy(&response).to_string())
+}
+
+pub(super) fn run_http_connect_status(local_addr: SocketAddr) -> io::Result<String> {
+    let mut stream = TcpStream::connect_timeout(&local_addr, Duration::from_secs(2))?;
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    stream.write_all(b"CONNECT example.com:80 HTTP/1.1\r\nHost: example.com:80\r\n\r\n")?;
 
     let mut response = Vec::with_capacity(128);
     let mut byte = [0u8; 1];

@@ -69,8 +69,9 @@ fn socks_proxy_udp_works_against_fake_httpupgrade_server() {
 #[test]
 fn socks_proxy_works_against_fake_httpupgrade_server() {
     let server = spawn_fake_server(FakeCarrier::HttpUpgrade);
-    let mut proxy = ProxyHandle::start(ClientConfig {
-        server: vless_server(
+    let mut proxy = ProxyHandle::start(ClientConfig::single_server(
+        "default",
+        vless_server(
             "127.0.0.1",
             server.port,
             TEST_UUID,
@@ -79,11 +80,13 @@ fn socks_proxy_works_against_fake_httpupgrade_server() {
                 host: None,
             }),
         ),
-        local: LocalProxyConfig {
+        LocalProxyConfig {
             host: "127.0.0.1".into(),
             port: 0,
+            allow_socks: true,
+            allow_http: true,
         },
-    })
+    ))
     .unwrap();
 
     let response = run_socks_echo(proxy.snapshot().socket_addr(), b"hello-httpup").unwrap();
@@ -143,8 +146,9 @@ fn socks_proxy_udp_works_against_fake_websocket_server() {
 #[test]
 fn socks_proxy_works_against_fake_websocket_server() {
     let server = spawn_fake_server(FakeCarrier::WebSocket);
-    let mut proxy = ProxyHandle::start(ClientConfig {
-        server: vless_server(
+    let mut proxy = ProxyHandle::start(ClientConfig::single_server(
+        "default",
+        vless_server(
             "127.0.0.1",
             server.port,
             TEST_UUID,
@@ -153,11 +157,13 @@ fn socks_proxy_works_against_fake_websocket_server() {
                 host: None,
             }),
         ),
-        local: LocalProxyConfig {
+        LocalProxyConfig {
             host: "127.0.0.1".into(),
             port: 0,
+            allow_socks: true,
+            allow_http: true,
         },
-    })
+    ))
     .unwrap();
 
     let response = run_socks_echo(proxy.snapshot().socket_addr(), b"hello-ws").unwrap();
@@ -230,13 +236,16 @@ fn socks_proxy_udp_works_against_fake_remote_socks5_server() {
 #[test]
 fn local_proxy_udp_works_against_fake_remote_socks5_server() {
     let server = spawn_fake_socks5_server(None, None);
-    let mut proxy = ProxyHandle::start(ClientConfig {
-        server: mixed_server("127.0.0.1", server.port, MixedOptions::default()),
-        local: LocalProxyConfig {
+    let mut proxy = ProxyHandle::start(ClientConfig::single_server(
+        "default",
+        mixed_server("127.0.0.1", server.port, MixedOptions::default()),
+        LocalProxyConfig {
             host: "127.0.0.1".into(),
             port: 0,
+            allow_socks: true,
+            allow_http: true,
         },
-    })
+    ))
     .unwrap();
 
     let response = run_socks_udp_echo(proxy.snapshot().socket_addr()).unwrap();
@@ -372,8 +381,9 @@ fn probe_works_against_fake_shadowsocks_aead_2022_server() {
 #[test]
 fn socks_proxy_works_against_fake_shadowsocks_server() {
     let server = spawn_fake_shadowsocks_server("chacha20-ietf-poly1305".into(), "hunter2".into());
-    let mut proxy = ProxyHandle::start(ClientConfig {
-        server: shadowsocks_server(
+    let mut proxy = ProxyHandle::start(ClientConfig::single_server(
+        "default",
+        shadowsocks_server(
             "127.0.0.1",
             server.port,
             ShadowsocksOptions {
@@ -381,11 +391,13 @@ fn socks_proxy_works_against_fake_shadowsocks_server() {
                 password: "hunter2".into(),
             },
         ),
-        local: LocalProxyConfig {
+        LocalProxyConfig {
             host: "127.0.0.1".into(),
             port: 0,
+            allow_socks: true,
+            allow_http: true,
         },
-    })
+    ))
     .unwrap();
 
     let response = run_socks_echo(proxy.snapshot().socket_addr(), b"hello-ss").unwrap();
@@ -398,8 +410,9 @@ fn socks_proxy_works_against_fake_shadowsocks_server() {
 fn socks_proxy_works_against_fake_shadowsocks_aead_2022_server() {
     let psk_b64 = "AAAAAAAAAAAAAAAAAAAAAA==";
     let server = spawn_fake_shadowsocks_server("2022-blake3-aes-128-gcm".into(), psk_b64.into());
-    let mut proxy = ProxyHandle::start(ClientConfig {
-        server: shadowsocks_server(
+    let mut proxy = ProxyHandle::start(ClientConfig::single_server(
+        "default",
+        shadowsocks_server(
             "127.0.0.1",
             server.port,
             ShadowsocksOptions {
@@ -407,11 +420,13 @@ fn socks_proxy_works_against_fake_shadowsocks_aead_2022_server() {
                 password: psk_b64.into(),
             },
         ),
-        local: LocalProxyConfig {
+        LocalProxyConfig {
             host: "127.0.0.1".into(),
             port: 0,
+            allow_socks: true,
+            allow_http: true,
         },
-    })
+    ))
     .unwrap();
 
     let response = run_socks_echo(proxy.snapshot().socket_addr(), b"hello-2022").unwrap();

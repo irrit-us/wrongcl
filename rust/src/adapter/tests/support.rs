@@ -36,8 +36,11 @@ server_name = "example.com"
 
     assert_eq!(active_profile(&cfg), "tls");
     let config = client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
-    assert!(matches!(config.server.endpoint.transport, Transport::Raw));
-    match &config.server.endpoint.outer_security {
+    assert!(matches!(
+        config.endpoints[0].server.endpoint.transport,
+        Transport::Raw
+    ));
+    match &config.endpoints[0].server.endpoint.outer_security {
         OuterSecurity::Tls(tls) => assert_eq!(tls.server_name, "example.com"),
         other => panic!("expected TLS, got {other:?}"),
     }

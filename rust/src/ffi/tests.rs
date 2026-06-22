@@ -110,21 +110,25 @@ dest = "www.microsoft.com:443"
 fn ffi_can_load_client_config_file() {
     let path = write_wrongsv_config(
         r#"{
-  "server": {
-    "host": "127.0.0.1",
-    "port": 443,
-    "proxy": {
-      "type": "vless",
-      "uuid": "12345678-1234-1234-1234-123456789abc",
-      "flow": ""
-    },
-    "transport": {
-      "type": "raw"
-    },
-    "outer-security": {
-      "type": "none"
+  "endpoints": [
+    {
+      "name": "default",
+      "host": "127.0.0.1",
+      "port": 443,
+      "proxy": {
+        "type": "vless",
+        "uuid": "12345678-1234-1234-1234-123456789abc",
+        "flow": ""
+      },
+      "transport": {
+        "type": "raw"
+      },
+      "outer-security": {
+        "type": "none"
+      }
     }
-  },
+  ],
+  "active": { "type": "endpoint", "name": "default" },
   "local": {
     "host": "127.0.0.1",
     "port": 1080
@@ -135,31 +139,35 @@ fn ffi_can_load_client_config_file() {
 
     let value = take_json(wrongcl_load_config_file_json(path_c.as_ptr()));
     assert_eq!(value["ok"], true);
-    assert_eq!(value["data"]["config"]["server"]["host"], "127.0.0.1");
+    assert_eq!(value["data"]["config"]["endpoints"][0]["host"], "127.0.0.1");
     assert_eq!(value["data"]["stack"], "VLESS → raw → TCP");
 }
 
 #[test]
 fn ffi_can_validate_client_config() {
     let config = r#"{
-  "server": {
-    "host": "127.0.0.1",
-    "port": 443,
-    "proxy": {
-      "type": "vless",
-      "uuid": "12345678-1234-1234-1234-123456789abc",
-      "flow": ""
-    },
-    "transport": {
-      "type": "raw"
-    },
-    "outer-security": {
-      "type": "none"
+  "endpoints": [
+    {
+      "name": "default",
+      "host": "127.0.0.1",
+      "port": 443,
+      "proxy": {
+        "type": "vless",
+        "uuid": "12345678-1234-1234-1234-123456789abc",
+        "flow": ""
+      },
+      "transport": {
+        "type": "raw"
+      },
+      "outer-security": {
+        "type": "none"
+      }
     }
-  },
+  ],
+  "active": { "type": "endpoint", "name": "default" },
   "local": {
     "host": "127.0.0.1",
-    "port": 1080
+    "port": 0
   }
 }"#;
     let config_c = CString::new(config).unwrap();
@@ -173,21 +181,25 @@ fn ffi_can_validate_client_config() {
 #[test]
 fn ffi_can_export_config_as_toml() {
     let config = r#"{
-  "server": {
-    "host": "127.0.0.1",
-    "port": 443,
-    "proxy": {
-      "type": "vless",
-      "uuid": "12345678-1234-1234-1234-123456789abc",
-      "flow": ""
-    },
-    "transport": {
-      "type": "raw"
-    },
-    "outer-security": {
-      "type": "none"
+  "endpoints": [
+    {
+      "name": "default",
+      "host": "127.0.0.1",
+      "port": 443,
+      "proxy": {
+        "type": "vless",
+        "uuid": "12345678-1234-1234-1234-123456789abc",
+        "flow": ""
+      },
+      "transport": {
+        "type": "raw"
+      },
+      "outer-security": {
+        "type": "none"
+      }
     }
-  },
+  ],
+  "active": { "type": "endpoint", "name": "default" },
   "local": {
     "host": "127.0.0.1",
     "port": 1080
@@ -197,6 +209,75 @@ fn ffi_can_export_config_as_toml() {
     let value = take_json(wrongcl_export_config_toml_json(config_c.as_ptr()));
     assert_eq!(value["ok"], true);
     let toml = value["data"]["toml"].as_str().unwrap();
-    assert!(toml.contains("[server]"));
+    assert!(toml.contains("[[endpoints]]"));
     assert!(toml.contains("host = \"127.0.0.1\""));
+}
+
+#[test]
+fn ffi_can_round_trip_dns_settings_while_running() {
+    let _ = take_json(wrongcl_stop_proxy());
+    let config = r#"{
+  "endpoints": [
+    {
+      "name": "default",
+      "host": "127.0.0.1",
+      "port": 443,
+      "proxy": {
+        "type": "vless",
+        "uuid": "12345678-1234-1234-1234-123456789abc",
+        "flow": ""
+      },
+      "transport": {
+        "type": "raw"
+      },
+      "outer-security": {
+        "type": "none"
+      }
+    }
+  ],
+  "active": { "type": "endpoint", "name": "default" },
+  "dns": {
+    "backend": {
+      "kind": "system"
+    }
+  },
+  "local": {
+    "host": "127.0.0.1",
+    "port": 1080
+  }
+}"#;
+    let config_c = CString::new(config).unwrap();
+
+    let started = take_json(wrongcl_start_proxy_json(config_c.as_ptr()));
+    assert_eq!(started["ok"], true);
+
+    let initial = take_json(wrongcl_dns_settings_json());
+    assert_eq!(initial["ok"], true);
+    assert_eq!(initial["data"]["backend"]["kind"], "system");
+
+    let dns_c =
+        CString::new(r#"{"backend":{"kind":"doh","url":"https://1.1.1.1/dns-query"}}"#).unwrap();
+    let updated = take_json(wrongcl_dns_settings_set_json(dns_c.as_ptr()));
+    assert_eq!(updated["ok"], true);
+    assert_eq!(updated["data"]["backend"]["kind"], "doh");
+    assert_eq!(
+        updated["data"]["backend"]["url"],
+        "https://1.1.1.1/dns-query"
+    );
+
+    let snapshot = take_json(wrongcl_dns_settings_json());
+    assert_eq!(snapshot["ok"], true);
+    assert_eq!(snapshot["data"]["backend"]["kind"], "doh");
+
+    let stopped = take_json(wrongcl_stop_proxy());
+    assert_eq!(stopped["ok"], true);
+}
+
+#[test]
+fn ffi_reports_tun_status_snapshot() {
+    let value = take_json(wrongcl_tun_status_json());
+    assert_eq!(value["ok"], true);
+    assert!(value["data"]["supported"].is_boolean());
+    assert!(value["data"]["enabled"].is_boolean());
+    assert!(value["data"]["disabled_reason"].is_string());
 }

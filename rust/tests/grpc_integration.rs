@@ -288,8 +288,9 @@ fn probe_works_against_vless_over_grpc_over_tls_server() {
 fn socks_proxy_works_against_vless_over_grpc_over_tls_server() {
     let port = spawn_grpc_tls_server();
 
-    let mut proxy = ProxyHandle::start(ClientConfig {
-        server: ServerConfig {
+    let mut proxy = ProxyHandle::start(ClientConfig::single_server(
+        "default",
+        ServerConfig {
             host: "127.0.0.1".into(),
             port,
             endpoint: Endpoint {
@@ -307,11 +308,13 @@ fn socks_proxy_works_against_vless_over_grpc_over_tls_server() {
                 }),
             },
         },
-        local: LocalProxyConfig {
+        LocalProxyConfig {
             host: "127.0.0.1".into(),
             port: 0,
+            allow_socks: true,
+            allow_http: true,
         },
-    })
+    ))
     .unwrap();
 
     let response = run_socks_echo(proxy.snapshot().socket_addr()).unwrap();
@@ -324,8 +327,9 @@ fn socks_proxy_works_against_vless_over_grpc_over_tls_server() {
 fn socks_proxy_works_against_vless_over_grpc_server() {
     let port = spawn_grpc_server();
 
-    let mut proxy = ProxyHandle::start(ClientConfig {
-        server: ServerConfig {
+    let mut proxy = ProxyHandle::start(ClientConfig::single_server(
+        "default",
+        ServerConfig {
             host: "127.0.0.1".into(),
             port,
             endpoint: Endpoint {
@@ -339,11 +343,13 @@ fn socks_proxy_works_against_vless_over_grpc_server() {
                 outer_security: OuterSecurity::None,
             },
         },
-        local: LocalProxyConfig {
+        LocalProxyConfig {
             host: "127.0.0.1".into(),
             port: 0,
+            allow_socks: true,
+            allow_http: true,
         },
-    })
+    ))
     .unwrap();
 
     let response = run_socks_echo(proxy.snapshot().socket_addr()).unwrap();

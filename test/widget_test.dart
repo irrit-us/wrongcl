@@ -3,713 +3,447 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wrongcl/app.dart';
+import 'package:wrongcl/app_settings_store.dart';
 import 'package:wrongcl/autostart_manager.dart';
 import 'package:wrongcl/desktop_shell_controller.dart';
 import 'package:wrongcl/profile_store.dart';
 import 'package:wrongcl/system_proxy_manager.dart';
+import 'package:wrongcl/widgets/mode_strip.dart';
 import 'package:wrongcl/wrongcl_client.dart';
 
-Future<void> _openWorkspace(WidgetTester tester, String title) async {
-  final target = find.text(title).first;
-  await tester.ensureVisible(target);
-  await tester.tap(target, warnIfMissed: false);
+class _Harness {
+  _Harness({
+    required this.client,
+    required this.profileStore,
+    required this.autostartManager,
+    required this.systemProxyManager,
+    required this.desktopShellController,
+    required this.appSettingsStore,
+  });
+
+  final WrongclClient client;
+  final ProfileStore profileStore;
+  final AutostartManager autostartManager;
+  final SystemProxyManager systemProxyManager;
+  final FakeDesktopShellController desktopShellController;
+  final AppSettingsStore appSettingsStore;
+
+  Widget build() {
+    return WrongclApp(
+      client: client,
+      profileStore: profileStore,
+      autostartManager: autostartManager,
+      systemProxyManager: systemProxyManager,
+      desktopShellController: desktopShellController,
+      appSettingsStore: appSettingsStore,
+    );
+  }
+}
+
+_Harness _makeHarness({
+  WrongclClient? client,
+  SystemProxyPlatform platform = SystemProxyPlatform.linux,
+}) {
+  final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
+  return _Harness(
+    client: client ?? FakeWrongclClient(),
+    profileStore: ProfileStore(file: File('${tempDir.path}/profiles.json')),
+    autostartManager: AutostartManager(
+      file: File('${tempDir.path}/wrongcl.desktop'),
+      executablePath: '/tmp/wrongcl',
+      platform: AutostartPlatform.linux,
+    ),
+    systemProxyManager: SystemProxyManager(
+      runner: (executable, arguments) async =>
+          ProcessResult(0, 0, "'none'\n", ''),
+      platform: platform,
+    ),
+    desktopShellController: FakeDesktopShellController(),
+    appSettingsStore: AppSettingsStore(
+      file: File('${tempDir.path}/app_settings.json'),
+    ),
+  );
+}
+
+Future<void> _pumpReady(WidgetTester tester, _Harness harness) async {
+  await tester.pumpWidget(harness.build());
+  await tester.pump(const Duration(milliseconds: 300));
   await tester.pumpAndSettle();
 }
 
-Future<void> _backToDashboard(WidgetTester tester) async {
-  final controlSurfaceButton = find.widgetWithText(
-    OutlinedButton,
-    'Back to control surface',
-  );
-  if (controlSurfaceButton.evaluate().isNotEmpty) {
-    await tester.tap(controlSurfaceButton);
-    await tester.pumpAndSettle();
-    return;
-  }
-  final closePanelButton = find.byTooltip('Close panel');
-  if (closePanelButton.evaluate().isNotEmpty) {
-    await tester.tap(closePanelButton);
-    await tester.pumpAndSettle();
-  }
+Future<void> _tapEntryChip(WidgetTester tester, String label) async {
+  final chip = find.widgetWithText(InkWell, label).first;
+  await tester.ensureVisible(chip);
+  await tester.tap(chip);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _closeSubpage(WidgetTester tester) async {
+  await tester.tap(find.byTooltip('Close'));
+  await tester.pumpAndSettle();
+}
+
+int _modeStripCellCount(WidgetTester tester) {
+  return tester
+      .widgetList<Expanded>(
+        find.descendant(
+          of: find.byType(ModeStrip),
+          matching: find.byType(Expanded),
+        ),
+      )
+      .length;
+}
+
+Future<void> _addUserMode(WidgetTester tester, String name) async {
+  await tester.tap(find.text('Add'));
+  await tester.pumpAndSettle();
+
+  await tester.enterText(find.byType(TextFormField).first, name);
+  await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('default').last);
+  await tester.pumpAndSettle();
+  await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+  await tester.pumpAndSettle();
 }
 
 void main() {
-  testWidgets('client renders import and profile workflow', (tester) async {
-    final client = FakeWrongclClient();
-    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
-    final profileStore = ProfileStore(
-      file: File('${tempDir.path}/profiles.json'),
-    );
-    final autostartManager = AutostartManager(
-      file: File('${tempDir.path}/wrongcl.desktop'),
-      executablePath: '/tmp/wrongcl',
-    );
-    final systemProxyManager = SystemProxyManager(
-      runner: (executable, arguments) async =>
-          ProcessResult(0, 0, "'none'\n", ''),
-      platform: SystemProxyPlatform.linux,
-    );
+  testWidgets('main view renders mode strip with Global/Rule/Direct', (
+    tester,
+  ) async {
+    final harness = _makeHarness();
+    await _pumpReady(tester, harness);
 
-    await tester.pumpWidget(
-      WrongclApp(
-        client: client,
-        profileStore: profileStore,
-        autostartManager: autostartManager,
-        systemProxyManager: systemProxyManager,
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(find.text('Wrongcl'), findsOneWidget);
-    expect(find.text('Profiles'), findsOneWidget);
-    expect(find.text('Editor'), findsOneWidget);
-    expect(find.text('Connection Manager'), findsOneWidget);
-    expect(find.text('Import / Support State'), findsOneWidget);
-    expect(find.text('Start proxy'), findsOneWidget);
-    expect(find.text('Settings'), findsOneWidget);
-
-    await _openWorkspace(tester, 'Import');
-
-    final inspectButton = find.widgetWithText(
-      OutlinedButton,
-      'Inspect wrongsv',
-    );
-    final adaptButton = find.widgetWithText(FilledButton, 'Adapt into form');
-    final saveButton = find.widgetWithText(FilledButton, 'Save current');
-
-    await tester.enterText(
-      find.byKey(const ValueKey('wrongsv-config-path')),
-      '/tmp/server.toml',
-    );
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(inspectButton);
-    await tester.pumpAndSettle();
-    await tester.tap(inspectButton);
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.pumpAndSettle();
-
-    expect(client.inspectCount, 1);
-    expect(find.text('test fixture'), findsOneWidget);
-
-    await tester.ensureVisible(adaptButton);
-    await tester.pumpAndSettle();
-    await tester.tap(adaptButton);
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.pumpAndSettle();
-
-    expect(client.adaptCount, 1);
-    expect(find.textContaining('Adapted stack: VLESS'), findsOneWidget);
-
-    await _backToDashboard(tester);
-    await _openWorkspace(tester, 'Profiles');
-
-    await tester.enterText(
-      find.byKey(const ValueKey('profile-name')),
-      'saved profile',
-    );
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(saveButton);
-    await tester.pumpAndSettle();
-    await tester.tap(saveButton);
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.pumpAndSettle();
-
-    expect(find.text('saved profile'), findsOneWidget);
+    expect(find.text('Global'), findsOneWidget);
+    expect(find.text('Rule'), findsOneWidget);
+    expect(find.text('Direct'), findsOneWidget);
+    expect(find.text('Add'), findsOneWidget);
+    expect(_modeStripCellCount(tester), 7);
   });
 
-  testWidgets('client controls start proxy and run probe', (tester) async {
+  testWidgets('main view fits the 1024x640 dashboard target without scroll', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1024, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final harness = _makeHarness();
+    await _pumpReady(tester, harness);
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(Scrollable), findsNothing);
+    expect(tester.getTopLeft(find.text('Global')).dy, greaterThanOrEqualTo(0));
+    expect(
+      tester.getBottomLeft(find.text('Advanced')).dy,
+      lessThanOrEqualTo(640),
+    );
+  });
+
+  testWidgets('main view renders SysProxy/Runtime/TUN control column', (
+    tester,
+  ) async {
+    final harness = _makeHarness();
+    await _pumpReady(tester, harness);
+
+    expect(find.text('SysProxy'), findsOneWidget);
+    expect(find.text('Runtime'), findsOneWidget);
+    expect(find.text('TUN'), findsOneWidget);
+    expect(find.textContaining('TUN driver lands in Phase 7'), findsOneWidget);
+    expect(find.text('Stopped'), findsOneWidget);
+  });
+
+  testWidgets('runtime Start tap drives client.startProxy', (tester) async {
     final client = FakeWrongclClient();
-    final desktopShellController = FakeDesktopShellController();
-    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
-    final profileStore = ProfileStore(
-      file: File('${tempDir.path}/profiles.json'),
-    );
-    final autostartManager = AutostartManager(
-      file: File('${tempDir.path}/wrongcl.desktop'),
-      executablePath: '/tmp/wrongcl',
-    );
-    final systemProxyManager = SystemProxyManager(
-      runner: (executable, arguments) async =>
-          ProcessResult(0, 0, "'none'\n", ''),
-      platform: SystemProxyPlatform.linux,
-    );
+    final harness = _makeHarness(client: client);
+    await _pumpReady(tester, harness);
 
-    await tester.pumpWidget(
-      WrongclApp(
-        client: client,
-        profileStore: profileStore,
-        autostartManager: autostartManager,
-        systemProxyManager: systemProxyManager,
-        desktopShellController: desktopShellController,
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 300));
-
-    final startButton = find.widgetWithText(FilledButton, 'Start proxy');
-
-    await tester.ensureVisible(startButton);
-    await tester.pumpAndSettle();
-    final start = tester.widget<FilledButton>(startButton);
-    expect(start.onPressed, isNotNull);
-    start.onPressed!();
+    await tester.tap(find.byTooltip('Start'));
     await tester.pumpAndSettle();
 
     expect(client.startCount, 1);
-    expect(find.textContaining('local proxy started'), findsWidgets);
+    expect(find.byTooltip('Stop'), findsOneWidget);
+    expect(find.text('Running'), findsOneWidget);
     expect(
-      desktopShellController.syncedStates.any((state) => state.running),
+      harness.desktopShellController.syncedStates.any((s) => s.running),
       isTrue,
     );
 
-    await _openWorkspace(tester, 'Diagnostics');
-    final probeButton = find.widgetWithText(FilledButton, 'Run probe').first;
-    await tester.ensureVisible(probeButton);
+    await tester.tap(find.byTooltip('Stop'));
     await tester.pumpAndSettle();
-    final probe = tester.widget<FilledButton>(probeButton);
-    expect(probe.onPressed, isNotNull);
-    probe.onPressed!();
-    await tester.pumpAndSettle();
-
-    expect(client.probeCount, 1);
-    expect(find.textContaining('probe succeeded'), findsWidgets);
+    expect(find.text('Stopped'), findsOneWidget);
   });
 
-  testWidgets('health view tracks probe success and last error', (
+  testWidgets(
+    'SysProxy switch is disabled with reason on unsupported platform',
+    (tester) async {
+      final harness = _makeHarness(platform: SystemProxyPlatform.unsupported);
+      await _pumpReady(tester, harness);
+
+      expect(
+        find.textContaining('not implemented for this platform'),
+        findsWidgets,
+      );
+    },
+  );
+
+  final subpages = <(String, String)>[
+    ('Profiles', 'Current draft'),
+    ('Proxies', 'Start the proxy to inspect endpoints and groups.'),
+    ('Connections', 'No active connections.'),
+    ('Requests', 'No captured requests yet'),
+    ('Logs', 'No log entries captured yet.'),
+    ('Basic', 'Enable autostart'),
+    ('Network', 'Local proxy listen address'),
+    ('DNS', 'Resolver backend'),
+    ('Advanced', 'Refresh status'),
+  ];
+
+  for (final (label, marker) in subpages) {
+    testWidgets('entry chip "$label" opens subpage and Close returns home', (
+      tester,
+    ) async {
+      final harness = _makeHarness();
+      await _pumpReady(tester, harness);
+
+      await _tapEntryChip(tester, label);
+      expect(find.textContaining(marker), findsWidgets);
+      expect(find.byTooltip('Close'), findsOneWidget);
+
+      await _closeSubpage(tester);
+      expect(find.byTooltip('Close'), findsNothing);
+      expect(find.text('Runtime'), findsOneWidget);
+    });
+  }
+
+  testWidgets('profiles subpage exposes Save current and New buttons', (
     tester,
   ) async {
-    final client = FlakyProbeWrongclClient();
-    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
-    final profileStore = ProfileStore(
-      file: File('${tempDir.path}/profiles.json'),
-    );
-    final autostartManager = AutostartManager(
-      file: File('${tempDir.path}/wrongcl.desktop'),
-      executablePath: '/tmp/wrongcl',
-    );
-    final systemProxyManager = SystemProxyManager(
-      runner: (executable, arguments) async =>
-          ProcessResult(0, 0, "'none'\n", ''),
-      platform: SystemProxyPlatform.linux,
-    );
+    final harness = _makeHarness();
+    await _pumpReady(tester, harness);
 
-    await tester.pumpWidget(
-      WrongclApp(
-        client: client,
-        profileStore: profileStore,
-        autostartManager: autostartManager,
-        systemProxyManager: systemProxyManager,
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 300));
+    await _tapEntryChip(tester, 'Profiles');
 
-    expect(find.text('Health'), findsOneWidget);
-    expect(find.text('No probe recorded'), findsOneWidget);
-    expect(find.text('No error recorded'), findsOneWidget);
-
-    final startButton = find.widgetWithText(FilledButton, 'Start proxy');
-    await tester.ensureVisible(startButton);
-    await tester.pumpAndSettle();
-    tester.widget<FilledButton>(startButton).onPressed!();
-    await tester.pumpAndSettle();
-
-    await _openWorkspace(tester, 'Diagnostics');
-    final probeButton = find.widgetWithText(FilledButton, 'Run probe').first;
-    await tester.ensureVisible(probeButton);
-    await tester.pumpAndSettle();
-    tester.widget<FilledButton>(probeButton).onPressed!();
-    await tester.pumpAndSettle();
-
-    expect(find.textContaining('probe succeeded'), findsWidgets);
-
-    tester.widget<FilledButton>(probeButton).onPressed!();
-    await tester.pumpAndSettle();
-
-    expect(find.textContaining('upstream timed out'), findsWidgets);
+    final saveButton = find.widgetWithText(FilledButton, 'Save current');
+    final newButton = find.widgetWithText(OutlinedButton, 'New');
+    expect(saveButton, findsOneWidget);
+    expect(newButton, findsOneWidget);
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+    expect(tester.widget<OutlinedButton>(newButton).onPressed, isNotNull);
   });
 
-  testWidgets('client config load and export workflow', (tester) async {
-    final client = FakeWrongclClient();
-    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
-    final profileStore = ProfileStore(
-      file: File('${tempDir.path}/profiles.json'),
-    );
-    final autostartManager = AutostartManager(
-      file: File('${tempDir.path}/wrongcl.desktop'),
-      executablePath: '/tmp/wrongcl',
-    );
-    final systemProxyManager = SystemProxyManager(
-      runner: (executable, arguments) async =>
-          ProcessResult(0, 0, "'none'\n", ''),
-      platform: SystemProxyPlatform.linux,
-    );
-    final configPath = File('${tempDir.path}/client.json');
-
-    await tester.pumpWidget(
-      WrongclApp(
-        client: client,
-        profileStore: profileStore,
-        autostartManager: autostartManager,
-        systemProxyManager: systemProxyManager,
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await _openWorkspace(tester, 'Editor');
-    await tester.enterText(
-      find.byKey(const ValueKey('client-config-path')),
-      configPath.path,
-    );
-    await tester.pumpAndSettle();
-
-    final exportButton = find.widgetWithText(
-      OutlinedButton,
-      'Export current JSON',
-    );
-    final export = tester.widget<OutlinedButton>(exportButton);
-    expect(export.onPressed, isNotNull);
-    export.onPressed!();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(configPath.existsSync(), isTrue);
-    expect(configPath.readAsStringSync(), contains('"server"'));
-
-    final tomlPath = File('${tempDir.path}/client.toml');
-    await tester.enterText(
-      find.byKey(const ValueKey('client-config-path')),
-      tomlPath.path,
-    );
-    await tester.pumpAndSettle();
-
-    final exportTomlButton = find.widgetWithText(
-      OutlinedButton,
-      'Export current TOML',
-    );
-    final exportToml = tester.widget<OutlinedButton>(exportTomlButton);
-    expect(exportToml.onPressed, isNotNull);
-    exportToml.onPressed!();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(tomlPath.existsSync(), isTrue);
-    expect(tomlPath.readAsStringSync(), contains('[server]'));
-
-    await tester.enterText(
-      find.byKey(const ValueKey('client-config-path')),
-      configPath.path,
-    );
-    await tester.pumpAndSettle();
-
-    final loadButton = find.widgetWithText(
-      OutlinedButton,
-      'Load client config',
-    );
-    final load = tester.widget<OutlinedButton>(loadButton);
-    expect(load.onPressed, isNotNull);
-    load.onPressed!();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(client.loadConfigCount, 1);
-    final serverPortField = tester.widget<TextField>(
-      find.widgetWithText(TextField, 'Server port'),
-    );
-    final trojanPasswordField = tester.widget<TextField>(
-      find.widgetWithText(TextField, 'Trojan password'),
-    );
-    expect(serverPortField.controller?.text, '9000');
-    expect(trojanPasswordField.controller?.text, 'loaded-password');
-  });
-
-  testWidgets('partial wrongsv adapt shows missing field prompt', (
+  testWidgets('profiles subpage can inspect and adapt a wrongsv config', (
     tester,
   ) async {
-    final client = PartialAdaptWrongclClient();
-    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
-    final profileStore = ProfileStore(
-      file: File('${tempDir.path}/profiles.json'),
-    );
-    final autostartManager = AutostartManager(
-      file: File('${tempDir.path}/wrongcl.desktop'),
-      executablePath: '/tmp/wrongcl',
-    );
-    final systemProxyManager = SystemProxyManager(
-      runner: (executable, arguments) async =>
-          ProcessResult(0, 0, "'none'\n", ''),
-      platform: SystemProxyPlatform.linux,
-    );
-
-    await tester.pumpWidget(
-      WrongclApp(
-        client: client,
-        profileStore: profileStore,
-        autostartManager: autostartManager,
-        systemProxyManager: systemProxyManager,
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await _openWorkspace(tester, 'Import');
-    await tester.enterText(
-      find.byKey(const ValueKey('wrongsv-config-path')),
-      '/tmp/reality.toml',
-    );
-    await tester.pumpAndSettle();
-
-    final adaptButton = find.widgetWithText(FilledButton, 'Adapt into form');
-    await tester.ensureVisible(adaptButton);
-    await tester.pumpAndSettle();
-    await tester.tap(adaptButton);
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.pumpAndSettle();
-
-    expect(client.adaptCount, 1);
-    expect(find.text('Fill required client-side fields'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('missing-reality.public-key')),
-      findsOneWidget,
-    );
-
-    await _backToDashboard(tester);
-    await _openWorkspace(tester, 'Profiles');
-    await tester.enterText(
-      find.byKey(const ValueKey('profile-name')),
-      'reality draft',
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('reality draft'), findsOneWidget);
-
-    await _backToDashboard(tester);
-    await _openWorkspace(tester, 'Import');
-    expect(find.text('Fill required client-side fields'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('missing-reality.public-key')),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('new blank resets profile draft fields', (tester) async {
     final client = FakeWrongclClient();
-    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
-    final profileStore = ProfileStore(
-      file: File('${tempDir.path}/profiles.json'),
-    );
-    final autostartManager = AutostartManager(
-      file: File('${tempDir.path}/wrongcl.desktop'),
-      executablePath: '/tmp/wrongcl',
-    );
-    final systemProxyManager = SystemProxyManager(
-      runner: (executable, arguments) async =>
-          ProcessResult(0, 0, "'none'\n", ''),
-      platform: SystemProxyPlatform.linux,
-    );
+    final harness = _makeHarness(client: client);
+    await _pumpReady(tester, harness);
 
-    await tester.pumpWidget(
-      WrongclApp(
-        client: client,
-        profileStore: profileStore,
-        autostartManager: autostartManager,
-        systemProxyManager: systemProxyManager,
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await _openWorkspace(tester, 'Profiles');
+    await _tapEntryChip(tester, 'Profiles');
     await tester.enterText(
-      find.byKey(const ValueKey('profile-name')),
-      'temp profile',
-    );
-    await _backToDashboard(tester);
-    await _openWorkspace(tester, 'Import');
-    await tester.enterText(
-      find.byKey(const ValueKey('wrongsv-config-path')),
+      find.widgetWithText(TextField, 'wrongsv config path'),
       '/tmp/server.toml',
     );
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Inspect wrongsv'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Adapt wrongsv'));
     await tester.pumpAndSettle();
 
-    await _backToDashboard(tester);
-    await _openWorkspace(tester, 'Profiles');
-    final newBlankButton = find.widgetWithText(OutlinedButton, 'New blank');
-    await tester.ensureVisible(newBlankButton);
-    await tester.pumpAndSettle();
-    await tester.tap(newBlankButton);
-    await tester.pumpAndSettle();
-
-    final profileNameField = tester.widget<TextField>(
-      find.byKey(const ValueKey('profile-name')),
-    );
-    await _backToDashboard(tester);
-    await _openWorkspace(tester, 'Import');
-    final wrongsvPathField = tester.widget<TextField>(
-      find.byKey(const ValueKey('wrongsv-config-path')),
-    );
-    expect(profileNameField.controller?.text, 'default');
-    expect(wrongsvPathField.controller?.text, '');
+    expect(client.inspectCount, 1);
+    expect(client.adaptCount, 1);
+    expect(find.textContaining('raw is supported'), findsWidgets);
   });
 
-  testWidgets('deleting a saved profile requires confirmation', (tester) async {
-    final client = FakeWrongclClient();
-    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
-    final profileStore = MemoryProfileStore([
-      SavedProfile(
-        id: 'delete-me',
-        name: 'delete me',
-        config: const {
-          'server': {
-            'host': '127.0.0.1',
-            'port': 443,
-            'proxy': {
-              'type': 'vless',
-              'uuid': '12345678-1234-1234-1234-123456789abc',
-              'flow': '',
-            },
-            'transport': {'type': 'raw'},
-            'outer-security': {'type': 'none'},
-          },
-          'local': {'host': '127.0.0.1', 'port': 1080},
-        },
-        stackSummary: 'VLESS → raw → TCP',
-        updatedAt: DateTime(2026, 6, 17, 12, 0),
-      ),
-    ]);
-    final autostartManager = AutostartManager(
-      file: File('${tempDir.path}/wrongcl.desktop'),
-      executablePath: '/tmp/wrongcl',
-    );
-    final systemProxyManager = SystemProxyManager(
-      runner: (executable, arguments) async =>
-          ProcessResult(0, 0, "'none'\n", ''),
-      platform: SystemProxyPlatform.linux,
-    );
+  testWidgets(
+    'profiles subpage shows missing-field prompts for partial wrongsv import',
+    (tester) async {
+      final client = PartialWrongsvClient();
+      final harness = _makeHarness(client: client);
+      await _pumpReady(tester, harness);
 
-    await tester.pumpWidget(
-      WrongclApp(
-        client: client,
-        profileStore: profileStore,
-        autostartManager: autostartManager,
-        systemProxyManager: systemProxyManager,
-      ),
-    );
+      await _tapEntryChip(tester, 'Profiles');
+      await tester.enterText(
+        find.widgetWithText(TextField, 'wrongsv config path'),
+        '/tmp/server.toml',
+      );
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Inspect wrongsv'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('REALITY public-key (required)'), findsOneWidget);
+    },
+  );
+
+  testWidgets('basic theme selector updates MaterialApp theme mode', (
+    tester,
+  ) async {
+    final harness = _makeHarness();
+    await _pumpReady(tester, harness);
+
+    await _tapEntryChip(tester, 'Basic');
+    await tester.tap(find.byType(DropdownButtonFormField<ThemeMode>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dark').last);
     await tester.pumpAndSettle();
 
-    await _openWorkspace(tester, 'Profiles');
-    final profileRow = find.text('delete me').last;
-    expect(profileRow, findsOneWidget);
-    await tester.ensureVisible(profileRow);
-    await tester.pumpAndSettle();
-    await tester.tap(profileRow);
-    await tester.pumpAndSettle();
-
-    final deleteButton = find.widgetWithText(OutlinedButton, 'Delete selected');
-    final delete = tester.widget<OutlinedButton>(deleteButton);
-    expect(delete.onPressed, isNotNull);
-    delete.onPressed!();
-    await tester.pumpAndSettle();
-
-    expect(find.text('Delete saved profile?'), findsOneWidget);
-    expect(find.textContaining('Delete "delete me"'), findsOneWidget);
-
-    await tester.tap(find.text('Cancel'));
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.pumpAndSettle();
-    expect(find.text('Delete saved profile?'), findsNothing);
-    expect(profileRow, findsOneWidget);
-    expect(find.text('Deleted profile delete me'), findsNothing);
-
-    final deleteAgain = tester.widget<OutlinedButton>(deleteButton);
-    expect(deleteAgain.onPressed, isNotNull);
-    deleteAgain.onPressed!();
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Delete profile'));
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.pumpAndSettle();
-    expect(find.text('Delete saved profile?'), findsNothing);
-    expect(find.text('Deleted profile delete me'), findsOneWidget);
-    expect(find.text('No saved profiles'), findsOneWidget);
-  });
-
-  testWidgets('dashboard shows truthful disabled controls', (tester) async {
-    final client = FakeWrongclClient();
-    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
-    final profileStore = ProfileStore(
-      file: File('${tempDir.path}/profiles.json'),
-    );
-    final autostartManager = AutostartManager(
-      file: File('${tempDir.path}/wrongcl.desktop'),
-      executablePath: '/tmp/wrongcl',
-    );
-    final systemProxyManager = SystemProxyManager(
-      platform: SystemProxyPlatform.unsupported,
-    );
-
-    await tester.pumpWidget(
-      WrongclApp(
-        client: client,
-        profileStore: profileStore,
-        autostartManager: autostartManager,
-        systemProxyManager: systemProxyManager,
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Capabilities'), findsOneWidget);
-    expect(find.text('TUN'), findsOneWidget);
-    expect(find.text('Mode'), findsOneWidget);
-    expect(find.text('Script'), findsOneWidget);
-    expect(find.text('Unsupported'), findsWidgets);
     expect(
-      find.textContaining('System proxy integration is not implemented'),
-      findsWidgets,
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).themeMode,
+      ThemeMode.dark,
     );
   });
 
-  testWidgets('dashboard signal cards stay empty until runtime samples exist', (
+  testWidgets('basic language selector updates MaterialApp locale', (
+    tester,
+  ) async {
+    final harness = _makeHarness();
+    await _pumpReady(tester, harness);
+
+    await _tapEntryChip(tester, 'Basic');
+    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('简体中文').last);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).locale,
+      const Locale('zh', 'CN'),
+    );
+  });
+
+  testWidgets('advanced subpage validate config calls the native client', (
     tester,
   ) async {
     final client = FakeWrongclClient();
-    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
-    final profileStore = ProfileStore(
-      file: File('${tempDir.path}/profiles.json'),
-    );
+    final harness = _makeHarness(client: client);
+    await _pumpReady(tester, harness);
 
-    await tester.pumpWidget(
-      WrongclApp(
-        client: client,
-        profileStore: profileStore,
-      ),
-    );
-    await tester.pumpAndSettle();
+    await _tapEntryChip(tester, 'Advanced');
 
-    expect(find.text('Runtime Signals'), findsOneWidget);
-    expect(find.text('Waiting for runtime samples'), findsWidgets);
+    final validateButton = find.widgetWithText(
+      OutlinedButton,
+      'Validate config',
+    );
+    expect(validateButton, findsOneWidget);
+    await tester.tap(validateButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(client.validateCount, 1);
   });
 
-  testWidgets('dashboard signal cards render charts after runtime samples', (
+  testWidgets('advanced raw config editor can load the current draft', (
     tester,
   ) async {
-    final client = FakeWrongclClient();
-    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
-    final profileStore = ProfileStore(
-      file: File('${tempDir.path}/profiles.json'),
+    final harness = _makeHarness();
+    await _pumpReady(tester, harness);
+
+    await _tapEntryChip(tester, 'Advanced');
+    final loadButton = find.widgetWithText(
+      OutlinedButton,
+      'Load current draft',
     );
-
-    await tester.pumpWidget(
-      WrongclApp(
-        client: client,
-        profileStore: profileStore,
-      ),
-    );
+    tester.widget<OutlinedButton>(loadButton).onPressed!();
     await tester.pumpAndSettle();
 
-    final startButton = find.widgetWithText(FilledButton, 'Start proxy');
-    await tester.ensureVisible(startButton);
-    await tester.pumpAndSettle();
-    tester.widget<FilledButton>(startButton).onPressed!();
-    await tester.pumpAndSettle();
-
-    final refreshButton = find.widgetWithText(OutlinedButton, 'Refresh');
-    await tester.ensureVisible(refreshButton);
-    await tester.pumpAndSettle();
-    tester.widget<OutlinedButton>(refreshButton).onPressed!();
-    await tester.pumpAndSettle();
-
-    expect(find.text('Runtime Signals'), findsOneWidget);
-    expect(find.byType(CustomPaint), findsWidgets);
+    expect(find.textContaining('"endpoints"'), findsWidgets);
   });
 
-  testWidgets('dashboard detail cards open modal details', (tester) async {
-    final client = FakeWrongclClient();
-    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
-    final profileStore = ProfileStore(
-      file: File('${tempDir.path}/profiles.json'),
-    );
+  testWidgets('add-mode chip opens the user-mode form', (tester) async {
+    final harness = _makeHarness();
+    await _pumpReady(tester, harness);
 
-    await tester.pumpWidget(
-      WrongclApp(
-        client: client,
-        profileStore: profileStore,
-      ),
-    );
+    await tester.tap(find.text('Add'));
     await tester.pumpAndSettle();
 
-    final showDetails = find.widgetWithText(InkWell, 'Show details').first;
-    await tester.ensureVisible(showDetails);
-    await tester.tap(showDetails);
-    await tester.pumpAndSettle();
-
-    expect(find.byType(Dialog), findsOneWidget);
-    expect(find.byTooltip('Close'), findsOneWidget);
+    expect(find.text('New user mode'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, ''), findsWidgets);
 
     await tester.tap(find.byTooltip('Close'));
     await tester.pumpAndSettle();
-
-    expect(find.byType(Dialog), findsNothing);
+    expect(find.text('New user mode'), findsNothing);
   });
 
-  testWidgets('dashboard keeps connection charts out of show details', (
+  testWidgets('add-mode dialog saves a user mode while proxy is stopped', (
+    tester,
+  ) async {
+    final harness = _makeHarness();
+    await _pumpReady(tester, harness);
+
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).first, 'office');
+    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('default').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('New user mode'), findsNothing);
+    expect(find.text('Office'), findsOneWidget);
+  });
+
+  testWidgets('Add disappears after the sixth mode slot is occupied', (
+    tester,
+  ) async {
+    final harness = _makeHarness();
+    await _pumpReady(tester, harness);
+
+    await _addUserMode(tester, 'office');
+    await _addUserMode(tester, 'home');
+    await _addUserMode(tester, 'travel');
+
+    expect(find.text('Office'), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Travel'), findsOneWidget);
+    expect(find.text('Add'), findsNothing);
+    expect(_modeStripCellCount(tester), 7);
+  });
+
+  testWidgets('mode strip can switch active mode before runtime starts', (
     tester,
   ) async {
     final client = FakeWrongclClient();
-    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
-    final profileStore = ProfileStore(
-      file: File('${tempDir.path}/profiles.json'),
-    );
+    final harness = _makeHarness(client: client);
+    await _pumpReady(tester, harness);
 
-    await tester.pumpWidget(
-      WrongclApp(
-        client: client,
-        profileStore: profileStore,
-      ),
-    );
+    await tester.tap(find.text('Rule'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Start'));
     await tester.pumpAndSettle();
 
-    final connectionCard = find.ancestor(
-      of: find.text('Connection Manager'),
-      matching: find.byType(Card),
-    );
-    expect(connectionCard, findsOneWidget);
-    expect(
-      find.descendant(
-        of: connectionCard,
-        matching: find.text('Show details'),
-      ),
-      findsNothing,
-    );
-    expect(find.text('Runtime Signals'), findsOneWidget);
+    expect(client.lastStartConfig, isNotNull);
+    expect(client.lastStartConfig!.activeMode, 'rule');
   });
 
-  testWidgets('wrongsv import explains Clash YAML mismatch', (tester) async {
+  testWidgets('DNS settings page applies DoH settings to the next start', (
+    tester,
+  ) async {
     final client = FakeWrongclClient();
-    final tempDir = Directory.systemTemp.createTempSync('wrongcl-widget-test');
-    final profileStore = ProfileStore(
-      file: File('${tempDir.path}/profiles.json'),
-    );
-    final clashConfig = File('${tempDir.path}/conf.toml')
-      ..writeAsStringSync('mixed-port: 7890\nproxies:\n  - name: test\n');
+    final harness = _makeHarness(client: client);
+    await _pumpReady(tester, harness);
 
-    await tester.pumpWidget(
-      WrongclApp(
-        client: client,
-        profileStore: profileStore,
-      ),
+    await _tapEntryChip(tester, 'DNS');
+    await tester.tap(
+      find.byType(DropdownButtonFormField<DnsBackendKind>).first,
     );
     await tester.pumpAndSettle();
-
-    await _openWorkspace(tester, 'Import');
+    await tester.tap(find.text('DoH').last);
+    await tester.pumpAndSettle();
     await tester.enterText(
-      find.byKey(const ValueKey('wrongsv-config-path')),
-      clashConfig.path,
+      find.byType(TextField).first,
+      'https://1.1.1.1/dns-query',
     );
+    await tester.tap(find.widgetWithText(FilledButton, 'Apply DNS settings'));
+    await tester.pumpAndSettle();
+    await _closeSubpage(tester);
+
+    await tester.tap(find.byTooltip('Start'));
     await tester.pumpAndSettle();
 
-    final inspectButton = find.widgetWithText(
-      OutlinedButton,
-      'Inspect wrongsv',
-    );
-    await tester.ensureVisible(inspectButton);
-    await tester.tap(inspectButton);
-    await tester.pumpAndSettle();
-
-    expect(client.inspectCount, 0);
-    expect(find.textContaining('Clash/Mihomo YAML'), findsWidgets);
-    expect(find.textContaining('wrongsv TOML'), findsWidgets);
+    expect(client.lastStartConfig, isNotNull);
+    expect(client.lastStartConfig!.dns, {
+      'backend': {'kind': 'doh', 'url': 'https://1.1.1.1/dns-query'},
+    });
   });
 
   test('profile store persists saved metadata', () async {
@@ -866,6 +600,23 @@ class FakeWrongclClient implements WrongclClient {
   int loadConfigCount = 0;
   int startCount = 0;
   int probeCount = 0;
+  int validateCount = 0;
+  int connectionsListCount = 0;
+  int closeConnectionCount = 0;
+  int closeMatchingCount = 0;
+  int logsSinceCount = 0;
+  List<Map<String, Object?>> liveConnections = const [];
+  List<Map<String, Object?>> pendingLogs = const [];
+  Map<String, Object?>? lastCloseMatchingFilter;
+  ClientConfigInput? lastStartConfig;
+  Map<String, Object?> dnsSettings = const {
+    'backend': {'kind': 'system'},
+  };
+  Map<String, Object?> tunStatus = const {
+    'supported': false,
+    'enabled': false,
+    'disabled_reason': 'TUN driver lands in Phase 7 of PLAN.md',
+  };
 
   @override
   NativeResponse version() {
@@ -904,6 +655,7 @@ class FakeWrongclClient implements WrongclClient {
   @override
   NativeResponse startProxy(ClientConfigInput config) {
     startCount += 1;
+    lastStartConfig = config;
     return NativeResponse(
       ok: true,
       message: 'local proxy started',
@@ -984,6 +736,7 @@ class FakeWrongclClient implements WrongclClient {
 
   @override
   NativeResponse validateConfig(ClientConfigInput config) {
+    validateCount += 1;
     return const NativeResponse(
       ok: true,
       message: 'client config validated',
@@ -1004,18 +757,22 @@ class FakeWrongclClient implements WrongclClient {
       message: 'client config loaded',
       data: {
         'config': {
-          'server': {
-            'host': '127.0.0.1',
-            'port': 9000,
-            'proxy': {'type': 'trojan', 'password': 'loaded-password'},
-            'transport': {'type': 'raw'},
-            'outer-security': {
-              'type': 'tls',
-              'server-name': 'loaded.example',
-              'insecure-skip-verify': false,
-              'alpn': ['h2'],
+          'endpoints': [
+            {
+              'name': 'default',
+              'host': '127.0.0.1',
+              'port': 9000,
+              'proxy': {'type': 'trojan', 'password': 'loaded-password'},
+              'transport': {'type': 'raw'},
+              'outer-security': {
+                'type': 'tls',
+                'server-name': 'loaded.example',
+                'insecure-skip-verify': false,
+                'alpn': ['h2'],
+              },
             },
-          },
+          ],
+          'active': {'type': 'endpoint', 'name': 'default'},
           'local': {'host': '127.0.0.1', 'port': 1090},
         },
         'stack': 'Trojan → raw → TLS → TCP',
@@ -1031,7 +788,10 @@ class FakeWrongclClient implements WrongclClient {
     return const NativeResponse(
       ok: true,
       message: 'client config exported as TOML',
-      data: {'toml': '[server]\nhost = "127.0.0.1"\nport = 443\n'},
+      data: {
+        'toml':
+            '[[endpoints]]\nname = "default"\nhost = "127.0.0.1"\nport = 443\n',
+      },
     );
   }
 
@@ -1074,20 +834,208 @@ class FakeWrongclClient implements WrongclClient {
           'profiles': [],
         },
         'config': {
-          'server': {
-            'host': request.serverHost,
-            'port': 443,
-            'proxy': {
-              'type': 'vless',
-              'uuid': '12345678-1234-1234-1234-123456789abc',
-              'flow': '',
+          'endpoints': [
+            {
+              'name': 'default',
+              'host': request.serverHost,
+              'port': 443,
+              'proxy': {
+                'type': 'vless',
+                'uuid': '12345678-1234-1234-1234-123456789abc',
+                'flow': '',
+              },
+              'transport': {'type': 'raw'},
+              'outer-security': {'type': 'none'},
             },
-            'transport': {'type': 'raw'},
-            'outer-security': {'type': 'none'},
-          },
+          ],
+          'active': {'type': 'endpoint', 'name': 'default'},
           'local': {'host': request.listenHost, 'port': request.listenPort},
         },
         'stack_summary': 'VLESS → raw → TCP',
+      },
+    );
+  }
+
+  @override
+  NativeResponse connectionsList() {
+    connectionsListCount += 1;
+    final totals = liveConnections.fold<List<int>>(
+      [0, 0],
+      (acc, c) => [
+        acc[0] + ((c['bytes_up'] as num?)?.toInt() ?? 0),
+        acc[1] + ((c['bytes_down'] as num?)?.toInt() ?? 0),
+      ],
+    );
+    return NativeResponse(
+      ok: true,
+      message: 'connections snapshot',
+      data: {
+        'connections': liveConnections,
+        'active': liveConnections.length,
+        'total': liveConnections.length,
+        'failed': 0,
+        'bytes_uploaded': totals[0],
+        'bytes_downloaded': totals[1],
+      },
+    );
+  }
+
+  @override
+  NativeResponse connectionClose(int id) {
+    closeConnectionCount += 1;
+    final before = liveConnections.length;
+    liveConnections = liveConnections
+        .where((c) => ((c['id'] as num?)?.toInt() ?? -1) != id)
+        .toList(growable: false);
+    final removed = liveConnections.length != before;
+    return NativeResponse(
+      ok: true,
+      message: removed ? 'connection close requested' : 'connection not found',
+      data: {'id': id, 'closed': removed},
+    );
+  }
+
+  @override
+  NativeResponse connectionsCloseMatching(Map<String, Object?> filter) {
+    closeMatchingCount += 1;
+    lastCloseMatchingFilter = Map<String, Object?>.from(filter);
+    final closed = liveConnections.length;
+    liveConnections = const [];
+    return NativeResponse(
+      ok: true,
+      message: 'connections close requested',
+      data: {'closed': closed},
+    );
+  }
+
+  @override
+  NativeResponse logsSince(int cursor) {
+    logsSinceCount += 1;
+    final start = cursor.clamp(0, pendingLogs.length);
+    final delivered = pendingLogs.sublist(start);
+    return NativeResponse(
+      ok: true,
+      message: 'logs snapshot',
+      data: {
+        'entries': delivered,
+        'cursor': pendingLogs.length,
+        'capacity': 2000,
+      },
+    );
+  }
+
+  @override
+  NativeResponse requestsSince(int cursor) => const NativeResponse(
+    ok: true,
+    message: 'requests snapshot',
+    data: {'entries': [], 'cursor': 0, 'capacity': 500},
+  );
+
+  @override
+  NativeResponse proxyGroupsJson() => const NativeResponse(
+    ok: true,
+    message: 'proxy groups snapshot',
+    data: {'endpoints': [], 'groups': [], 'active': null},
+  );
+
+  @override
+  NativeResponse proxyGroupSelect(String group, String member) =>
+      const NativeResponse(
+        ok: true,
+        message: 'group member selected',
+        data: {},
+      );
+
+  @override
+  NativeResponse dnsSettingsJson() => NativeResponse(
+    ok: true,
+    message: 'dns settings snapshot',
+    data: dnsSettings,
+  );
+
+  @override
+  NativeResponse dnsSettingsSet(Map<String, Object?> settings) {
+    dnsSettings = Map<String, Object?>.from(settings);
+    return NativeResponse(
+      ok: true,
+      message: 'DNS settings saved',
+      data: dnsSettings,
+    );
+  }
+
+  @override
+  NativeResponse tunStatusJson() =>
+      NativeResponse(ok: true, message: 'TUN status snapshot', data: tunStatus);
+
+  @override
+  NativeResponse tunEnable(Map<String, Object?> config) => NativeResponse(
+    ok: false,
+    message: tunStatus['disabled_reason'] as String,
+    data: tunStatus,
+  );
+
+  @override
+  NativeResponse tunDisable() =>
+      NativeResponse(ok: true, message: 'TUN disabled', data: tunStatus);
+
+  @override
+  NativeResponse routerSnapshotJson() => const NativeResponse(
+    ok: true,
+    message: 'router snapshot',
+    data: {
+      'modes': [
+        {'name': 'global', 'kind': 'global', 'proxy': null, 'script': null},
+        {'name': 'rule', 'kind': 'rule', 'proxy': null, 'script': null},
+        {'name': 'direct', 'kind': 'direct', 'proxy': null, 'script': null},
+      ],
+      'scripts': [],
+      'active_mode': 'global',
+    },
+  );
+
+  @override
+  NativeResponse routerSetActiveMode(String name) => NativeResponse(
+    ok: true,
+    message: 'active mode set',
+    data: {'active_mode': name},
+  );
+
+  @override
+  NativeResponse routerSetScript(Map<String, Object?> script) =>
+      const NativeResponse(ok: true, message: 'script saved', data: {});
+
+  @override
+  NativeResponse routerRemoveScript(String name) =>
+      const NativeResponse(ok: true, message: 'script removed', data: {});
+
+  @override
+  NativeResponse routerUpsertUserMode(Map<String, Object?> mode) =>
+      const NativeResponse(ok: true, message: 'mode saved', data: {});
+
+  @override
+  NativeResponse routerRemoveUserMode(String name) =>
+      const NativeResponse(ok: true, message: 'mode removed', data: {});
+}
+
+class PartialWrongsvClient extends FakeWrongclClient {
+  @override
+  NativeResponse inspectWrongsvConfig(String path) {
+    inspectCount += 1;
+    return const NativeResponse(
+      ok: true,
+      message: 'wrongsv capabilities inspected',
+      data: {
+        'active_profile': 'reality',
+        'listen': '0.0.0.0:443',
+        'listen_port': 443,
+        'payload_networks': ['tcp'],
+        'base_carriers': ['tcp'],
+        'active_support': 'partial',
+        'active_reason': 'missing fields: reality.public-key',
+        'missing_fields': [
+          {'field': 'reality.public-key', 'reason': 'required'},
+        ],
+        'profiles': [],
       },
     );
   }
@@ -1116,127 +1064,5 @@ class FakeDesktopShellController implements DesktopShellController {
   @override
   Future<void> sync(DesktopShellState state) async {
     syncedStates.add(state);
-  }
-}
-
-class PartialAdaptWrongclClient extends FakeWrongclClient {
-  @override
-  NativeResponse inspectWrongsvConfig(String path) {
-    inspectCount += 1;
-    return const NativeResponse(
-      ok: true,
-      message: 'wrongsv capabilities inspected',
-      data: {
-        'active_profile': 'reality',
-        'listen': '0.0.0.0:443',
-        'listen_port': 443,
-        'payload_networks': ['tcp', 'udp'],
-        'base_carriers': ['tcp'],
-        'active_support': 'partial',
-        'active_reason': 'missing fields: reality.public-key',
-        'missing_fields': [
-          {
-            'field': 'reality.public-key',
-            'reason':
-                'wrongsv server configs keep the REALITY private key; wrongcl needs the matching client public-key supplied separately',
-          },
-        ],
-        'profiles': [],
-      },
-    );
-  }
-
-  @override
-  NativeResponse adaptWrongsvConfig(WrongsvAdaptRequest request) {
-    adaptCount += 1;
-    return NativeResponse(
-      ok: true,
-      message: 'wrongsv config adapted',
-      data: {
-        'report': {
-          'active_profile': 'reality',
-          'listen': '0.0.0.0:443',
-          'listen_port': 443,
-          'payload_networks': ['tcp', 'udp'],
-          'base_carriers': ['tcp'],
-          'active_support': 'partial',
-          'active_reason': 'missing fields: reality.public-key',
-          'missing_fields': [
-            {
-              'field': 'reality.public-key',
-              'reason':
-                  'wrongsv server configs keep the REALITY private key; wrongcl needs the matching client public-key supplied separately',
-            },
-          ],
-          'profiles': [],
-        },
-        'config': null,
-        'draft_config': {
-          'server': {
-            'host': request.serverHost,
-            'port': 443,
-            'proxy': {
-              'type': 'vless',
-              'uuid': '12345678-1234-1234-1234-123456789abc',
-              'flow': '',
-            },
-            'transport': {'type': 'raw'},
-            'outer-security': {
-              'type': 'reality',
-              'server-name': 'www.microsoft.com',
-              'public-key': '',
-              'short-id': 'aaaaaaaa',
-              'raw-pubkey': '',
-            },
-          },
-          'local': {'host': request.listenHost, 'port': request.listenPort},
-        },
-        'stack_summary': 'VLESS → raw → REALITY → TCP',
-      },
-    );
-  }
-}
-
-class FlakyProbeWrongclClient extends FakeWrongclClient {
-  @override
-  NativeResponse probe(ProbeRequest request) {
-    probeCount += 1;
-    if (probeCount == 1) {
-      return const NativeResponse(
-        ok: true,
-        message: 'probe succeeded',
-        data: {
-          'stack': 'VLESS → raw → TCP',
-          'probe': {'bytes_read': 4, 'preview': 'pong'},
-        },
-      );
-    }
-    return const NativeResponse(
-      ok: false,
-      message: 'upstream timed out',
-      data: {},
-    );
-  }
-}
-
-class MemoryProfileStore extends ProfileStore {
-  MemoryProfileStore([List<SavedProfile> initialProfiles = const []])
-    : _profiles = [...initialProfiles],
-      super(
-        file: File('${Directory.systemTemp.path}/wrongcl-memory-store.json'),
-      );
-
-  List<SavedProfile> _profiles;
-
-  @override
-  Future<List<SavedProfile>> loadProfiles() async {
-    final profiles = [..._profiles];
-    profiles.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    return profiles;
-  }
-
-  @override
-  Future<void> saveProfiles(List<SavedProfile> profiles) async {
-    _profiles = [...profiles];
   }
 }

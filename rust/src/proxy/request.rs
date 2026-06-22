@@ -9,6 +9,9 @@ pub(super) struct HttpRequest {
     pub(super) target: Target,
     pub(super) connect: bool,
     pub(super) initial_bytes: Vec<u8>,
+    pub(super) method: String,
+    pub(super) request_target: String,
+    pub(super) host_header: Option<String>,
 }
 
 pub(super) enum SocksRequest {
@@ -16,7 +19,11 @@ pub(super) enum SocksRequest {
     UdpAssociate,
 }
 
-pub(super) fn detect_local_proxy_request(client: &mut TcpStream) -> io::Result<LocalProxyRequest> {
+pub(super) fn detect_local_proxy_request(
+    client: &mut TcpStream,
+    allow_socks: bool,
+    allow_http: bool,
+) -> io::Result<LocalProxyRequest> {
     let mut first = [0u8; 1];
     let n = client.peek(&mut first)?;
     if n == 0 {
@@ -26,7 +33,21 @@ pub(super) fn detect_local_proxy_request(client: &mut TcpStream) -> io::Result<L
         ));
     }
     if first[0] == 0x05 {
+        if !allow_socks {
+            client.write_all(&[0x05, 0xff])?;
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "SOCKS proxy is disabled for this local listener",
+            ));
+        }
         return read_socks5_request(client).map(LocalProxyRequest::Socks);
+    }
+    if !allow_http {
+        write_http_error(client, "403 Forbidden")?;
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "HTTP proxy is disabled for this local listener",
+        ));
     }
     read_http_proxy_request(client).map(LocalProxyRequest::Http)
 }
@@ -132,17 +153,26 @@ fn read_http_proxy_request(client: &mut TcpStream) -> io::Result<HttpRequest> {
     let request_target = parts.next().unwrap_or_default();
     let version = parts.next().unwrap_or("HTTP/1.1");
     if method != "CONNECT" {
-        let (target, head) = rewrite_http_forward_request(method, request_target, version, lines)?;
+        let (target, head, host_header) =
+            rewrite_http_forward_request(method, request_target, version, lines)?;
         return Ok(HttpRequest {
             target,
             connect: false,
             initial_bytes: head,
+            method: method.to_string(),
+            request_target: request_target.to_string(),
+            host_header,
         });
     }
+    let target = parse_connect_authority(request_target)?;
+    let authority = format!("{}:{}", target.host, target.port);
     Ok(HttpRequest {
-        target: parse_connect_authority(request_target)?,
+        target,
         connect: true,
         initial_bytes: Vec::new(),
+        method: "CONNECT".to_string(),
+        request_target: request_target.to_string(),
+        host_header: Some(authority),
     })
 }
 
@@ -151,7 +181,7 @@ fn rewrite_http_forward_request<'a>(
     request_target: &str,
     version: &str,
     lines: impl Iterator<Item = &'a str>,
-) -> io::Result<(Target, Vec<u8>)> {
+) -> io::Result<(Target, Vec<u8>, Option<String>)> {
     let mut header_lines = Vec::new();
     let mut host_header: Option<String> = None;
     for line in lines {
@@ -212,7 +242,7 @@ fn rewrite_http_forward_request<'a>(
         out.extend_from_slice(b"\r\n");
     }
     out.extend_from_slice(b"\r\n");
-    Ok((target, out))
+    Ok((target, out, host_header))
 }
 
 fn parse_connect_authority(authority: &str) -> io::Result<Target> {
