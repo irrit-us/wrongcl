@@ -21,10 +21,10 @@ use crate::error::{ClientError, Result};
 
 #[cfg(target_os = "linux")]
 mod linux_runtime;
-#[cfg(target_os = "windows")]
-mod windows_runtime;
 #[cfg(target_os = "macos")]
 mod macos_runtime;
+#[cfg(target_os = "windows")]
+mod windows_runtime;
 
 #[cfg(target_os = "linux")]
 const CAP_NET_ADMIN_BIT: u32 = 12;
@@ -758,53 +758,58 @@ mod tests {
         }
     }
 
-    #[test]
-    fn parses_windows_admin_check_output() {
-        assert!(parse_windows_admin_check_output("True\r\n"));
-        assert!(!parse_windows_admin_check_output("False\r\n"));
-        assert!(!parse_windows_admin_check_output("unexpected\r\n"));
-    }
+    #[cfg(target_os = "windows")]
+    mod windows {
+        use super::*;
 
-    #[test]
-    fn parses_windows_sc_query_missing_service() {
-        let stderr = "[SC] OpenService FAILED 1060:\r\nThe specified service does not exist as an installed service.\r\n";
-        assert!(!parse_windows_sc_query_service_present("", stderr));
-    }
+        #[test]
+        fn parses_windows_admin_check_output() {
+            assert!(parse_windows_admin_check_output("True\r\n"));
+            assert!(!parse_windows_admin_check_output("False\r\n"));
+            assert!(!parse_windows_admin_check_output("unexpected\r\n"));
+        }
 
-    #[test]
-    fn parses_windows_sc_query_present_service() {
-        let stdout =
-            "SERVICE_NAME: wintun\r\n        TYPE               : 1  KERNEL_DRIVER\r\n        STATE              : 4  RUNNING\r\n";
-        assert!(parse_windows_sc_query_service_present(stdout, ""));
-    }
+        #[test]
+        fn parses_windows_sc_query_missing_service() {
+            let stderr = "[SC] OpenService FAILED 1060:\r\nThe specified service does not exist as an installed service.\r\n";
+            assert!(!parse_windows_sc_query_service_present("", stderr));
+        }
 
-    #[test]
-    fn windows_tun_readiness_reports_missing_prerequisites() {
-        let (supported, message, needs_privileges, preparable) =
-            windows_tun_readiness(false, false, false);
-        assert!(!supported);
-        assert!(message.contains("prerequisites are incomplete"));
-        assert!(!needs_privileges);
-        assert!(!preparable);
-    }
+        #[test]
+        fn parses_windows_sc_query_present_service() {
+            let stdout =
+                "SERVICE_NAME: wintun\r\n        TYPE               : 1  KERNEL_DRIVER\r\n        STATE              : 4  RUNNING\r\n";
+            assert!(parse_windows_sc_query_service_present(stdout, ""));
+        }
 
-    #[test]
-    fn windows_tun_readiness_reports_admin_requirement() {
-        let (supported, message, needs_privileges, preparable) =
-            windows_tun_readiness(true, true, false);
-        assert!(!supported);
-        assert!(message.contains("Administrator rights"));
-        assert!(needs_privileges);
-        assert!(!preparable);
-    }
+        #[test]
+        fn windows_tun_readiness_reports_missing_prerequisites() {
+            let (supported, message, needs_privileges, preparable) =
+                windows_tun_readiness(false, false, false);
+            assert!(!supported);
+            assert!(message.contains("prerequisites are incomplete"));
+            assert!(!needs_privileges);
+            assert!(!preparable);
+        }
 
-    #[test]
-    fn windows_tun_readiness_marks_ready_host_as_prepairable() {
-        let (supported, message, needs_privileges, preparable) =
-            windows_tun_readiness(true, true, true);
-        assert!(supported);
-        assert!(message.contains("ready to start"));
-        assert!(!needs_privileges);
-        assert!(preparable);
+        #[test]
+        fn windows_tun_readiness_reports_admin_requirement() {
+            let (supported, message, needs_privileges, preparable) =
+                windows_tun_readiness(true, true, false);
+            assert!(!supported);
+            assert!(message.contains("Administrator rights"));
+            assert!(needs_privileges);
+            assert!(!preparable);
+        }
+
+        #[test]
+        fn windows_tun_readiness_marks_ready_host_as_prepairable() {
+            let (supported, message, needs_privileges, preparable) =
+                windows_tun_readiness(true, true, true);
+            assert!(supported);
+            assert!(message.contains("ready to start"));
+            assert!(!needs_privileges);
+            assert!(preparable);
+        }
     }
 }
