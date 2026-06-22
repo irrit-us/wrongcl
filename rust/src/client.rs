@@ -186,7 +186,7 @@ impl WrongsvClient {
                     return false;
                 }
                 match &self.server.endpoint.transport {
-                    Transport::Kcp(_) => false,
+                    Transport::Kcp(_) => true,
                     Transport::Quic(opts) => opts.udp_enabled,
                     Transport::Webtransport(opts) => opts.udp_enabled,
                     _ => true,

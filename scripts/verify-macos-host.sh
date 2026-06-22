@@ -15,3 +15,7 @@ bash scripts/verify-shared-wrongsv.sh
 "$FLUTTER_BIN" analyze
 "$FLUTTER_BIN" test
 "$FLUTTER_BIN" build macos
+
+if [[ "${WRONGCL_RUN_MACOS_TUN_SMOKE:-0}" == "1" ]]; then
+  bash scripts/smoke-macos-tun.sh
+fi

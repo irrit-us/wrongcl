@@ -17,6 +17,7 @@ pub mod naive;
 pub mod protocol;
 pub mod proxy;
 pub mod quic;
+mod quic_obfs;
 pub mod reality;
 pub mod router;
 pub mod shadowsocks;
@@ -51,4 +52,4 @@ pub use proxy::{
     global_request_log, ConnFilter, ConnInfo, ConnRegistry, ConnState, ProxySnapshot,
     RegistrySnapshot, RequestEntry, RequestLog,
 };
-pub use tun::TunStatus;
+pub use tun::{current_status as current_tun_status, TunStatus};

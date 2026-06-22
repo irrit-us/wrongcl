@@ -353,7 +353,7 @@ allowed_ips = ["10.77.0.2/32"]
         ClientError::Config(msg) => {
             assert!(msg.contains("wireguard.private-key"), "msg: {msg}");
             assert!(
-                msg.contains("no TUN or routed-tunnel runtime"),
+                !msg.contains("no TUN or routed-tunnel runtime"),
                 "msg: {msg}"
             );
         }

@@ -71,6 +71,51 @@ impl Endpoint {
                         "Hysteria2 requires a non-empty password".into(),
                     ));
                 }
+                match (
+                    opts.obfs_type.as_deref(),
+                    opts.obfs_password.as_deref(),
+                    opts.obfs_min_packet_size,
+                    opts.obfs_max_packet_size,
+                ) {
+                    (None, None, None, None) => {}
+                    (Some(kind), Some(password), min, max) => {
+                        if password.trim().len() < 4 {
+                            return Err(ClientError::Config(
+                                "Hysteria2 obfs-password must be at least 4 bytes".into(),
+                            ));
+                        }
+                        match kind {
+                            "salamander" => {
+                                if min.is_some() || max.is_some() {
+                                    return Err(ClientError::Config(
+                                        "Hysteria2 salamander obfs does not use min/max packet size"
+                                            .into(),
+                                    ));
+                                }
+                            }
+                            "gecko" => {
+                                let min = min.unwrap_or(512);
+                                let max = max.unwrap_or(1200);
+                                if min == 0 || max == 0 || min > max {
+                                    return Err(ClientError::Config(
+                                        "Hysteria2 gecko obfs packet-size range is invalid".into(),
+                                    ));
+                                }
+                            }
+                            other => {
+                                return Err(ClientError::Config(format!(
+                                    "Hysteria2 obfs-type '{other}' is unsupported"
+                                )));
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(ClientError::Config(
+                            "Hysteria2 obfs-type and obfs-password must be supplied together"
+                                .into(),
+                        ));
+                    }
+                }
             }
             ProxyProtocol::Tuic(opts) => {
                 if !matches!(self.transport, Transport::Raw) {

@@ -102,6 +102,9 @@ class ClientHomeController extends ChangeNotifier {
   final naivePaddingHeaderName = TextEditingController(text: 'Padding');
   final hysteria2ServerName = TextEditingController(text: 'foo.cloudfront.net');
   final hysteria2Password = TextEditingController();
+  final hysteria2ObfsPassword = TextEditingController();
+  final hysteria2ObfsMinPacketSize = TextEditingController();
+  final hysteria2ObfsMaxPacketSize = TextEditingController();
   final tuicServerName = TextEditingController(text: 'foo.cloudfront.net');
   final tuicUuid = TextEditingController(
     text: '12345678-1234-1234-1234-123456789abc',
@@ -157,6 +160,7 @@ class ClientHomeController extends ChangeNotifier {
   TransportKind transportKind = TransportKind.raw;
   OuterSecurityKind outerSecurityKind = OuterSecurityKind.none;
   bool hysteria2UdpEnabled = true;
+  String hysteria2ObfsType = '';
   bool quicUdpEnabled = true;
   bool webtransportUdpEnabled = true;
   bool tlsInsecure = false;
@@ -260,6 +264,7 @@ class ClientHomeController extends ChangeNotifier {
     supported: false,
     enabled: false,
     disabledReason: 'Loading TUN status...',
+    platform: 'unknown',
   );
 
   Timer? _statusPollTimer;
@@ -327,6 +332,9 @@ class ClientHomeController extends ChangeNotifier {
       naivePaddingHeaderName,
       hysteria2ServerName,
       hysteria2Password,
+      hysteria2ObfsPassword,
+      hysteria2ObfsMinPacketSize,
+      hysteria2ObfsMaxPacketSize,
       tuicServerName,
       tuicUuid,
       tuicPassword,
@@ -384,6 +392,7 @@ class ClientHomeController extends ChangeNotifier {
             supported: false,
             enabled: false,
             disabledReason: 'System proxy status is still loading',
+            platform: 'unknown',
           )
         : ControlAvailability(
             supported: systemProxyStatus!.supported,
@@ -391,6 +400,7 @@ class ClientHomeController extends ChangeNotifier {
             disabledReason: systemProxyStatus!.supported
                 ? ''
                 : systemProxyStatus!.message,
+            platform: systemProxyManager.platform?.name ?? Platform.operatingSystem,
           );
     return DashboardSnapshot(
       running: running,
@@ -1032,8 +1042,19 @@ class ClientHomeController extends ChangeNotifier {
       supported: data['supported'] == true,
       enabled: data['enabled'] == true,
       disabledReason: data['disabled_reason'] as String? ?? '',
+      platform: data['platform'] as String? ?? 'unknown',
     );
   }
+
+  String get tunGuidance => switch (tunAvailability.platform) {
+    'linux' =>
+      'Linux requires /dev/net/tun plus CAP_NET_ADMIN. wrongcl will not elevate privileges automatically.',
+    'windows' =>
+      'Windows TUN now depends on a bundled wintun.dll, and `WRONGCL_WINTUN_DLL` can override lookup during external validation. The runtime currently targets the IPv4 routed path first and still needs Administrator rights.',
+    'macos' =>
+      'macOS TUN is still a planned host path. The current repo only prewires the seam and validation entrypoints; the native utun-backed implementation still needs real macOS-host work.',
+    _ => 'TUN setup is not implemented for this platform yet.',
+  };
 
   List<ConnectionInfo> _parseConnections(Map<String, Object?> data) {
     final list = data['connections'];
@@ -1100,6 +1121,9 @@ class ClientHomeController extends ChangeNotifier {
       naivePaddingHeaderName,
       hysteria2ServerName,
       hysteria2Password,
+      hysteria2ObfsPassword,
+      hysteria2ObfsMinPacketSize,
+      hysteria2ObfsMaxPacketSize,
       tuicServerName,
       tuicUuid,
       tuicPassword,
@@ -1502,6 +1526,16 @@ class ClientHomeController extends ChangeNotifier {
               : hysteria2ServerName.text,
           password: hysteria2Password.text,
           udpEnabled: hysteria2UdpEnabled,
+          obfsType: hysteria2ObfsType.isEmpty ? null : hysteria2ObfsType,
+          obfsPassword: hysteria2ObfsPassword.text.isEmpty
+              ? null
+              : hysteria2ObfsPassword.text,
+          obfsMinPacketSize: hysteria2ObfsMinPacketSize.text.isEmpty
+              ? null
+              : int.tryParse(hysteria2ObfsMinPacketSize.text),
+          obfsMaxPacketSize: hysteria2ObfsMaxPacketSize.text.isEmpty
+              ? null
+              : int.tryParse(hysteria2ObfsMaxPacketSize.text),
         ).toJson();
       case ProxyKind.tuic:
         return TuicConfig(
@@ -1700,6 +1734,7 @@ class ClientHomeController extends ChangeNotifier {
           supported: false,
           enabled: false,
           disabledReason: response.message,
+          platform: 'unknown',
         );
       } else {
         tunStatus = _parseTunStatus(response.data);
@@ -1709,6 +1744,7 @@ class ClientHomeController extends ChangeNotifier {
         supported: false,
         enabled: false,
         disabledReason: 'Failed to inspect TUN status: $e',
+        platform: 'unknown',
       );
     }
     notifyListeners();
@@ -2017,6 +2053,58 @@ class ClientHomeController extends ChangeNotifier {
             ? 'Adapted draft config: ${wrongsvStatusMessage(result.report)}'
             : 'Adapted wrongsv config into the current form';
         refreshStack();
+      },
+    );
+  }
+
+  Future<void> completeWrongsvImport() {
+    if (wrongsvAdaptResult?.effectiveConfig == null) {
+      return runUtility(
+        'complete wrongsv import',
+        () => const NativeResponse(
+          ok: false,
+          message:
+              'Adapt a wrongsv config into the current draft before completing the import.',
+          data: {},
+        ),
+      );
+    }
+    final unsupported = unresolvedWrongsvMissingFields(
+      includeUnsupported: true,
+    ).where((field) => controllerForMissingField(field.field) == null).toList();
+    if (unsupported.isNotEmpty) {
+      return runUtility(
+        'complete wrongsv import',
+        () => NativeResponse(
+          ok: false,
+          message:
+              'This import still requires manual handling for: ${unsupported.map((field) => field.field).join(', ')}',
+          data: const {},
+        ),
+      );
+    }
+    final unresolved = unresolvedWrongsvMissingFields();
+    if (unresolved.isNotEmpty) {
+      return runUtility(
+        'complete wrongsv import',
+        () => NativeResponse(
+          ok: false,
+          message:
+              'Fill required fields before completing the import: ${unresolved.map((field) => field.field).join(', ')}',
+          data: const {},
+        ),
+      );
+    }
+    return runUtility(
+      'complete wrongsv import',
+      () => client.validateConfig(buildConfig()),
+      onSuccess: (response) {
+        final stack = response.data['stack'] as String?;
+        if (stack != null && stack.isNotEmpty) {
+          stackSummary = stack;
+        }
+        profilesStatus =
+            'Completed wrongsv import fields and validated the current draft';
       },
     );
   }
@@ -2387,6 +2475,10 @@ class ClientHomeController extends ChangeNotifier {
     hysteria2ServerName.text = 'foo.cloudfront.net';
     hysteria2Password.clear();
     hysteria2UdpEnabled = true;
+    hysteria2ObfsType = '';
+    hysteria2ObfsPassword.clear();
+    hysteria2ObfsMinPacketSize.clear();
+    hysteria2ObfsMaxPacketSize.clear();
     tuicServerName.text = 'foo.cloudfront.net';
     tuicUuid.text = '12345678-1234-1234-1234-123456789abc';
     tuicPassword.clear();
@@ -2497,6 +2589,24 @@ class ClientHomeController extends ChangeNotifier {
       default:
         return field;
     }
+  }
+
+  List<WrongsvMissingField> unresolvedWrongsvMissingFields({
+    bool includeUnsupported = false,
+  }) {
+    final report = wrongsvReport;
+    if (report == null) {
+      return const [];
+    }
+    return report.missingFields
+        .where((field) {
+          final controller = controllerForMissingField(field.field);
+          if (controller == null) {
+            return includeUnsupported;
+          }
+          return controller.text.trim().isEmpty;
+        })
+        .toList(growable: false);
   }
 
   String formatTimestamp(DateTime value) {
@@ -2611,6 +2721,12 @@ class ClientHomeController extends ChangeNotifier {
         hysteria2Password.text =
             proxy['password'] as String? ?? hysteria2Password.text;
         hysteria2UdpEnabled = proxy['udp-enabled'] != false;
+        hysteria2ObfsType = proxy['obfs-type'] as String? ?? '';
+        hysteria2ObfsPassword.text = proxy['obfs-password'] as String? ?? '';
+        hysteria2ObfsMinPacketSize.text =
+            proxy['obfs-min-packet-size']?.toString() ?? '';
+        hysteria2ObfsMaxPacketSize.text =
+            proxy['obfs-max-packet-size']?.toString() ?? '';
         break;
       case ProxyKind.tuic:
         tuicServerName.text =

@@ -28,6 +28,7 @@ enum Command {
     Capabilities(CapabilityArgs),
     Adapt(AdaptArgs),
     Stack(StackArgs),
+    TunStatus,
     ConfigExample,
 }
 
@@ -111,6 +112,7 @@ fn run() -> Result<()> {
         Command::Capabilities(args) => capabilities(args),
         Command::Adapt(args) => adapt(args),
         Command::Stack(args) => stack(args),
+        Command::TunStatus => tun_status(),
         Command::ConfigExample => {
             print!("{}", config_example());
             Ok(())
@@ -224,6 +226,14 @@ fn stack(args: StackArgs) -> Result<()> {
             "transport": ep.server.endpoint.transport.id(),
             "outer_security": ep.server.endpoint.outer_security.id(),
         }))?
+    );
+    Ok(())
+}
+
+fn tun_status() -> Result<()> {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&wrongcl_native::current_tun_status())?
     );
     Ok(())
 }

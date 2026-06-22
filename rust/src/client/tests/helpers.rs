@@ -1,4 +1,17 @@
 use super::*;
+use std::time::Instant;
+
+const MKCP_ORIGINAL_OVERHEAD: usize = 6;
+
+#[allow(clippy::duplicate_mod)]
+#[path = "../../kcp/mask.rs"]
+mod kcp_mask;
+#[allow(clippy::duplicate_mod)]
+#[path = "../../../../../wrongsv/crates/server/src/handler/kcp/xray_session.rs"]
+mod test_xray_session;
+
+use kcp_mask::KcpPacketMask;
+use test_xray_session::{peek_conv, SessionConfig as XraySessionConfig, XrayKcpSession};
 
 pub(super) const TEST_UUID: &str = "12345678-1234-1234-1234-123456789abc";
 
@@ -143,6 +156,18 @@ pub(super) fn spawn_fake_server(carrier: FakeCarrier) -> FakeServer {
         for stream in listener.incoming().flatten() {
             let _ = handle_fake_connection(stream, &carrier);
         }
+    });
+    ready_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+    FakeServer { port }
+}
+
+pub(super) fn spawn_fake_kcp_server(opts: KcpOptions) -> FakeServer {
+    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let port = socket.local_addr().unwrap().port();
+    let (ready_tx, ready_rx) = mpsc::channel();
+    thread::spawn(move || {
+        ready_tx.send(()).unwrap();
+        let _ = handle_fake_kcp(socket, opts);
     });
     ready_rx.recv_timeout(Duration::from_secs(1)).unwrap();
     FakeServer { port }
@@ -419,6 +444,68 @@ fn handle_fake_connection(mut stream: TcpStream, carrier: &FakeCarrier) -> io::R
             loop {
                 let (_opcode, payload) = read_ws_frame(&mut stream)?;
                 write_ws_frame(&mut stream, &payload, OpCode::Binary, false)?;
+            }
+        }
+    }
+}
+
+fn handle_fake_kcp(socket: UdpSocket, opts: KcpOptions) -> io::Result<()> {
+    socket.set_read_timeout(Some(Duration::from_millis(20)))?;
+    let packet_mask = KcpPacketMask::from_seed(&opts.seed);
+    let started = Instant::now();
+    let mut peer = None;
+    let mut session = None;
+    let mut handshake_done = false;
+    let mut buf = [0u8; 4096];
+
+    loop {
+        let current = started.elapsed().as_millis() as u32;
+        match socket.recv_from(&mut buf) {
+            Ok((n, src)) => {
+                peer.get_or_insert(src);
+                if Some(src) != peer {
+                    continue;
+                }
+                let Some(packet) = packet_mask.unwrap(&buf[..n]) else {
+                    continue;
+                };
+                let conv = peek_conv(&packet).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "KCP packet missing conv")
+                })?;
+                let session_ref = session.get_or_insert_with(|| {
+                    XrayKcpSession::new(XraySessionConfig {
+                        conv,
+                        mtu: opts.mtu as usize,
+                        tti: opts.tti,
+                        uplink_capacity: 20,
+                        downlink_capacity: 5,
+                        write_buffer_size: 2 * 1024 * 1024,
+                        packet_overhead: packet_mask.overhead(),
+                    })
+                });
+                session_ref.input(&packet, current);
+                while let Some(frame) = session_ref.take_received() {
+                    if !handshake_done {
+                        let response = fake_vless_response(&frame)?;
+                        session_ref.enqueue_application_data(&response);
+                        handshake_done = true;
+                    } else {
+                        session_ref.enqueue_application_data(&frame);
+                    }
+                }
+            }
+            Err(ref err)
+                if matches!(
+                    err.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) => {}
+            Err(err) => return Err(err),
+        }
+
+        if let (Some(session_ref), Some(peer_addr)) = (session.as_mut(), peer) {
+            for packet in session_ref.flush(current) {
+                let wrapped = packet_mask.wrap(&packet)?;
+                socket.send_to(&wrapped, peer_addr)?;
             }
         }
     }

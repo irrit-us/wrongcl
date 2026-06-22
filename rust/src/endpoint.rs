@@ -108,6 +108,14 @@ pub struct Hysteria2Options {
     pub password: String,
     #[serde(default = "default_udp_enabled", rename = "udp-enabled")]
     pub udp_enabled: bool,
+    #[serde(default, rename = "obfs-type")]
+    pub obfs_type: Option<String>,
+    #[serde(default, rename = "obfs-password")]
+    pub obfs_password: Option<String>,
+    #[serde(default, rename = "obfs-min-packet-size")]
+    pub obfs_min_packet_size: Option<usize>,
+    #[serde(default, rename = "obfs-max-packet-size")]
+    pub obfs_max_packet_size: Option<usize>,
 }
 
 fn default_udp_enabled() -> bool {

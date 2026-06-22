@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io;
 use std::sync::mpsc;
 
@@ -13,7 +14,7 @@ mod session;
 use session::{
     authenticated_connection, encode_hysteria2_udp_message, parse_hysteria2_udp_message,
     read_hysteria2_tcp_response, target_authority, write_hysteria2_tcp_request,
-    Hysteria2DatagramSession, Hysteria2Tunnel,
+    Hysteria2DatagramSession, Hysteria2PacketAssembly, Hysteria2Tunnel,
 };
 
 pub fn connect_hysteria2(
@@ -197,11 +198,19 @@ pub fn connect_hysteria2_udp(
                     let read_target = target_for_thread.clone();
                     let response_tx_read = response_tx.clone();
                     let read_task: tokio::task::JoinHandle<()> = tokio::spawn(async move {
+                        let mut assemblies = HashMap::<u16, Hysteria2PacketAssembly>::new();
                         loop {
                             match read_conn.read_datagram().await {
                                 Ok(packet) => match parse_hysteria2_udp_message(packet.as_ref()) {
-                                    Ok((incoming_session_id, _packet_id, _fragment_id, fragment_count, _address, payload))
-                                        if incoming_session_id == session_id && fragment_count == 1 =>
+                                    Ok((
+                                        incoming_session_id,
+                                        _packet_id,
+                                        _fragment_id,
+                                        fragment_count,
+                                        _address,
+                                        payload,
+                                    )) if incoming_session_id == session_id
+                                        && fragment_count == 1 =>
                                     {
                                         if response_tx_read
                                             .send(Ok(UdpPacket {
@@ -213,14 +222,59 @@ pub fn connect_hysteria2_udp(
                                             break;
                                         }
                                     }
-                                    Ok((_incoming_session_id, _packet_id, _fragment_id, fragment_count, _address, _payload))
-                                        if fragment_count != 1 =>
+                                    Ok((
+                                        incoming_session_id,
+                                        packet_id,
+                                        fragment_id,
+                                        fragment_count,
+                                        address,
+                                        payload,
+                                    )) if incoming_session_id == session_id
+                                        && fragment_count > 1 =>
                                     {
-                                        let _ = response_tx_read.send(Err(ClientError::UnsupportedProtocol(
-                                            "Hysteria2 fragmented UDP responses are not implemented in wrongcl yet"
-                                                .into(),
-                                        )));
-                                        break;
+                                        let assembly = match assemblies.entry(packet_id) {
+                                            std::collections::hash_map::Entry::Occupied(entry) => {
+                                                entry.into_mut()
+                                            }
+                                            std::collections::hash_map::Entry::Vacant(entry) => {
+                                                match Hysteria2PacketAssembly::new(fragment_count) {
+                                                    Ok(assembly) => entry.insert(assembly),
+                                                    Err(err) => {
+                                                        let _ = response_tx_read
+                                                            .send(Err(ClientError::Io(err)));
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        };
+                                        if let Err(err) =
+                                            assembly.insert(fragment_id, address, payload)
+                                        {
+                                            let _ =
+                                                response_tx_read.send(Err(ClientError::Io(err)));
+                                            break;
+                                        }
+                                        if assembly.is_complete() {
+                                            match assembly.take_payload() {
+                                                Ok((_address, payload)) => {
+                                                    assemblies.remove(&packet_id);
+                                                    if response_tx_read
+                                                        .send(Ok(UdpPacket {
+                                                            target: read_target.clone(),
+                                                            payload,
+                                                        }))
+                                                        .is_err()
+                                                    {
+                                                        break;
+                                                    }
+                                                }
+                                                Err(err) => {
+                                                    let _ = response_tx_read
+                                                        .send(Err(ClientError::Io(err)));
+                                                    break;
+                                                }
+                                            }
+                                        }
                                     }
                                     Ok(_) => {}
                                     Err(err) => {
@@ -229,9 +283,9 @@ pub fn connect_hysteria2_udp(
                                     }
                                 },
                                 Err(err) => {
-                                    let _ = response_tx_read.send(Err(ClientError::Io(io::Error::other(
-                                        format!("Hysteria2 UDP read: {err}"),
-                                    ))));
+                                    let _ = response_tx_read.send(Err(ClientError::Io(
+                                        io::Error::other(format!("Hysteria2 UDP read: {err}")),
+                                    )));
                                     break;
                                 }
                             }

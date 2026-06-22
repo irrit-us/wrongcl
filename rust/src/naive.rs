@@ -154,6 +154,9 @@ pub fn connect_naive_once(
 }
 
 fn is_retryable_connect_error(error: &io::Error) -> bool {
+    if matches!(error.raw_os_error(), Some(10053 | 10054 | 10061)) {
+        return true;
+    }
     if matches!(
         error.kind(),
         io::ErrorKind::BrokenPipe
@@ -172,7 +175,11 @@ fn is_retryable_connect_error(error: &io::Error) -> bool {
         "broken pipe",
         "connection refused",
         "connection reset",
+        "software in your host machine",
         "handshake eof",
+        "os error 10053",
+        "os error 10054",
+        "os error 10061",
         "peer closed",
         "resource temporarily unavailable",
         "timed out",
@@ -334,6 +341,14 @@ mod tests {
     #[test]
     fn connection_reset_message_is_retryable() {
         let error = io::Error::other("response: connection reset");
+        assert!(is_retryable_connect_error(&error));
+    }
+
+    #[test]
+    fn windows_tls_abort_message_is_retryable() {
+        let error = io::Error::other(
+            "TLS: your host software aborted an established connection. (os error 10053)",
+        );
         assert!(is_retryable_connect_error(&error));
     }
 }
