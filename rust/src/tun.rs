@@ -1,22 +1,39 @@
+#[cfg(target_os = "linux")]
 use std::env;
+#[cfg(target_os = "linux")]
 use std::fs;
+#[cfg(target_os = "linux")]
 use std::path::PathBuf;
+#[cfg(target_os = "linux")]
 use std::process::{Child, Command, Stdio};
+#[cfg(target_os = "linux")]
 use std::sync::{Mutex, OnceLock};
+#[cfg(target_os = "linux")]
 use std::thread;
+#[cfg(target_os = "linux")]
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
+#[cfg(target_os = "linux")]
+use serde::Deserialize;
+use serde::Serialize;
 
 use crate::error::{ClientError, Result};
 
+#[cfg(target_os = "linux")]
 const CAP_NET_ADMIN_BIT: u32 = 12;
+#[cfg(target_os = "linux")]
 const DEFAULT_TUN_NAME: &str = "wrongcl-tun0";
+#[cfg(target_os = "linux")]
 const DEFAULT_TUN_MTU: u32 = 1400;
+#[cfg(target_os = "linux")]
 const DEFAULT_TUN_CIDR: &str = "198.18.0.1/15";
+#[cfg(target_os = "linux")]
 const ENV_TUN_DEVICE: &str = "WRONGCL_TUN_DEVICE";
+#[cfg(target_os = "linux")]
 const ENV_IP_BIN: &str = "WRONGCL_IP_BIN";
+#[cfg(target_os = "linux")]
 const ENV_FORCE_CAP: &str = "WRONGCL_FORCE_CAP_NET_ADMIN";
+#[cfg(target_os = "linux")]
 const ENV_TUN_HELPER_BIN: &str = "WRONGCL_TUN_HELPER_BIN";
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -45,6 +62,7 @@ impl TunStatus {
         }
     }
 
+    #[cfg(target_os = "linux")]
     fn prepared(platform: &'static str, disabled_reason: impl Into<String>) -> Self {
         Self {
             supported: true,
@@ -56,6 +74,7 @@ impl TunStatus {
         }
     }
 
+    #[cfg(target_os = "linux")]
     fn setup_available(platform: &'static str, disabled_reason: impl Into<String>) -> Self {
         Self {
             supported: true,
@@ -68,6 +87,7 @@ impl TunStatus {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[derive(Clone, Debug, Deserialize)]
 struct TunEnableConfig {
     #[serde(default = "default_tun_name")]
@@ -84,26 +104,32 @@ struct TunEnableConfig {
     proxy_port: u16,
 }
 
+#[cfg(target_os = "linux")]
 fn default_tun_name() -> String {
     DEFAULT_TUN_NAME.to_string()
 }
 
+#[cfg(target_os = "linux")]
 fn default_tun_mtu() -> u32 {
     DEFAULT_TUN_MTU
 }
 
+#[cfg(target_os = "linux")]
 fn default_tun_cidr() -> String {
     DEFAULT_TUN_CIDR.to_string()
 }
 
+#[cfg(target_os = "linux")]
 fn default_proxy_host() -> String {
     "127.0.0.1".to_string()
 }
 
+#[cfg(target_os = "linux")]
 fn default_proxy_port() -> u16 {
     1080
 }
 
+#[cfg(target_os = "linux")]
 #[derive(Default)]
 struct TunState {
     interface_name: Option<String>,
@@ -111,6 +137,7 @@ struct TunState {
     helper_config_path: Option<PathBuf>,
 }
 
+#[cfg(target_os = "linux")]
 fn tun_state() -> &'static Mutex<TunState> {
     static STATE: OnceLock<Mutex<TunState>> = OnceLock::new();
     STATE.get_or_init(|| Mutex::new(TunState::default()))
@@ -593,36 +620,6 @@ fn parse_cap_net_admin_from_proc_status(status: &str) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-    use std::sync::{Mutex, OnceLock};
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
-
-    struct EnvVarGuard {
-        key: &'static str,
-        previous: Option<String>,
-    }
-
-    impl EnvVarGuard {
-        fn set(key: &'static str, value: impl Into<String>) -> Self {
-            let previous = env::var(key).ok();
-            env::set_var(key, value.into());
-            Self { key, previous }
-        }
-    }
-
-    impl Drop for EnvVarGuard {
-        fn drop(&mut self) {
-            if let Some(previous) = &self.previous {
-                env::set_var(self.key, previous);
-            } else {
-                env::remove_var(self.key);
-            }
-        }
-    }
 
     #[test]
     fn disable_returns_current_status() {
@@ -630,86 +627,119 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
-    #[test]
-    fn parses_cap_net_admin_from_proc_status() {
-        let status = "Name:\twrongcl\nCapEff:\t0000000000001000\n";
-        assert_eq!(parse_cap_net_admin_from_proc_status(status), Some(true));
-    }
+    mod linux {
+        use super::*;
+        use std::io::Write;
+        use std::sync::{Mutex, OnceLock};
 
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn parses_missing_cap_net_admin_from_proc_status() {
-        let status = "Name:\twrongcl\nCapEff:\t0000000000000000\n";
-        assert_eq!(parse_cap_net_admin_from_proc_status(status), Some(false));
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn enable_and_disable_use_ip_tuntap_commands() {
-        let _guard = env_lock().lock().unwrap();
-        clear_current_interface_name();
-
-        let temp = std::env::temp_dir().join(format!(
-            "wrongcl-tun-test-{}-{}",
-            std::process::id(),
-            rand::random::<u64>()
-        ));
-        fs::create_dir_all(&temp).unwrap();
-        let state_path = temp.join("iface-state");
-        let log_path = temp.join("ip.log");
-        let ip_path = temp.join("ip");
-        let helper_log_path = temp.join("helper.log");
-        let helper_path = temp.join("helper");
-        let tun_path = temp.join("tun");
-        fs::write(&tun_path, b"").unwrap();
-
-        let mut script = fs::File::create(&ip_path).unwrap();
-        writeln!(
-            script,
-            "#!/usr/bin/env bash\nset -euo pipefail\nLOG=\"{}\"\nSTATE=\"{}\"\nprintf '%s\\n' \"$*\" >> \"$LOG\"\nif [[ \"$1\" == \"link\" && \"$2\" == \"show\" ]]; then\n  [[ -f \"$STATE\" ]]\n  exit $?\nfi\nif [[ \"$1\" == \"tuntap\" && \"$2\" == \"add\" ]]; then\n  touch \"$STATE\"\n  exit 0\nfi\nif [[ \"$1\" == \"addr\" && \"$2\" == \"replace\" ]]; then\n  exit 0\nfi\nif [[ \"$1\" == \"link\" && \"$2\" == \"set\" ]]; then\n  exit 0\nfi\nif [[ \"$1\" == \"link\" && \"$2\" == \"delete\" ]]; then\n  rm -f \"$STATE\"\n  exit 0\nfi\nexit 1\n",
-            log_path.display(),
-            state_path.display(),
-        )
-        .unwrap();
-        drop(script);
-        let mut helper = fs::File::create(&helper_path).unwrap();
-        writeln!(
-            helper,
-            "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$*\" > \"{}\"\ncat >/dev/null\n",
-            helper_log_path.display(),
-        )
-        .unwrap();
-        drop(helper);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut permissions = fs::metadata(&ip_path).unwrap().permissions();
-            permissions.set_mode(0o755);
-            fs::set_permissions(&ip_path, permissions).unwrap();
-            let mut helper_permissions = fs::metadata(&helper_path).unwrap().permissions();
-            helper_permissions.set_mode(0o755);
-            fs::set_permissions(&helper_path, helper_permissions).unwrap();
+        fn env_lock() -> &'static Mutex<()> {
+            static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+            LOCK.get_or_init(|| Mutex::new(()))
         }
 
-        let _ip_guard = EnvVarGuard::set(ENV_IP_BIN, ip_path.display().to_string());
-        let _tun_guard = EnvVarGuard::set(ENV_TUN_DEVICE, tun_path.display().to_string());
-        let _cap_guard = EnvVarGuard::set(ENV_FORCE_CAP, "1");
-        let _helper_guard = EnvVarGuard::set(ENV_TUN_HELPER_BIN, helper_path.display().to_string());
+        struct EnvVarGuard {
+            key: &'static str,
+            previous: Option<String>,
+        }
 
-        let enabled = enable("{}").unwrap();
-        assert!(enabled.enabled);
-        assert!(enabled.supported);
-        let log = fs::read_to_string(&log_path).unwrap();
-        assert!(log.contains("tuntap add mode tun name"));
-        assert!(log.contains("addr replace 198.18.0.1/15 dev"));
-        assert!(fs::read_to_string(&helper_log_path)
-            .unwrap()
-            .contains("--config"));
+        impl EnvVarGuard {
+            fn set(key: &'static str, value: impl Into<String>) -> Self {
+                let previous = env::var(key).ok();
+                env::set_var(key, value.into());
+                Self { key, previous }
+            }
+        }
 
-        let disabled = disable();
-        assert!(!disabled.enabled);
-        assert!(fs::read_to_string(&log_path)
-            .unwrap()
-            .contains("link delete dev"));
+        impl Drop for EnvVarGuard {
+            fn drop(&mut self) {
+                if let Some(previous) = &self.previous {
+                    env::set_var(self.key, previous);
+                } else {
+                    env::remove_var(self.key);
+                }
+            }
+        }
+
+        #[test]
+        fn parses_cap_net_admin_from_proc_status() {
+            let status = "Name:\twrongcl\nCapEff:\t0000000000001000\n";
+            assert_eq!(parse_cap_net_admin_from_proc_status(status), Some(true));
+        }
+
+        #[test]
+        fn parses_missing_cap_net_admin_from_proc_status() {
+            let status = "Name:\twrongcl\nCapEff:\t0000000000000000\n";
+            assert_eq!(parse_cap_net_admin_from_proc_status(status), Some(false));
+        }
+
+        #[test]
+        fn enable_and_disable_use_ip_tuntap_commands() {
+            let _guard = env_lock().lock().unwrap();
+            clear_current_interface_name();
+
+            let temp = std::env::temp_dir().join(format!(
+                "wrongcl-tun-test-{}-{}",
+                std::process::id(),
+                rand::random::<u64>()
+            ));
+            fs::create_dir_all(&temp).unwrap();
+            let state_path = temp.join("iface-state");
+            let log_path = temp.join("ip.log");
+            let ip_path = temp.join("ip");
+            let helper_log_path = temp.join("helper.log");
+            let helper_path = temp.join("helper");
+            let tun_path = temp.join("tun");
+            fs::write(&tun_path, b"").unwrap();
+
+            let mut script = fs::File::create(&ip_path).unwrap();
+            writeln!(
+                script,
+                "#!/usr/bin/env bash\nset -euo pipefail\nLOG=\"{}\"\nSTATE=\"{}\"\nprintf '%s\\n' \"$*\" >> \"$LOG\"\nif [[ \"$1\" == \"link\" && \"$2\" == \"show\" ]]; then\n  [[ -f \"$STATE\" ]]\n  exit $?\nfi\nif [[ \"$1\" == \"tuntap\" && \"$2\" == \"add\" ]]; then\n  touch \"$STATE\"\n  exit 0\nfi\nif [[ \"$1\" == \"addr\" && \"$2\" == \"replace\" ]]; then\n  exit 0\nfi\nif [[ \"$1\" == \"link\" && \"$2\" == \"set\" ]]; then\n  exit 0\nfi\nif [[ \"$1\" == \"link\" && \"$2\" == \"delete\" ]]; then\n  rm -f \"$STATE\"\n  exit 0\nfi\nexit 1\n",
+                log_path.display(),
+                state_path.display(),
+            )
+            .unwrap();
+            drop(script);
+            let mut helper = fs::File::create(&helper_path).unwrap();
+            writeln!(
+                helper,
+                "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$*\" > \"{}\"\ncat >/dev/null\n",
+                helper_log_path.display(),
+            )
+            .unwrap();
+            drop(helper);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut permissions = fs::metadata(&ip_path).unwrap().permissions();
+                permissions.set_mode(0o755);
+                fs::set_permissions(&ip_path, permissions).unwrap();
+                let mut helper_permissions = fs::metadata(&helper_path).unwrap().permissions();
+                helper_permissions.set_mode(0o755);
+                fs::set_permissions(&helper_path, helper_permissions).unwrap();
+            }
+
+            let _ip_guard = EnvVarGuard::set(ENV_IP_BIN, ip_path.display().to_string());
+            let _tun_guard = EnvVarGuard::set(ENV_TUN_DEVICE, tun_path.display().to_string());
+            let _cap_guard = EnvVarGuard::set(ENV_FORCE_CAP, "1");
+            let _helper_guard =
+                EnvVarGuard::set(ENV_TUN_HELPER_BIN, helper_path.display().to_string());
+
+            let enabled = enable("{}").unwrap();
+            assert!(enabled.enabled);
+            assert!(enabled.supported);
+            let log = fs::read_to_string(&log_path).unwrap();
+            assert!(log.contains("tuntap add mode tun name"));
+            assert!(log.contains("addr replace 198.18.0.1/15 dev"));
+            assert!(fs::read_to_string(&helper_log_path)
+                .unwrap()
+                .contains("--config"));
+
+            let disabled = disable();
+            assert!(!disabled.enabled);
+            assert!(fs::read_to_string(&log_path)
+                .unwrap()
+                .contains("link delete dev"));
+        }
     }
 }

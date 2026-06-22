@@ -1,5 +1,4 @@
-use std::fs;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::SocketAddr;
 
 /// Best-effort lookup of the local process that initiated a TCP connection to
 /// our proxy listener. Returns `(pid, comm)` when both can be resolved.
@@ -12,7 +11,8 @@ pub fn lookup(peer_addr: SocketAddr) -> Option<(u32, String)> {
 
 #[cfg(target_os = "linux")]
 mod backend {
-    use super::*;
+    use std::fs;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
     pub(super) fn lookup(peer_addr: SocketAddr) -> Option<(u32, String)> {
         let inode = match peer_addr {
@@ -152,7 +152,7 @@ mod backend {
 
 #[cfg(not(target_os = "linux"))]
 mod backend {
-    use super::*;
+    use std::net::SocketAddr;
 
     pub(super) fn lookup(_peer_addr: SocketAddr) -> Option<(u32, String)> {
         None
