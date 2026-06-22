@@ -10,7 +10,7 @@ use rustls::{
     ClientConfig, ClientConnection, DigitallySignedStruct, RootCertStore, SignatureScheme,
 };
 
-use crate::client::{split_cloneable_tunnel, Tunnel};
+use crate::client::{Tunnel, split_cloneable_tunnel};
 use crate::endpoint::TlsOptions;
 use crate::error::{ClientError, Result};
 

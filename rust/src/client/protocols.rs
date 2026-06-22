@@ -222,7 +222,7 @@ impl WrongsvClient {
             _ => {
                 return Err(ClientError::Config(
                     "Naive requires TLS as outer security".into(),
-                ))
+                ));
             }
         };
         naive::connect_naive(

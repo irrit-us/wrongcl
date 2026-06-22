@@ -1,15 +1,17 @@
+#![allow(clippy::collapsible_if)]
+
 use std::path::PathBuf;
 use std::sync::mpsc;
 
 use clap::{Args, Parser, Subcommand};
 use serde_json::json;
+use wrongcl_native::Result;
 use wrongcl_native::adapter::{adapt_wrongsv_config, inspect_wrongsv_config};
 use wrongcl_native::client::WrongsvClient;
-use wrongcl_native::config::{config_example, default_config, ClientConfig};
+use wrongcl_native::config::{ClientConfig, config_example, default_config};
 use wrongcl_native::endpoint::ProxyProtocol;
 use wrongcl_native::manager::ConnectionManager;
 use wrongcl_native::protocol::Target;
-use wrongcl_native::Result;
 
 #[derive(Debug, Parser)]
 #[command(name = "wrongcl-headless")]

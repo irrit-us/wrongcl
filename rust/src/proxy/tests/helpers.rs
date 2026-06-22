@@ -2,10 +2,16 @@ use super::super::udp::parse_socks5_target;
 use super::*;
 
 pub(super) fn wait_for_inactive(proxy: &ProxyHandle) -> ProxySnapshot {
+    let mut inactive_streak = 0;
     for _ in 0..40 {
         let snapshot = proxy.snapshot();
         if snapshot.active_connections == 0 {
-            return snapshot;
+            inactive_streak += 1;
+            if inactive_streak >= 3 {
+                return snapshot;
+            }
+        } else {
+            inactive_streak = 0;
         }
         thread::sleep(Duration::from_millis(25));
     }
@@ -74,8 +80,8 @@ pub(super) fn spawn_fake_vless_udp_server() -> FakeServer {
 
 pub(super) fn spawn_fake_shadowsocks_udp_server(method: String, password: String) -> FakeServer {
     use wrongsv_shadowsocks::{
-        decrypt_aead_2022_udp_request, decrypt_udp_packet, encrypt_aead_2022_udp_response,
-        encrypt_udp_packet, ServerConfig as SsServerConfig,
+        ServerConfig as SsServerConfig, decrypt_aead_2022_udp_request, decrypt_udp_packet,
+        encrypt_aead_2022_udp_response, encrypt_udp_packet,
     };
 
     let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
@@ -412,9 +418,11 @@ pub(super) fn run_http_connect_echo(local_addr: SocketAddr) -> io::Result<Vec<u8
             break;
         }
     }
-    assert!(std::str::from_utf8(&response)
-        .unwrap()
-        .starts_with("HTTP/1.1 200 Connection Established"),);
+    assert!(
+        std::str::from_utf8(&response)
+            .unwrap()
+            .starts_with("HTTP/1.1 200 Connection Established"),
+    );
 
     stream.write_all(b"hello")?;
     let mut echoed = [0u8; 5];

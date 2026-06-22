@@ -23,7 +23,7 @@ use crate::kcp;
 use crate::meek;
 use crate::naive;
 use crate::protocol::{
-    encode_raw_vless_header, encode_udp_vless_header, read_raw_vless_response, Target,
+    Target, encode_raw_vless_header, encode_udp_vless_header, read_raw_vless_response,
 };
 use crate::quic;
 use crate::reality;
@@ -45,7 +45,7 @@ pub(crate) use self::remote::connect_tcp;
 #[cfg(test)]
 use self::remote::{encode_socks5_udp_packet, parse_socks5_udp_packet, read_http_headers};
 #[cfg(test)]
-use self::websocket::{read_ws_frame, write_ws_frame, OpCode};
+use self::websocket::{OpCode, read_ws_frame, write_ws_frame};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);

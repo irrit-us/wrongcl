@@ -13,7 +13,7 @@ use std::process::Command;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 use std::sync::{Mutex, OnceLock};
 
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -58,7 +58,7 @@ pub struct TunStatus {
 }
 
 impl TunStatus {
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    #[cfg(not(target_os = "windows"))]
     fn unsupported(
         platform: &'static str,
         disabled_reason: impl Into<String>,
@@ -777,8 +777,7 @@ mod tests {
 
         #[test]
         fn parses_windows_sc_query_present_service() {
-            let stdout =
-                "SERVICE_NAME: wintun\r\n        TYPE               : 1  KERNEL_DRIVER\r\n        STATE              : 4  RUNNING\r\n";
+            let stdout = "SERVICE_NAME: wintun\r\n        TYPE               : 1  KERNEL_DRIVER\r\n        STATE              : 4  RUNNING\r\n";
             assert!(parse_windows_sc_query_service_present(stdout, ""));
         }
 

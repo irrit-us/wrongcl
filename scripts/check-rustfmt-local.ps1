@@ -14,7 +14,7 @@ try {
     exit 0
   }
 
-  & rustfmt --check --edition 2021 --config skip_children=true $RustFiles
+  & rustfmt --check --edition 2024 --config skip_children=true $RustFiles
 } finally {
   Pop-Location
 }

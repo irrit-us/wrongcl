@@ -1,7 +1,7 @@
 use std::collections::{HashSet, VecDeque};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc as std_mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc as std_mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -10,7 +10,7 @@ use ipnet::IpNet;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream as TokioTcpStream, UdpSocket as TokioUdpSocket};
 use tokio::runtime::Builder;
-use tokio::sync::{mpsc, oneshot, watch, Notify};
+use tokio::sync::{Notify, mpsc, oneshot, watch};
 use tokio_tun::Tun;
 use tracing::{debug, error, warn};
 use ts_netstack_smoltcp_core as netcore;

@@ -3,7 +3,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::os::windows::process::CommandExt;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc as std_mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc as std_mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -12,7 +12,7 @@ use ipnet::{IpNet, Ipv4Net};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream as TokioTcpStream, UdpSocket as TokioUdpSocket};
 use tokio::runtime::Builder;
-use tokio::sync::{mpsc, oneshot, watch, Notify};
+use tokio::sync::{Notify, mpsc, oneshot, watch};
 use tracing::{debug, error, warn};
 use ts_netstack_smoltcp_core as netcore;
 use ts_netstack_smoltcp_core::smoltcp::{

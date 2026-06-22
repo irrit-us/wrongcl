@@ -1,6 +1,6 @@
 use std::io;
-use std::sync::mpsc;
 use std::sync::Arc;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
@@ -21,7 +21,7 @@ const CONNECT_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 const NAIVE_PAD_OPS: usize = 8;
 const NAIVE_PAD_MAX_PAYLOAD: usize = u16::MAX as usize;
 
-use padding::{random_padding_header_value, NaivePadDecoder, NaivePadEncoder};
+use padding::{NaivePadDecoder, NaivePadEncoder, random_padding_header_value};
 use tunnel::NaiveTunnel;
 
 pub fn connect_naive(

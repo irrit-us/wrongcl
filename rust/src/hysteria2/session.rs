@@ -1,7 +1,7 @@
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
-use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::JoinHandle;
 
 use bytes::Bytes;
@@ -12,8 +12,8 @@ use crate::client::{Tunnel, TunnelReader, TunnelWriter, UdpPacket, UdpSession};
 use crate::endpoint::{Hysteria2Options, TlsOptions};
 use crate::error::{ClientError, Result};
 use crate::quic_obfs::{
-    wrap_async_udp_socket_gecko, wrap_async_udp_socket_salamander, GECKO_DEFAULT_MAX_PACKET_SIZE,
-    GECKO_DEFAULT_MIN_PACKET_SIZE,
+    GECKO_DEFAULT_MAX_PACKET_SIZE, GECKO_DEFAULT_MIN_PACKET_SIZE, wrap_async_udp_socket_gecko,
+    wrap_async_udp_socket_salamander,
 };
 use crate::tls;
 

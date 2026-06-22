@@ -12,9 +12,9 @@ use crate::protocol::Target;
 mod session;
 
 use session::{
-    authenticated_connection, encode_hysteria2_udp_message, parse_hysteria2_udp_message,
-    read_hysteria2_tcp_response, target_authority, write_hysteria2_tcp_request,
-    Hysteria2DatagramSession, Hysteria2PacketAssembly, Hysteria2Tunnel,
+    Hysteria2DatagramSession, Hysteria2PacketAssembly, Hysteria2Tunnel, authenticated_connection,
+    encode_hysteria2_udp_message, parse_hysteria2_udp_message, read_hysteria2_tcp_response,
+    target_authority, write_hysteria2_tcp_request,
 };
 
 pub fn connect_hysteria2(

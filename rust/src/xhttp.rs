@@ -1,6 +1,6 @@
 use std::io::{self, Read, Write};
-use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::JoinHandle;
 use std::time::Duration;
 

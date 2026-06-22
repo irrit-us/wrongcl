@@ -11,7 +11,7 @@ mod kcp_mask;
 mod test_xray_session;
 
 use kcp_mask::KcpPacketMask;
-use test_xray_session::{peek_conv, SessionConfig as XraySessionConfig, XrayKcpSession};
+use test_xray_session::{SessionConfig as XraySessionConfig, XrayKcpSession, peek_conv};
 
 pub(super) const TEST_UUID: &str = "12345678-1234-1234-1234-123456789abc";
 
@@ -100,7 +100,7 @@ pub(super) fn spawn_fake_shadowsocks_server(method: String, password: String) ->
 
 fn handle_fake_shadowsocks(stream: TcpStream, method: &str, password: &str) -> io::Result<()> {
     use wrongsv_shadowsocks::{
-        parse_request_header, ServerConfig as SsServerConfig, ShadowsocksReader, ShadowsocksWriter,
+        ServerConfig as SsServerConfig, ShadowsocksReader, ShadowsocksWriter, parse_request_header,
     };
 
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;

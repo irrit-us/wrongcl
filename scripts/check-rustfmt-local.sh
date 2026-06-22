@@ -19,4 +19,4 @@ if [[ "${#rust_files[@]}" -eq 0 ]]; then
   exit 0
 fi
 
-rustfmt --check --edition 2021 --config skip_children=true "${rust_files[@]}"
+rustfmt --check --edition 2024 --config skip_children=true "${rust_files[@]}"
