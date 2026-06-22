@@ -5,19 +5,18 @@ use std::fs;
 #[cfg(target_os = "linux")]
 use std::path::PathBuf;
 #[cfg(target_os = "linux")]
-use std::process::{Child, Command, Stdio};
+use std::process::Command;
 #[cfg(target_os = "linux")]
 use std::sync::{Mutex, OnceLock};
-#[cfg(target_os = "linux")]
-use std::thread;
-#[cfg(target_os = "linux")]
-use std::time::{Duration, Instant};
 
 #[cfg(target_os = "linux")]
 use serde::Deserialize;
 use serde::Serialize;
 
 use crate::error::{ClientError, Result};
+
+#[cfg(target_os = "linux")]
+mod linux_runtime;
 
 #[cfg(target_os = "linux")]
 const CAP_NET_ADMIN_BIT: u32 = 12;
@@ -33,8 +32,6 @@ const ENV_TUN_DEVICE: &str = "WRONGCL_TUN_DEVICE";
 const ENV_IP_BIN: &str = "WRONGCL_IP_BIN";
 #[cfg(target_os = "linux")]
 const ENV_FORCE_CAP: &str = "WRONGCL_FORCE_CAP_NET_ADMIN";
-#[cfg(target_os = "linux")]
-const ENV_TUN_HELPER_BIN: &str = "WRONGCL_TUN_HELPER_BIN";
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct TunStatus {
@@ -133,8 +130,7 @@ fn default_proxy_port() -> u16 {
 #[derive(Default)]
 struct TunState {
     interface_name: Option<String>,
-    helper_child: Option<Child>,
-    helper_config_path: Option<PathBuf>,
+    runtime: Option<linux_runtime::LinuxTunRuntimeHandle>,
 }
 
 #[cfg(target_os = "linux")]
@@ -203,7 +199,7 @@ fn linux_status() -> TunStatus {
     let interface_exists = interface_name
         .as_deref()
         .is_some_and(interface_exists_linux);
-    let helper_running = helper_running_linux();
+    let runtime_running = runtime_running_linux();
 
     if !driver_present {
         return TunStatus::unsupported(
@@ -212,7 +208,7 @@ fn linux_status() -> TunStatus {
             false,
         );
     }
-    if helper_running && interface_exists {
+    if runtime_running && interface_exists {
         return TunStatus {
             supported: true,
             enabled: true,
@@ -291,17 +287,20 @@ fn linux_enable(config_json: &str) -> Result<TunStatus> {
             return Err(error);
         }
     }
-    let helper_config = write_helper_config(&config)?;
-    let helper_binary = build_tun_helper()?;
-    let mut child = spawn_tun_helper(&helper_binary, &helper_config)?;
-    if let Some(status) = wait_for_helper_start(&mut child, Duration::from_secs(3))? {
+    let runtime = match linux_runtime::LinuxTunRuntimeHandle::start(config.clone()) {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            let _ = run_ip_command(&["link", "delete", "dev", &config.interface_name]);
+            return Err(error);
+        }
+    };
+    if !runtime.is_running() {
         let _ = run_ip_command(&["link", "delete", "dev", &config.interface_name]);
-        let _ = fs::remove_file(&helper_config);
-        return Err(ClientError::Config(format!(
-            "tun helper exited during startup: {status}"
-        )));
+        return Err(ClientError::Config(
+            "Linux TUN runtime exited during startup".into(),
+        ));
     }
-    set_tun_state(config.interface_name, child, helper_config);
+    set_tun_state(config.interface_name, runtime);
     Ok(linux_status())
 }
 
@@ -310,7 +309,7 @@ fn linux_disable() -> TunStatus {
     let Some(interface_name) = current_interface_name() else {
         return linux_status();
     };
-    terminate_helper_linux();
+    terminate_runtime_linux();
     if interface_exists_linux(&interface_name) {
         let _ = run_ip_command(&["link", "delete", "dev", &interface_name]);
     }
@@ -343,11 +342,10 @@ fn current_interface_name() -> Option<String> {
 }
 
 #[cfg(target_os = "linux")]
-fn set_tun_state(name: String, child: Child, config_path: PathBuf) {
+fn set_tun_state(name: String, runtime: linux_runtime::LinuxTunRuntimeHandle) {
     if let Ok(mut guard) = tun_state().lock() {
         guard.interface_name = Some(name);
-        guard.helper_child = Some(child);
-        guard.helper_config_path = Some(config_path);
+        guard.runtime = Some(runtime);
     }
 }
 
@@ -355,31 +353,21 @@ fn set_tun_state(name: String, child: Child, config_path: PathBuf) {
 fn clear_current_interface_name() {
     if let Ok(mut guard) = tun_state().lock() {
         guard.interface_name = None;
-        if let Some(path) = guard.helper_config_path.take() {
-            let _ = fs::remove_file(path);
+        if let Some(mut runtime) = guard.runtime.take() {
+            runtime.stop();
         }
-        guard.helper_child = None;
     }
 }
 
 #[cfg(target_os = "linux")]
-fn helper_running_linux() -> bool {
-    let Ok(mut guard) = tun_state().lock() else {
+fn runtime_running_linux() -> bool {
+    let Ok(guard) = tun_state().lock() else {
         return false;
     };
-    let Some(child) = guard.helper_child.as_mut() else {
-        return false;
-    };
-    match child.try_wait() {
-        Ok(None) => true,
-        Ok(Some(_)) | Err(_) => {
-            if let Some(path) = guard.helper_config_path.take() {
-                let _ = fs::remove_file(path);
-            }
-            guard.helper_child = None;
-            false
-        }
-    }
+    guard
+        .runtime
+        .as_ref()
+        .is_some_and(|runtime| runtime.is_running())
 }
 
 #[cfg(target_os = "linux")]
@@ -425,179 +413,12 @@ fn run_ip_command(args: &[&str]) -> Result<()> {
 }
 
 #[cfg(target_os = "linux")]
-fn helper_directory() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../helpers/tun-proxy-bridge")
-}
-
-#[cfg(target_os = "linux")]
-fn helper_binary_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("target")
-        .join("tun-proxy-bridge")
-}
-
-#[cfg(target_os = "linux")]
-fn helper_binary_candidates() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            candidates.push(parent.join("tun-proxy-bridge"));
-            candidates.push(parent.join("lib").join("tun-proxy-bridge"));
+fn terminate_runtime_linux() {
+    if let Ok(mut guard) = tun_state().lock() {
+        if let Some(mut runtime) = guard.runtime.take() {
+            runtime.stop();
         }
     }
-    candidates.push(helper_binary_path());
-    candidates
-}
-
-#[cfg(target_os = "linux")]
-fn build_tun_helper() -> Result<PathBuf> {
-    if let Ok(path) = env::var(ENV_TUN_HELPER_BIN) {
-        return Ok(PathBuf::from(path));
-    }
-    for candidate in helper_binary_candidates() {
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
-    }
-    let helper_dir = helper_directory();
-    let output = helper_binary_path();
-    if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let status = Command::new("go")
-        .arg("build")
-        .arg("-o")
-        .arg(&output)
-        .arg(".")
-        .current_dir(&helper_dir)
-        .status()
-        .map_err(|error| ClientError::Io(std::io::Error::new(error.kind(), error.to_string())))?;
-    if !status.success() {
-        return Err(ClientError::Config(format!(
-            "go build failed for {}",
-            helper_dir.display()
-        )));
-    }
-    Ok(output)
-}
-
-#[cfg(target_os = "linux")]
-fn write_helper_config(config: &TunEnableConfig) -> Result<PathBuf> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("target")
-        .join(format!(
-            "tun-proxy-bridge-{}-{}.json",
-            std::process::id(),
-            rand::random::<u64>()
-        ));
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let payload = serde_json::json!({
-        "interface_name": config.interface_name,
-        "mtu": config.mtu,
-        "address_cidr": config.address_cidr,
-        "stack_cidr": helper_stack_cidr(&config.address_cidr),
-        "routes": helper_routes_for(config),
-        "proxy_host": config.proxy_host,
-        "proxy_port": config.proxy_port,
-    });
-    fs::write(
-        &path,
-        serde_json::to_vec_pretty(&payload).map_err(|error| {
-            ClientError::Config(format!("serialize tun helper config: {error}"))
-        })?,
-    )?;
-    Ok(path)
-}
-
-#[cfg(target_os = "linux")]
-fn helper_routes_for(config: &TunEnableConfig) -> Vec<String> {
-    let mut routes = vec!["0.0.0.0/0".into()];
-    for route in &config.routes {
-        if !routes.contains(route) {
-            routes.push(route.clone());
-        }
-    }
-    routes
-}
-
-#[cfg(target_os = "linux")]
-fn helper_stack_cidr(address_cidr: &str) -> String {
-    let Some((ip, prefix)) = address_cidr.split_once('/') else {
-        return address_cidr.to_string();
-    };
-    let Ok(ipv4) = ip.parse::<std::net::Ipv4Addr>() else {
-        return address_cidr.to_string();
-    };
-    let octets = ipv4.octets();
-    let candidate = std::net::Ipv4Addr::new(octets[0], octets[1], octets[2], 2);
-    format!("{candidate}/{prefix}")
-}
-
-#[cfg(target_os = "linux")]
-fn spawn_tun_helper(binary: &PathBuf, config_path: &PathBuf) -> Result<Child> {
-    Command::new(binary)
-        .arg("--config")
-        .arg(config_path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(|error| ClientError::Io(std::io::Error::new(error.kind(), error.to_string())))
-}
-
-#[cfg(target_os = "linux")]
-fn wait_for_helper_start(
-    child: &mut Child,
-    timeout: Duration,
-) -> Result<Option<std::process::ExitStatus>> {
-    let deadline = Instant::now() + timeout;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => return Ok(Some(status)),
-            Ok(None) => {
-                if Instant::now() >= deadline {
-                    return Ok(None);
-                }
-            }
-            Err(error) => {
-                return Err(ClientError::Io(std::io::Error::new(
-                    error.kind(),
-                    error.to_string(),
-                )));
-            }
-        }
-        thread::sleep(Duration::from_millis(100));
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn terminate_helper_linux() {
-    let Ok(mut guard) = tun_state().lock() else {
-        return;
-    };
-    let Some(child) = guard.helper_child.as_mut() else {
-        return;
-    };
-    let _ = child.stdin.take();
-    let deadline = Instant::now() + Duration::from_secs(1);
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(100)),
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break;
-            }
-            Err(_) => break,
-        }
-    }
-    if let Some(path) = guard.helper_config_path.take() {
-        let _ = fs::remove_file(path);
-    }
-    guard.helper_child = None;
 }
 
 #[cfg(target_os = "linux")]
@@ -629,36 +450,6 @@ mod tests {
     #[cfg(target_os = "linux")]
     mod linux {
         use super::*;
-        use std::io::Write;
-        use std::sync::{Mutex, OnceLock};
-
-        fn env_lock() -> &'static Mutex<()> {
-            static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-            LOCK.get_or_init(|| Mutex::new(()))
-        }
-
-        struct EnvVarGuard {
-            key: &'static str,
-            previous: Option<String>,
-        }
-
-        impl EnvVarGuard {
-            fn set(key: &'static str, value: impl Into<String>) -> Self {
-                let previous = env::var(key).ok();
-                env::set_var(key, value.into());
-                Self { key, previous }
-            }
-        }
-
-        impl Drop for EnvVarGuard {
-            fn drop(&mut self) {
-                if let Some(previous) = &self.previous {
-                    env::set_var(self.key, previous);
-                } else {
-                    env::remove_var(self.key);
-                }
-            }
-        }
 
         #[test]
         fn parses_cap_net_admin_from_proc_status() {
@@ -670,76 +461,6 @@ mod tests {
         fn parses_missing_cap_net_admin_from_proc_status() {
             let status = "Name:\twrongcl\nCapEff:\t0000000000000000\n";
             assert_eq!(parse_cap_net_admin_from_proc_status(status), Some(false));
-        }
-
-        #[test]
-        fn enable_and_disable_use_ip_tuntap_commands() {
-            let _guard = env_lock().lock().unwrap();
-            clear_current_interface_name();
-
-            let temp = std::env::temp_dir().join(format!(
-                "wrongcl-tun-test-{}-{}",
-                std::process::id(),
-                rand::random::<u64>()
-            ));
-            fs::create_dir_all(&temp).unwrap();
-            let state_path = temp.join("iface-state");
-            let log_path = temp.join("ip.log");
-            let ip_path = temp.join("ip");
-            let helper_log_path = temp.join("helper.log");
-            let helper_path = temp.join("helper");
-            let tun_path = temp.join("tun");
-            fs::write(&tun_path, b"").unwrap();
-
-            let mut script = fs::File::create(&ip_path).unwrap();
-            writeln!(
-                script,
-                "#!/usr/bin/env bash\nset -euo pipefail\nLOG=\"{}\"\nSTATE=\"{}\"\nprintf '%s\\n' \"$*\" >> \"$LOG\"\nif [[ \"$1\" == \"link\" && \"$2\" == \"show\" ]]; then\n  [[ -f \"$STATE\" ]]\n  exit $?\nfi\nif [[ \"$1\" == \"tuntap\" && \"$2\" == \"add\" ]]; then\n  touch \"$STATE\"\n  exit 0\nfi\nif [[ \"$1\" == \"addr\" && \"$2\" == \"replace\" ]]; then\n  exit 0\nfi\nif [[ \"$1\" == \"link\" && \"$2\" == \"set\" ]]; then\n  exit 0\nfi\nif [[ \"$1\" == \"link\" && \"$2\" == \"delete\" ]]; then\n  rm -f \"$STATE\"\n  exit 0\nfi\nexit 1\n",
-                log_path.display(),
-                state_path.display(),
-            )
-            .unwrap();
-            drop(script);
-            let mut helper = fs::File::create(&helper_path).unwrap();
-            writeln!(
-                helper,
-                "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$*\" > \"{}\"\ncat >/dev/null\n",
-                helper_log_path.display(),
-            )
-            .unwrap();
-            drop(helper);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let mut permissions = fs::metadata(&ip_path).unwrap().permissions();
-                permissions.set_mode(0o755);
-                fs::set_permissions(&ip_path, permissions).unwrap();
-                let mut helper_permissions = fs::metadata(&helper_path).unwrap().permissions();
-                helper_permissions.set_mode(0o755);
-                fs::set_permissions(&helper_path, helper_permissions).unwrap();
-            }
-
-            let _ip_guard = EnvVarGuard::set(ENV_IP_BIN, ip_path.display().to_string());
-            let _tun_guard = EnvVarGuard::set(ENV_TUN_DEVICE, tun_path.display().to_string());
-            let _cap_guard = EnvVarGuard::set(ENV_FORCE_CAP, "1");
-            let _helper_guard =
-                EnvVarGuard::set(ENV_TUN_HELPER_BIN, helper_path.display().to_string());
-
-            let enabled = enable("{}").unwrap();
-            assert!(enabled.enabled);
-            assert!(enabled.supported);
-            let log = fs::read_to_string(&log_path).unwrap();
-            assert!(log.contains("tuntap add mode tun name"));
-            assert!(log.contains("addr replace 198.18.0.1/15 dev"));
-            assert!(fs::read_to_string(&helper_log_path)
-                .unwrap()
-                .contains("--config"));
-
-            let disabled = disable();
-            assert!(!disabled.enabled);
-            assert!(fs::read_to_string(&log_path)
-                .unwrap()
-                .contains("link delete dev"));
         }
     }
 }

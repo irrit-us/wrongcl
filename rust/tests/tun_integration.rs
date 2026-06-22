@@ -2,7 +2,6 @@
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
@@ -13,49 +12,7 @@ use wrongcl_native::proxy::ProxyHandle;
 use wrongcl_native::tun;
 
 const TEST_UUID: &str = "12345678-1234-1234-1234-123456789abc";
-const ENV_TUN_HELPER_BIN: &str = "WRONGCL_TUN_HELPER_BIN";
 static ECHO_COUNT: AtomicUsize = AtomicUsize::new(0);
-
-struct EnvVarGuard {
-    key: &'static str,
-    previous: Option<String>,
-}
-
-impl EnvVarGuard {
-    fn set(key: &'static str, value: String) -> Self {
-        let previous = std::env::var(key).ok();
-        unsafe { std::env::set_var(key, value) };
-        Self { key, previous }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        if let Some(previous) = &self.previous {
-            unsafe { std::env::set_var(self.key, previous) };
-        } else {
-            unsafe { std::env::remove_var(self.key) };
-        }
-    }
-}
-
-fn build_fresh_helper() -> PathBuf {
-    let out = std::env::temp_dir().join(format!(
-        "tun-proxy-bridge-test-{}-{}",
-        std::process::id(),
-        rand::random::<u64>()
-    ));
-    let status = Command::new("go")
-        .arg("build")
-        .arg("-o")
-        .arg(&out)
-        .arg(".")
-        .current_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../helpers/tun-proxy-bridge"))
-        .status()
-        .unwrap();
-    assert!(status.success(), "failed to build tun helper");
-    out
-}
 
 fn ensure_loopback_up() {
     let status = Command::new("ip")
@@ -125,10 +82,8 @@ fn handle_fake_vless(mut stream: TcpStream) -> std::io::Result<()> {
 /// Run manually or through `scripts/verify-local.sh linux`.
 #[test]
 #[ignore = "requires unshare -Urn or CAP_NET_ADMIN"]
-fn tun_helper_prepares_interface_and_route() {
+fn tun_runtime_prepares_interface_and_route() {
     ensure_loopback_up();
-    let helper_path = build_fresh_helper();
-    let _helper_guard = EnvVarGuard::set(ENV_TUN_HELPER_BIN, helper_path.display().to_string());
     let server_port = spawn_fake_vless_server();
     let mut proxy = ProxyHandle::start(
         ClientConfig::raw_vless("127.0.0.1", server_port, TEST_UUID, "127.0.0.1", 0).unwrap(),
@@ -148,8 +103,8 @@ fn tun_helper_prepares_interface_and_route() {
         local_addr.port()
     ))
     .unwrap();
-    assert!(status.enabled, "tun helper did not report enabled");
-    assert!(status.supported, "tun helper did not report supported");
+    assert!(status.enabled, "TUN runtime did not report enabled");
+    assert!(status.supported, "TUN runtime did not report supported");
     let current = tun::current_status();
     assert!(current.enabled);
     assert!(current.supported);
@@ -169,10 +124,8 @@ fn tun_helper_prepares_interface_and_route() {
 
 #[test]
 #[ignore = "requires unshare -Urn or CAP_NET_ADMIN"]
-fn tun_helper_routes_targeted_tcp_via_local_proxy() {
+fn tun_runtime_routes_targeted_tcp_via_local_proxy() {
     ensure_loopback_up();
-    let helper_path = build_fresh_helper();
-    let _helper_guard = EnvVarGuard::set(ENV_TUN_HELPER_BIN, helper_path.display().to_string());
     let server_port = spawn_fake_vless_server();
     let mut proxy = ProxyHandle::start(
         ClientConfig::raw_vless("127.0.0.1", server_port, TEST_UUID, "127.0.0.1", 0).unwrap(),
