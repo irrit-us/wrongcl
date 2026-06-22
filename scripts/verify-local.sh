@@ -18,7 +18,11 @@ cargo fmt --manifest-path rust/Cargo.toml --all -- --check
 cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path rust/Cargo.toml -- --test-threads=1
 if [[ "$BUILD_PLATFORM" == "linux" ]] && command -v unshare >/dev/null 2>&1; then
-  unshare -Urn bash -lc 'ip link set lo up && cargo test --manifest-path rust/Cargo.toml --test tun_integration -- --ignored --test-threads=1'
+  if unshare -Urn bash -lc 'true' >/dev/null 2>&1; then
+    unshare -Urn bash -lc 'ip link set lo up && cargo test --manifest-path rust/Cargo.toml --test tun_integration -- --ignored --test-threads=1'
+  else
+    echo "Skipping ignored TUN integration: unshare -Urn is unavailable on this host."
+  fi
 fi
 bash scripts/verify-shared-wrongsv.sh
 "$FLUTTER_BIN" analyze
