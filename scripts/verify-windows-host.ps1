@@ -36,7 +36,7 @@ try {
     git clone --depth 1 --branch $WrongsvRef $WrongsvRepo $WrongsvDir
   }
   & $FlutterBin pub get
-  cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+  & powershell -ExecutionPolicy Bypass -File scripts/check-rustfmt-local.ps1
   cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
   cargo test --manifest-path rust/Cargo.toml -- --test-threads=1
   cargo test --manifest-path ../wrongsv/Cargo.toml --lib wrongcl_

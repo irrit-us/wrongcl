@@ -14,7 +14,7 @@ cd "$ROOT_DIR"
 
 bash scripts/ensure-wrongsv-sibling.sh
 "$FLUTTER_BIN" pub get
-cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+bash scripts/check-rustfmt-local.sh
 cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path rust/Cargo.toml -- --test-threads=1
 if [[ "$BUILD_PLATFORM" == "linux" ]] && command -v unshare >/dev/null 2>&1; then
