@@ -13,6 +13,26 @@ $BundleDir = Join-Path $RootDir "build\windows\x64\runner\Release"
 $ArchivePath = Join-Path $OutputDir "$ArchiveBaseName.zip"
 $ChecksumPath = "$ArchivePath.sha256"
 
+function Resolve-WintunDll {
+  $candidates = @()
+  if ($env:WRONGCL_WINTUN_DLL) {
+    $candidates += $env:WRONGCL_WINTUN_DLL
+  }
+  $candidates += @(
+    (Join-Path $RootDir "wintun.dll"),
+    (Join-Path $RootDir "windows\runner\wintun.dll"),
+    (Join-Path $BundleDir "wintun.dll")
+  )
+
+  foreach ($candidate in $candidates) {
+    if ($candidate -and (Test-Path $candidate)) {
+      return (Resolve-Path $candidate).Path
+    }
+  }
+
+  return $null
+}
+
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
 if (-not (Test-Path (Join-Path $WrongsvDir "Cargo.toml"))) {
@@ -24,6 +44,14 @@ if (-not (Test-Path (Join-Path $WrongsvDir "Cargo.toml"))) {
 
 if (-not (Test-Path $BundleDir)) {
   & $FlutterBin build windows
+}
+
+$WintunDll = Resolve-WintunDll
+if (-not $WintunDll) {
+  throw "wintun.dll was not found. Run scripts\\setup-windows-deps.ps1, set WRONGCL_WINTUN_DLL, or place wintun.dll in the repo root or windows\\runner before packaging."
+}
+if ((Resolve-Path $WintunDll).Path -ne (Join-Path $BundleDir "wintun.dll")) {
+  Copy-Item $WintunDll (Join-Path $BundleDir "wintun.dll") -Force
 }
 
 if (Test-Path $ArchivePath) {

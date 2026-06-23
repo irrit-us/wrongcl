@@ -1,226 +1,202 @@
-# wrongcl Single-Screen Reorg + Core Expansion Plan
+# wrongcl Cross-Platform Closure Plan
 
-Last reviewed: 2026-06-21.
+Last reviewed: 2026-06-22.
 
 ## Goal
 
-Reorganize the main screen into a compact 3-section single-view layout
-(no scrolling on the primary surface) and grow the Rust core so the UI
-controls describe real, working features rather than truthful placeholders.
+Keep the milestone aligned with the actual collaboration model:
 
-Pre-production status: the existing single-endpoint config and any persisted
-profiles can be rewritten directly. No backward-compatibility shims.
+- Linux remains the main development and first-landing platform.
+- Windows is the main verification and gap-closure platform for this cycle.
+- macOS and other hosts stay in the follow-on alignment queue unless a Windows
+  closure task naturally exposes a reusable abstraction.
 
-## Truthful-controls rule (unchanged)
+This plan is no longer discussion-only. The repo has already moved through the
+backend-first audit and into active Windows closure work.
 
-- Unsupported controls never look enabled.
-- Disabled controls always show a reason.
-- No UI feature implies backend support that does not exist.
-- Until a phase ships its backend, the affected controls remain visibly
-  disabled with an explicit reason.
+## Current Baseline
 
-## Concept model
+- `0.1.1` already shipped the single-screen control surface, routing modes,
+  Proxies / Connections / Requests / Logs / DNS views, split Settings views,
+  and the Linux Rust TUN runtime.
+- Linux remains the main development and first-landing environment.
+- Windows remains the main verification and completion environment for desktop
+  parity work.
+- This cycle already closed several previously open items:
+  - KCP UDP relay
+  - Hysteria2 fragmented UDP handling
+  - Hysteria2 Gecko / Salamander obfuscation
+  - client-side missing-field completion flow
+  - Windows system proxy integration
+  - Windows TUN backend plus elevated smoke validation
+  - Windows runtime, packaging, and release-bundle verification
+- The main remaining host gap in the routed dataplane story is now macOS TUN,
+  while Windows source app lookup and macOS source app lookup remain later
+  observability work.
 
-- `Profile` — a server connection (endpoint, transport, outer security, auth).
-  Already exists in `ProfileStore`.
-- `Script` — a routing rule list (new). Clash-subset rules:
-  `DOMAIN`, `DOMAIN-SUFFIX`, `DOMAIN-KEYWORD`, `IP-CIDR`, `GEOIP`, `MATCH`,
-  each mapping to `DIRECT | PROXY(<group>) | REJECT`. No JavaScript engine.
-- `Mode` — a named `(profile, script)` pair (new). Built-in modes:
-  - `Global` = (active profile, `MATCH -> PROXY(default-group)`)
-  - `Rule` = (active profile, user's default script)
-  - `Direct` = (no profile, `MATCH -> DIRECT`)
-    Slots 4-6: user-defined modes created via the Add Mode dialog.
+## Phase Rule For This Cycle
 
-Persistence: `ProfileStore` JSON gains `scripts[]`, `modes[]`, `endpoints[]`,
-`groups[]`, `active_mode`. Schema is rewritten on first launch.
+- Keep release language tied to both backend truth and host verification.
+- Do not collapse "Linux implemented" into "all platforms complete."
+- Treat Windows as the primary validation surface for Linux-led backend work in
+  this cycle.
+- Always distinguish:
+  - core backend missing
+  - platform adaptation missing
+  - UI or docs ahead of backend reality
 
-## Single-screen layout (adaptive, 1024x640 floor)
+## Stage Structure
 
-```
-+---------------------------------------------------------------+
-| [icon] | Global | Rule | Direct | +Add  |  ...   |  ...      |  Row 1: icon + 6 mode slots,
-+--------+----------------+------------+--------------+--------+   modes share dark panel
-|                |                  |                          |
-|  Up chart      |   [SysProxy o-]  |   Up   total / s         |  Row 2: charts | controls |
-|  Down chart    |   [   > Runtime] |   Down total / s         |   stats (3 equal columns;
-|                |   [TUN     o-]   |                          |   center column has dark
-|                |                  |                          |   bottom border + thinner
-|                |                  |                          |   border under Runtime)
-+----------------+------------------+--------------------------+
-|  [ Proxies                ]  [ Profiles                    ] |  Row 3a
-|  [ Connections ]  [ Requests ]  [ Logs                     ] |  Row 3b
-|  [ Basic ] [ Network ] [ DNS ] [ Advanced                  ] |  Row 3c
-+---------------------------------------------------------------+
-```
+### Stage 0: Core Backend Audit
 
-- Top row distributes 7 cells evenly across full width; each cell is
-  center-aligned within its slot. Once all 6 mode slots are occupied, the
-  Add Mode button is removed.
-- Middle row: charts (left), control column (center, dark bordered),
-  stats (right), all equal width.
-- Bottom row: 3 sub-rows of equal-height entry chips.
-- All subpages are full-screen overlays with `< close | title` header.
+Status: completed on 2026-06-22.
 
-## Rust core additions (`wrongcl/rust/src/`)
+Purpose: produce a trusted map of what is actually incomplete before choosing
+implementation order.
 
-1. **Connection registry** — `proxy.rs` replaces aggregate `AtomicU64`
-   counters with an `Arc<DashMap<u64, ConnInfo>>`:
-   `{id, started_at, peer_addr, target_host_port, source_pid?, source_app?,
-   url?, bytes_up, bytes_down, state}`.
-   Source app lookup:
-   - Linux: `/proc/net/tcp` + `/proc/<pid>/comm`
-   - macOS: `proc_pidinfo` / `audit_token`
-   - Windows: `GetExtendedTcpTable`
-2. **HTTP CONNECT/Host capture** — `proxy/request.rs` records the request
-   line and `Host` header for plain HTTP; CONNECT and SOCKS record
-   `host:port` only. No HTTPS interception.
-3. **Tracing log capture** — new `logs.rs` installs a
-   `tracing_subscriber::Layer` writing to a bounded ring buffer
-   (2000 entries). Entry shape: `{ts, level, target, message, fields}`.
-   Add `tracing` instrumentation to `accept_loop`, `handle_socks_client`,
-   `client.rs::connect`, router decisions, DNS lookups, TUN packets.
-4. **Rule engine** — new `router.rs`. Pure-Rust matcher over the rule
-   subset above; embedded GEOIP country lookup. Decision type:
-   `Direct | Proxy(endpoint_id) | Reject`. Default action when no rule
-   matches is configurable per script.
-5. **Multi-endpoint + proxy groups** — `config.rs` rewrites to:
+- Build a backlog from repo truth, not from memory or UI shape.
+- Classify open items into:
+  - `core-backend-gap`
+  - `platform-gap`
+  - `ui-docs-mismatch`
+- Record whether each issue is:
+  - Linux working
+  - Linux partial
+  - Windows blocked
+  - macOS blocked
+- Output captured in:
+  - `BACKEND_AUDIT.md`
+  - `EXECUTION_QUEUE.md`
+  - `WINDOWS_ALIGNMENT.md`
 
-   ```
-   ClientConfig {
-     endpoints: Map<String, Endpoint>,
-     groups: Vec<ProxyGroup>,                 // select | fallback | url-test
-     scripts: Vec<Script>,
-     modes: Vec<Mode>,
-     active_mode: String,
-     local: LocalProxyConfig,
-     dns: DnsSettings,
-   }
-   ```
+### Stage 1: Linux-First Backend Completion
 
-   The router resolves rule decisions through `groups` to a concrete
-   endpoint at connect time.
-6. **DNS resolver** — new `dns.rs`. Backends: system, `udp://1.1.1.1:53`,
-   `https://...` (DoH). Per-rule resolution happens before matching when
-   the rule needs an IP.
-7. **TUN driver** — new `tun.rs` plus per-OS modules. Linux/macOS via the
-   `tun` crate, Windows via `wintun`. Packet plane via `smoltcp`. Routes
-   each connection through the router. Privilege model is surfaced as a
-   `needs privileges` disabled reason; no silent `sudo`.
-8. **FFI surface additions**:
-   - `wrongcl_connections_list_json`
-   - `wrongcl_connection_close(id)`
-   - `wrongcl_connections_close_matching(filter_json)`
-   - `wrongcl_logs_since(cursor) -> {entries, cursor}`
-   - `wrongcl_router_active_mode_json` / `_set(name)`
-   - `wrongcl_router_set_script_json(json)`
-   - `wrongcl_proxy_groups_json`
-   - `wrongcl_proxy_group_select(group, member)`
-   - `wrongcl_dns_settings_json` / `_set(json)`
-   - `wrongcl_tun_status_json`
-   - `wrongcl_tun_enable_json(config)` / `wrongcl_tun_disable`
+Status: substantially completed for the current queue on 2026-06-22.
 
-## Flutter additions (`wrongcl/lib/`)
+Purpose: complete the highest-priority shared backend gaps on the main
+development platform before expanding platform closure claims.
 
-- `main_view.dart` — new single-screen `Column` with the 3 sections.
-- `widgets/mode_strip.dart` — top row icon + mode chips + add-mode button.
-- `widgets/control_column.dart` — pill / play / pill stack with the
-  dark-border + thinner-border-under-Runtime treatment.
-- `widgets/traffic_chart.dart` — `CustomPainter` line graph driven by the
-  existing in-controller `uploadedBytesHistory` / `downloadedBytesHistory`
-  derived to bytes-per-second.
-- `widgets/traffic_stats.dart` — cumulative byte totals (right column).
-- `widgets/subpage_scaffold.dart` — close + title header used by every
-  subpage overlay.
-- `subviews/`:
-  - `proxies_view.dart` — group list at top, members below, selection
-    controls and group-kind (select/fallback/url-test) actions.
-  - `connections_view.dart` — search/filter by URL or source app, per-row
-    close, close-all-matching.
-  - `requests_view.dart` — list of captured CONNECT/Host targets with
-    `source_app` and either URL (HTTP) or `ip:port` (everything else).
-  - `logs_view.dart` — colored rows by level, expand affordance for
-    entries longer than two rendered lines.
-  - `mode_picker_view.dart` — add-mode dialog: name + profile + script.
-  - `settings/basic_view.dart`
-  - `settings/network_view.dart`
-  - `settings/dns_view.dart`
-  - `settings/advanced_view.dart`
-- `client_home_controller.dart` stays the orchestrator. Feature-specific
-  state moves to `lib/controllers/{router,connections,logs,proxies,tun,
-  dns}_controller.dart` to keep `client_home_controller.dart` from
-  ballooning.
-- Old `dashboard_view.dart` and `home_widgets.dart` are removed once
-  Phase 1 replaces them.
+- Prioritize shared logic and dataplane work that affects all hosts.
+- Completed in this stage:
+  - KCP UDP relay
+  - Hysteria2 fragmented UDP response handling
+  - Hysteria2 Gecko / Salamander obfs
+  - missing-field completion and draft import flow
+- Remaining narrowed work:
+  - WireGuard product-truth and routed-tunnel surface still needs continued
+    tightening
+  - source app lookup is still non-parity on Windows and macOS
+- Linux remains the first place these backend features are implemented and
+  verified.
 
-## Phasing
+### Stage 2: Windows Verification And Completion
 
-Each phase ships independently. Unsupported features remain visible-but-
-disabled with explicit reasons until their phase ships.
+Status: active and mostly green on 2026-06-22.
 
-| Phase | Scope                                                                                                                                                                                                                                    | Backend?  | Visible result                                    |
-| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ------------------------------------------------- |
-| 1     | New single-screen shell. Middle row real-time charts (client-side polling of existing `wrongcl_proxy_status`). System Proxy and Runtime toggles wired. TUN toggle visible but disabled. Bottom-row entries open empty subpage scaffolds. | no        | "Fits in one screen" deliverable.                 |
-| 2     | Connection registry + tracing log capture + their FFI.                                                                                                                                                                                   | yes       | Connections and Logs pages working.               |
-| 3     | HTTP CONNECT/Host capture + source-app lookup per OS.                                                                                                                                                                                    | yes       | Requests page working.                            |
-| 4     | Multi-endpoint + proxy groups (config rewrite + group FFI).                                                                                                                                                                              | yes       | Proxies page working: groups, members, selection. |
-| 5     | Rule engine + script/mode storage + Add Mode dialog wired.                                                                                                                                                                               | yes       | Global / Rule / Direct actually route traffic.    |
-| 6     | DNS resolver + DNS settings page.                                                                                                                                                                                                        | yes       | DNS page working.                                 |
-| 7     | TUN driver: Linux first, then Windows (wintun), then macOS.                                                                                                                                                                              | yes       | TUN toggle real.                                  |
-| 8     | Settings content split into Basic/Network/Advanced (Network includes proxy listen host/port, mixed protocol toggles; Basic covers autostart, language, theme; Advanced covers diagnostics, log level, raw config editor).                | mostly UI | Settings parity grows incrementally.              |
-| 9     | Release gate: `flutter analyze`, `flutter test`, Windows + Linux builds, Rust `cargo test`, desktop platform smoke.                                                                                                                      | -         | Ship.                                             |
+Purpose: validate Linux-led backend work on Windows and close Windows-specific
+desktop integration gaps.
 
-## Implementation decisions taken without further asking
+- Focus Windows work on:
+  - TUN backend and truthful control state
+  - system proxy integration
+  - runtime smoke validation
+  - packaging and release confidence
+  - regression checks for FFI-backed pages and controls
+- Completed in this stage:
+  - Windows system proxy enable / disable path
+  - Windows TUN runtime using Wintun
+  - elevated TUN smoke validation
+  - `verify-windows-host.ps1` end-to-end pass
+  - `package-windows-release.ps1` end-to-end pass
+  - `setup-windows-deps.ps1` for repeatable Wintun preparation
+- Every Windows issue found here must stay categorized as either a platform gap
+  or a shared defect.
 
-- Rule engine: Clash-subset matcher; GEOIP via a small embedded country
-  database.
-- Logs ring buffer: 2000 entries.
-- Mode / script / endpoint / group storage: extends `ProfileStore` JSON
-  with additive top-level keys; pre-production schema rewrite is allowed.
-- TUN privileges: surface a `needs privileges` disabled reason and a
-  one-screen setup explainer per OS. Never silent `sudo`.
-- Test coverage: at least one widget test per new subpage; Rust unit
-  tests for the connection registry, router, DNS resolver, and rule
-  matcher.
-- Build hygiene: no schema-migration code, no compat shims, no
-  feature-flagged "old vs new" code paths.
+### Stage 3: macOS And Other Host Alignment
 
-## File targets
+Purpose: expand the same verified behavior model to other supported desktop
+hosts without pretending completion early.
 
-- replace: `wrongcl/lib/dashboard_view.dart`, `wrongcl/lib/home_widgets.dart`
-- add: `wrongcl/lib/main_view.dart`, `wrongcl/lib/widgets/...`,
-  `wrongcl/lib/controllers/...`, `wrongcl/lib/subviews/{proxies,
-  connections,requests,logs,mode_picker}_view.dart`,
-  `wrongcl/lib/subviews/settings/{basic,network,dns,advanced}_view.dart`
-- extend: `wrongcl/lib/client_home_controller.dart`,
-  `wrongcl/lib/control_state.dart`, `wrongcl/lib/profile_store.dart`,
-  `wrongcl/lib/wrongcl_client.dart`
-- add: `wrongcl/rust/src/{logs,router,dns,tun}.rs`,
-  `wrongcl/rust/src/tun/{linux,macos,windows}.rs`
-- rewrite: `wrongcl/rust/src/{config,proxy,proxy/request,ffi}.rs`
+- Keep explicit checklists and verification hooks for macOS.
+- Reuse abstractions created during Linux and Windows work.
+- Do not mark parity complete until host-specific validation exists.
+- Current likely lead items:
+  - macOS TUN planning or implementation
+  - source app lookup parity where still worthwhile
 
-## Release gate
+### Stage 4: Release Closure
 
-Before this work is called complete:
+Purpose: convert backend-complete and host-validated work into a precise
+release claim.
 
-- `flutter analyze`
-- `flutter test`
-- `cargo test --manifest-path wrongcl/rust/Cargo.toml`
-- `flutter build windows`
-- existing `scripts/verify-local.sh linux` on Linux or CI
-- existing `scripts/verify-macos-host.sh` on macOS or CI
-- Manual desktop check:
-  - the main screen fits at 1024x640 without scrolling
-  - top row distributes 7 cells evenly; Add Mode disappears at 6 modes
-  - middle row charts update in real time when traffic flows
-  - System Proxy and Runtime toggles act on real backends
-  - TUN toggle either flips a real driver or shows its disabled reason
-  - Proxies, Profiles, Connections, Requests, Logs, and the four
-    Settings subpages open as full-screen overlays with close+title
+- Release notes must state platform scope explicitly.
+- "Done" must always mean both:
+  - backend behavior is implemented
+  - target hosts have been validated
 
-## Non-goals
+## Public Interfaces / Boundaries
 
-- No HTTPS interception (no MITM CA, no decrypted URL paths).
-- No JavaScript rule script engine (Clash-subset rules only).
-- No mobile (Android/iOS) parity in this milestone.
-- No Clash/Mihomo YAML import in this milestone.
+- Keep platform-facing state objects uniform across hosts:
+  - `TunStatus`
+  - `SystemProxyStatus`
+  - `ControlAvailability`
+- Keep host-specific branching inside Rust or Dart platform adapters rather
+  than spreading it through `main_view.dart` and subviews.
+- Any new field added for platform work must be additive and documented with
+  host scope.
+
+## Deliverables For This Milestone
+
+- Maintain planning and handoff docs around Linux-first development plus
+  Windows-first verification.
+- Keep Windows dependency preparation reproducible through
+  `scripts/setup-windows-deps.ps1`.
+
+## Remaining Follow-Ons
+
+- WireGuard product-truth and routed-tunnel scope still need a tighter final
+  statement before release language is fully settled.
+- Source app lookup remains Linux-only and should be treated as later Windows /
+  macOS observability work, not as part of the current closure claim.
+- macOS host work is prewired but not yet validated:
+  - TUN still needs real utun-backed implementation work on a macOS machine
+  - desktop packaging / runtime verification still need a native macOS pass
+
+## Completed In This Cycle
+
+- Shared backend closure:
+  - KCP UDP relay
+  - Hysteria2 fragmented UDP reassembly
+  - Hysteria2 Gecko / Salamander obfuscation
+  - first missing-field completion flow for client-only required inputs
+- Windows closure:
+  - system proxy integration
+  - TUN runtime with Wintun
+  - elevated TUN smoke validation
+  - host verification and packaging scripts passing end to end
+  - dependency preparation script for Wintun
+  - hidden PowerShell route operations so TUN enable no longer flashes a
+    script window during normal use
+- macOS prewiring:
+  - truthful planned-status seams for TUN and system proxy
+  - headless `tun-status` entrypoint plus follow-on smoke hook
+
+## Release Gate
+
+Before this milestone is called complete:
+
+- Stage 0 backlog exists and is trusted.
+- Linux verification remains green for backend-first work.
+- Windows verification remains green through:
+  - `powershell -ExecutionPolicy Bypass -File scripts/setup-windows-deps.ps1`
+  - `powershell -ExecutionPolicy Bypass -File scripts/verify-windows-host.ps1`
+  - `powershell -ExecutionPolicy Bypass -File scripts/package-windows-release.ps1`
+- Packaging entry points remain present for Linux, macOS, and Windows.
+- Docs and release language identify both backend status and host scope.
+
+## Non-Goals
+
+- Replacing Linux as the main development environment.
+- Treating Linux success as proof of all-platform completion.
+- Treating Windows closure as a reason to skip remaining macOS or later parity
+  work.

@@ -5,11 +5,13 @@ class ControlAvailability {
     required this.supported,
     required this.enabled,
     required this.disabledReason,
+    this.platform = 'unknown',
   });
 
   final bool supported;
   final bool enabled;
   final String disabledReason;
+  final String platform;
 }
 
 enum AgentMode { rule, global, direct, script }

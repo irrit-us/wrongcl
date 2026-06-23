@@ -1,4 +1,5 @@
 use super::*;
+use crate::WireGuardOptions;
 
 #[test]
 fn probe_works_against_fake_raw_vless_server() {
@@ -144,6 +145,36 @@ fn socks_proxy_udp_works_against_fake_websocket_server() {
 }
 
 #[test]
+fn socks_proxy_udp_works_against_fake_kcp_server() {
+    let kcp_opts = KcpOptions {
+        seed: "kcp-seed".into(),
+        mtu: 1350,
+        tti: 50,
+    };
+    let server = spawn_fake_kcp_server(kcp_opts.clone());
+    let client = WrongsvClient::new(vless_server(
+        "127.0.0.1",
+        server.port,
+        TEST_UUID,
+        Transport::Kcp(kcp_opts),
+    ))
+    .unwrap();
+
+    let mut session = client
+        .connect_udp_session(&Target::new("example.com", 53).unwrap())
+        .unwrap();
+    session.send_packet(b"ping-kcp-udp").unwrap();
+    for _ in 0..40 {
+        if let Some(packet) = session.try_recv_packet().unwrap() {
+            assert_eq!(packet.payload, b"ping-kcp-udp");
+            return;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    panic!("no UDP response from KCP session");
+}
+
+#[test]
 fn socks_proxy_works_against_fake_websocket_server() {
     let server = spawn_fake_server(FakeCarrier::WebSocket);
     let mut proxy = ProxyHandle::start(ClientConfig::single_server(
@@ -255,6 +286,37 @@ fn local_proxy_udp_works_against_fake_remote_socks5_server() {
 }
 
 #[test]
+fn local_proxy_udp_works_against_fake_kcp_server() {
+    let kcp_opts = KcpOptions {
+        seed: "kcp-seed".into(),
+        mtu: 1350,
+        tti: 50,
+    };
+    let server = spawn_fake_kcp_server(kcp_opts.clone());
+    let mut proxy = ProxyHandle::start(ClientConfig::single_server(
+        "default",
+        vless_server(
+            "127.0.0.1",
+            server.port,
+            TEST_UUID,
+            Transport::Kcp(kcp_opts),
+        ),
+        LocalProxyConfig {
+            host: "127.0.0.1".into(),
+            port: 0,
+            allow_socks: true,
+            allow_http: true,
+        },
+    ))
+    .unwrap();
+
+    let response = run_socks_udp_echo(proxy.snapshot().socket_addr()).unwrap();
+    proxy.stop().unwrap();
+
+    assert_eq!(response, b"ping-udp".to_vec());
+}
+
+#[test]
 fn probe_works_against_fake_remote_http_connect_server() {
     let server = spawn_fake_http_connect_server(None, None);
     let client = WrongsvClient::new(mixed_server(
@@ -326,7 +388,7 @@ fn supports_udp_tracks_transport_capability() {
         }),
     ))
     .unwrap();
-    assert!(!kcp.supports_udp());
+    assert!(kcp.supports_udp());
 
     let quic_disabled = WrongsvClient::new(vless_server(
         "127.0.0.1",
@@ -356,6 +418,25 @@ fn supports_udp_tracks_transport_capability() {
     let mixed =
         WrongsvClient::new(mixed_server("127.0.0.1", 443, MixedOptions::default())).unwrap();
     assert!(mixed.supports_udp());
+
+    let wireguard = WrongsvClient::new(ServerConfig {
+        host: "127.0.0.1".into(),
+        port: 443,
+        endpoint: Endpoint {
+            proxy: ProxyProtocol::Wireguard(WireGuardOptions {
+                private_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".into(),
+                peer_public_key: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=".into(),
+                pre_shared_key: None,
+                client_ip: "10.66.66.2/32".into(),
+                allowed_ips: vec!["0.0.0.0/0".into()],
+                mtu: 1400,
+            }),
+            transport: Transport::Raw,
+            outer_security: OuterSecurity::None,
+        },
+    })
+    .unwrap();
+    assert!(wireguard.supports_udp());
 }
 
 #[test]

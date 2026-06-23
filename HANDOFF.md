@@ -1,66 +1,54 @@
-# wrongcl UI Upgrade Handoff
+# wrongcl Cross-Platform Handoff
 
-Last updated: 2026-06-21.
+Last updated: 2026-06-22.
 
 ## Current Objective
 
-Continue polishing `wrongcl` as a control-first Flutter + Rust desktop client.
-The current milestone focuses on a stable dashboard, truthful runtime visuals,
-better import errors, and desktop-wide icon parity for Windows, macOS, and
-Linux.
+Carry forward the Linux-first / Windows-verification milestone without losing
+the distinction between shared backend truth, Windows closure, and later host
+alignment. This repo is no longer in pure planning mode; the current handoff
+starts from a partially executed queue with Windows closure largely validated.
+
+## Collaboration Reality
+
+- Primary developer environment: Linux
+- Primary verification and gap-closure environment in this cycle: Windows
+- Secondary alignment targets: macOS and other supported hosts
+
+When describing progress, always distinguish:
+
+- implemented on Linux
+- verified on Windows
+- pending on macOS or other platforms
+
+Do not compress these states into one generic completion claim.
 
 ## Current State
 
-- Dashboard is no longer the original long form page.
-- Main shell uses:
-  - primary dashboard surface
-  - secondary panels for Profiles, Import, Settings
-  - heavy work modes for Editor and Diagnostics
-- Runtime signal history is UI-local and memory-only.
-- TUN, agent mode, and script controls remain unsupported placeholders with
-  explicit reasons.
-- Clash/Mihomo YAML is not supported by the wrongsv import flow.
+- The single-screen control surface and its subviews are already in-tree.
+- Linux is still the most complete host for runtime-backed functionality.
+- Windows verification has already advanced from planning into execution.
+- The repo now includes:
+  - Windows system proxy integration
+  - Windows TUN runtime via Wintun
+  - `scripts/smoke-windows-tun.ps1` for elevated host smoke validation
+  - `scripts/setup-windows-deps.ps1` for repeatable Wintun dependency setup
+  - green Windows host verify and packaging runs on 2026-06-22
+- The remaining open work is narrower than before and should be judged against
+  the backlog docs instead of restarting discovery from scratch.
 
-## Recent UI Decisions
+## Current Priorities
 
-- Runtime charts belong in the main `Runtime Signals` band and should be large
-  enough to read without opening details.
-- `Connection Manager` is a summary card only; it must not have `Show details`.
-- `Show details` is reserved for text/detail-heavy cards:
-  - Health
-  - Recent Activity
-  - Import / Support State
-- Details open in a dialog and must not change dashboard card height.
-- Dashboard rows use explicit preview heights to avoid overflow and accidental
-  click blocking.
-
-## Icon Work
-
-- Canonical brand generation entry point: `scripts/gen_tray_icon.py`
-- The script now generates:
-  - legacy `assets/tray_icon.*`
-  - `assets/brand/wrongcl_launcher.ico`
-  - `assets/brand/wrongcl_tray.ico`
-  - `assets/brand/wrongcl_tray.png`
-  - `assets/brand/wrongcl_mark.png`
-  - `assets/brand/wrongcl_app_mark.png`
-  - macOS `AppIcon.appiconset/app_icon_*.png`
-  - Linux `linux/runner/resources/wrongcl.png`
-- Windows resource icon: `windows/runner/resources/app_icon.ico`
-- `windows/runner/resources/app_icon.ico` must remain byte-identical to
-  `assets/brand/wrongcl_launcher.ico`.
-- Windows runner sets:
-  - app resource icon through `Runner.rc`
-  - big/small window icons through `WM_SETICON`
-  - process AppUserModelID: `us.irrit.wrongcl`
-- Linux runner sets the GTK window icon from bundled `data/wrongcl.png`.
-- Linux release packaging includes:
-  - `share/applications/us.irrit.wrongcl.desktop`
-  - `share/icons/hicolor/512x512/apps/us.irrit.wrongcl.png`
-- macOS launcher icons are generated into the existing AppIcon asset catalog
-  from the same W brand source.
-- If Windows still shows the Flutter icon after a clean build, suspect Windows
-  icon cache or pinned-taskbar cache first.
+- Keep a clean issue split between:
+  - core backend gaps
+  - platform adaptation gaps
+  - docs or acceptance mismatches
+- Keep Linux verification green while continuing host closure.
+- Treat the next execution step as one of:
+  - remaining shared backend truthfulness work
+  - macOS TUN planning / closure
+  - source app lookup parity
+- Avoid reopening already verified Windows work unless a regression appears.
 
 ## Important Constraints
 
@@ -70,14 +58,27 @@ Linux.
 - Flutter engine/download commands may need:
   `HTTP_PROXY=http://127.0.0.1:7897`
   `HTTPS_PROXY=http://127.0.0.1:7897`
-- Do not fake support for TUN, mode, script runtime selection, or Windows
-  system proxy.
-- Do not add Clash/Mihomo importing unless a real adapter is explicitly
-  planned and tested.
+- Windows dependency prep can use:
+  `WRONGCL_PROXY=http://127.0.0.1:7897`
+  `WRONGCL_WINTUN_ZIP=E:\path\to\wintun.zip`
+- Do not fake support for TUN or system proxy on hosts where the backend is not
+  implemented.
+- Do not describe a feature as "complete" without host-specific validation.
 
 ## Verification Commands
 
-Run from `E:\irrit-us developer group\wrongcl`:
+Run from `E:\irrit-us developer group\wrongcl`.
+
+Linux baseline:
+
+```bash
+cargo test --manifest-path rust/Cargo.toml
+flutter analyze
+flutter test
+bash scripts/verify-local.sh linux
+```
+
+Windows closure path:
 
 ```powershell
 flutter analyze
@@ -85,45 +86,47 @@ flutter test
 $env:PROTOC='C:\Users\Charon\AppData\Local\Microsoft\WinGet\Packages\Google.Protobuf_Microsoft.Winget.Source_8wekyb3d8bbwe\bin\protoc.exe'
 $env:HTTP_PROXY='http://127.0.0.1:7897'
 $env:HTTPS_PROXY='http://127.0.0.1:7897'
-flutter build windows
+$env:WRONGCL_PROXY='http://127.0.0.1:7897'
+powershell -ExecutionPolicy Bypass -File scripts/setup-windows-deps.ps1
+powershell -ExecutionPolicy Bypass -File scripts/verify-windows-host.ps1
+powershell -ExecutionPolicy Bypass -File scripts/package-windows-release.ps1
 ```
 
-Desktop parity checks:
+Elevated Windows TUN smoke:
 
 ```powershell
-python scripts/gen_tray_icon.py
-Get-FileHash assets\brand\wrongcl_launcher.ico,windows\runner\resources\app_icon.ico
+Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -File scripts/smoke-windows-tun.ps1 -OutputPath .tmp/windows-tun-smoke-admin.json'
 ```
 
-Run on Linux or CI:
-
-```bash
-bash scripts/verify-local.sh linux
-bash scripts/package-linux-release.sh
-```
-
-Run on macOS or CI:
+Other host hooks:
 
 ```bash
 bash scripts/verify-macos-host.sh
 bash scripts/package-macos-release.sh
 ```
 
-Manual check:
+## Manual Validation Focus
 
-- Open `build\windows\x64\runner\Release\wrongcl.exe`.
-- Confirm title bar, taskbar, Alt-Tab, tray, and in-app icons are not Flutter.
-- On Linux, confirm the GTK window icon, task switcher icon, tray icon, and
-  packaged desktop metadata use the W brand family.
-- On macOS, confirm Finder, Dock, Cmd-Tab, menu bar/tray, and in-app icons use
-  the W brand family.
-- Confirm dashboard `Show details` opens dialogs for Health, Activity, Import.
-- Confirm `Connection Manager` has no `Show details`.
-- Confirm Clash/Mihomo YAML in Import shows a friendly format mismatch.
+- When validating, first decide whether a failure is shared backend, platform
+  adaptation, or docs mismatch.
+- On Windows, verify whether Linux-complete features are actually runnable, not
+  merely rendered.
+- Confirm TUN and system proxy controls either work for real or show accurate
+  disabled reasons.
+- Record any newly discovered gaps directly in `PLAN.md` / `HANDOFF.md` unless
+  a future milestone intentionally reintroduces separate backlog files.
+
+## Supporting Docs
+
+- Planning baseline: `PLAN.md`
+- Current release / host scope summary: `README.md`
 
 ## Next Suggested Work
 
-- Continue visual QA at 1440x900, 768x1024, and 390x844.
-- Tighten secondary panel interiors, especially Import and Profiles.
-- Consider adding widget layout smoke tests for dashboard overflow.
-- Keep reducing explanatory text where the control itself is clear.
+- Keep Linux verification green while preserving current Windows pass state.
+- Use `BACKEND_AUDIT.md` plus `EXECUTION_QUEUE.md` to choose the next real gap
+  instead of restarting platform triage.
+- Prefer one of:
+  - macOS TUN planning / implementation
+  - source app lookup parity
+  - remaining WireGuard product-truth closure

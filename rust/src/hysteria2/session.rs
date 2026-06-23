@@ -1,7 +1,7 @@
 use std::io::{self, Read, Write};
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::JoinHandle;
 
 use bytes::Bytes;
@@ -11,6 +11,10 @@ use quinn::{Connection as QuinnConnection, Endpoint};
 use crate::client::{Tunnel, TunnelReader, TunnelWriter, UdpPacket, UdpSession};
 use crate::endpoint::{Hysteria2Options, TlsOptions};
 use crate::error::{ClientError, Result};
+use crate::quic_obfs::{
+    GECKO_DEFAULT_MAX_PACKET_SIZE, GECKO_DEFAULT_MIN_PACKET_SIZE, wrap_async_udp_socket_gecko,
+    wrap_async_udp_socket_salamander,
+};
 use crate::tls;
 
 const HYSTERIA2_AUTH_PATH: &str = "/auth";
@@ -166,6 +170,76 @@ pub(super) struct Hysteria2DatagramSession {
     pub(super) _handle: JoinHandle<()>,
 }
 
+pub(super) struct Hysteria2PacketAssembly {
+    fragments: Vec<Option<Vec<u8>>>,
+    address: Option<String>,
+}
+
+impl Hysteria2PacketAssembly {
+    pub(super) fn new(fragment_count: u8) -> io::Result<Self> {
+        if fragment_count == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Hysteria2 UDP fragment count must be at least 1",
+            ));
+        }
+        Ok(Self {
+            fragments: vec![None; fragment_count as usize],
+            address: None,
+        })
+    }
+
+    pub(super) fn insert(
+        &mut self,
+        fragment_id: u8,
+        address: String,
+        payload: Vec<u8>,
+    ) -> io::Result<()> {
+        let idx = fragment_id as usize;
+        if idx >= self.fragments.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Hysteria2 UDP fragment index out of range",
+            ));
+        }
+        if let Some(existing) = &self.address {
+            if existing != &address {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Hysteria2 UDP fragments disagreed on target address",
+                ));
+            }
+        } else {
+            self.address = Some(address);
+        }
+        self.fragments[idx] = Some(payload);
+        Ok(())
+    }
+
+    pub(super) fn is_complete(&self) -> bool {
+        self.fragments.iter().all(Option::is_some)
+    }
+
+    pub(super) fn take_payload(&mut self) -> io::Result<(String, Vec<u8>)> {
+        let address = self.address.take().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Hysteria2 UDP packet assembly missing target address",
+            )
+        })?;
+        let mut payload = Vec::new();
+        for fragment in self.fragments.iter_mut() {
+            payload.extend_from_slice(fragment.take().as_deref().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Hysteria2 UDP packet assembly missing a fragment",
+                )
+            })?);
+        }
+        Ok((address, payload))
+    }
+}
+
 impl UdpSession for Hysteria2DatagramSession {
     fn send_packet(&mut self, payload: &[u8]) -> Result<()> {
         self.write_tx.send(payload.to_vec()).map_err(|_| {
@@ -213,8 +287,37 @@ pub(super) async fn authenticated_connection(
         .map_err(io::Error::other)?;
     let client_config = quinn::ClientConfig::new(Arc::new(client_crypto));
 
-    let mut endpoint = Endpoint::client("0.0.0.0:0".parse().unwrap())
-        .map_err(|err| io::Error::other(format!("hysteria2 endpoint: {err}")))?;
+    let runtime: Arc<dyn quinn::Runtime> = Arc::new(quinn::TokioRuntime);
+    let bind_addr = if server_addr.is_ipv6() {
+        "[::]:0"
+    } else {
+        "0.0.0.0:0"
+    };
+    let socket = UdpSocket::bind(bind_addr)?;
+    let abstract_socket = runtime.wrap_udp_socket(socket)?;
+    let abstract_socket = match (opts.obfs_type.as_deref(), opts.obfs_password.as_deref()) {
+        (Some("salamander"), Some(password)) => {
+            wrap_async_udp_socket_salamander(abstract_socket, password.as_bytes())
+                .map_err(io::Error::other)?
+        }
+        (Some("gecko"), Some(password)) => wrap_async_udp_socket_gecko(
+            abstract_socket,
+            password.as_bytes(),
+            opts.obfs_min_packet_size
+                .unwrap_or(GECKO_DEFAULT_MIN_PACKET_SIZE),
+            opts.obfs_max_packet_size
+                .unwrap_or(GECKO_DEFAULT_MAX_PACKET_SIZE),
+        )
+        .map_err(io::Error::other)?,
+        _ => abstract_socket,
+    };
+    let mut endpoint = Endpoint::new_with_abstract_socket(
+        quinn::EndpointConfig::default(),
+        None,
+        abstract_socket,
+        runtime,
+    )
+    .map_err(|err| io::Error::other(format!("hysteria2 endpoint: {err}")))?;
     endpoint.set_default_client_config(client_config);
     let conn = endpoint
         .connect(server_addr, &opts.server_name)
@@ -435,5 +538,51 @@ pub(super) fn target_authority(host: &str, port: u16) -> String {
         format!("[{host}]:{port}")
     } else {
         format!("{host}:{port}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Hysteria2PacketAssembly;
+
+    #[test]
+    fn hysteria2_packet_assembly_reassembles_out_of_order_fragments() {
+        let mut assembly = Hysteria2PacketAssembly::new(3).unwrap();
+        assembly
+            .insert(2, "example.com:53".into(), b"third".to_vec())
+            .unwrap();
+        assembly
+            .insert(0, "example.com:53".into(), b"first".to_vec())
+            .unwrap();
+        assert!(!assembly.is_complete());
+        assembly
+            .insert(1, "example.com:53".into(), b"second".to_vec())
+            .unwrap();
+        assert!(assembly.is_complete());
+
+        let (address, payload) = assembly.take_payload().unwrap();
+        assert_eq!(address, "example.com:53");
+        assert_eq!(payload, b"firstsecondthird");
+    }
+
+    #[test]
+    fn hysteria2_packet_assembly_rejects_invalid_fragment_index() {
+        let mut assembly = Hysteria2PacketAssembly::new(2).unwrap();
+        let err = assembly
+            .insert(2, "example.com:53".into(), b"payload".to_vec())
+            .unwrap_err();
+        assert!(err.to_string().contains("out of range"));
+    }
+
+    #[test]
+    fn hysteria2_packet_assembly_rejects_mismatched_addresses() {
+        let mut assembly = Hysteria2PacketAssembly::new(2).unwrap();
+        assembly
+            .insert(0, "example.com:53".into(), b"first".to_vec())
+            .unwrap();
+        let err = assembly
+            .insert(1, "other.example:53".into(), b"second".to_vec())
+            .unwrap_err();
+        assert!(err.to_string().contains("disagreed on target address"));
     }
 }

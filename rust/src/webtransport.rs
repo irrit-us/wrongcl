@@ -4,13 +4,13 @@ use std::pin::Pin;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::JoinHandle;
 
-use wtransport::config::{DnsLookupFuture, DnsResolver};
 use wtransport::Endpoint as WtEndpoint;
+use wtransport::config::{DnsLookupFuture, DnsResolver};
 
 use crate::client::{Tunnel, TunnelReader, TunnelWriter};
 use crate::endpoint::{TlsOptions, WebTransportOptions};
 use crate::error::{ClientError, Result};
-use crate::protocol::{encode_raw_vless_header, encode_udp_vless_header, Target};
+use crate::protocol::{Target, encode_raw_vless_header, encode_udp_vless_header};
 use crate::tls;
 
 pub fn connect_webtransport(

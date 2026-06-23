@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../../client_home_controller.dart';
@@ -116,7 +114,7 @@ class NetworkSettingsView extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              Text(_tunGuidance()),
+              Text(controller.tunGuidance),
             ],
           ),
           const SizedBox(height: 16),
@@ -158,18 +156,6 @@ class NetworkSettingsView extends StatelessWidget {
     );
   }
 
-  String _tunGuidance() {
-    if (Platform.isLinux) {
-      return 'Linux requires /dev/net/tun plus CAP_NET_ADMIN. wrongcl will not elevate privileges automatically.';
-    }
-    if (Platform.isWindows) {
-      return 'Windows will need a wintun-backed implementation before the TUN toggle can become active.';
-    }
-    if (Platform.isMacOS) {
-      return 'macOS will need a native utun-backed implementation before the TUN toggle can become active.';
-    }
-    return 'TUN setup is not implemented for this platform yet.';
-  }
 }
 
 class _Section extends StatelessWidget {

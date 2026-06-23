@@ -3,11 +3,11 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use crate::client::{connect_tcp, Tunnel, TunnelReader, TunnelWriter};
+use crate::client::{Tunnel, TunnelReader, TunnelWriter, connect_tcp};
 use crate::endpoint::{MeekOptions, OuterSecurity};
 use crate::error::{ClientError, Result};
 use crate::protocol::{
-    encode_raw_vless_header, encode_udp_vless_header, read_raw_vless_response, Target,
+    Target, encode_raw_vless_header, encode_udp_vless_header, read_raw_vless_response,
 };
 use crate::tls;
 

@@ -382,6 +382,7 @@ void main() {
       'enabled': false,
       'disabled_reason':
           'Needs privileges: CAP_NET_ADMIN is required for TUN setup.',
+      'platform': 'macos',
     };
     final controller = _buildController(client);
 
@@ -389,10 +390,12 @@ void main() {
 
     expect(controller.tunAvailability.supported, isFalse);
     expect(controller.tunAvailability.enabled, isFalse);
+    expect(controller.tunAvailability.platform, 'macos');
     expect(
       controller.tunAvailability.disabledReason,
       'Needs privileges: CAP_NET_ADMIN is required for TUN setup.',
     );
+    expect(controller.tunGuidance, contains('planned host path'));
   });
 
   test('applyRawConfigEditorJson updates the current draft', () async {
@@ -438,6 +441,148 @@ void main() {
     final config = controller.buildConfig();
     expect(config.allowSocks, isFalse);
     expect(config.allowHttp, isTrue);
+  });
+
+  test(
+    'completeWrongsvImport validates the completed draft after filling missing fields',
+    () async {
+      final client = _ConnectionsTestClient();
+      client.wrongsvAdaptResponse = const NativeResponse(
+        ok: true,
+        message: 'adapted',
+        data: {
+          'report': {
+            'active_profile': 'reality',
+            'listen': '127.0.0.1',
+            'listen_port': 1080,
+            'payload_networks': ['tcp'],
+            'base_carriers': ['vless'],
+            'active_support': 'partial',
+            'active_reason': 'missing client-only fields',
+            'missing_fields': [
+              {
+                'field': 'reality.public-key',
+                'reason': 'client-only field required',
+              },
+            ],
+            'profiles': [],
+          },
+          'draft_config': {
+            'local-host': '127.0.0.1',
+            'local-port': 1080,
+            'allow-socks': true,
+            'allow-http': true,
+            'endpoints': [
+              {
+                'name': 'default',
+                'enabled': true,
+                'group': null,
+                'host': 'server.example',
+                'port': 443,
+                'proxy': {
+                  'type': 'vless',
+                  'uuid': '11111111-1111-1111-1111-111111111111',
+                  'flow': '',
+                },
+                'transport': {'type': 'raw'},
+                'outer-security': {
+                  'type': 'reality',
+                  'server-name': 'example.com',
+                },
+              },
+            ],
+            'groups': [],
+            'router': {'rules': []},
+            'active-mode': 'global',
+            'modes': [
+              {'name': 'global', 'kind': 'global'},
+            ],
+          },
+          'stack_summary': 'VLESS -> REALITY -> TCP',
+        },
+      );
+      client.validateResponse = const NativeResponse(
+        ok: true,
+        message: 'valid',
+        data: {'stack': 'VLESS -> REALITY -> TCP'},
+      );
+      final controller = _buildController(client);
+
+      await controller.adaptWrongsv();
+      controller.realityPublicKey.text = 'pubkey-from-user';
+      await controller.completeWrongsvImport();
+
+      expect(client.lastValidatedConfig, isNotNull);
+      final endpoint = client.lastValidatedConfig!.endpoints.first;
+      expect(endpoint.endpoint.outerSecurity['public-key'], 'pubkey-from-user');
+      expect(
+        controller.profilesStatus,
+        'Completed wrongsv import fields and validated the current draft',
+      );
+      expect(controller.stackSummary, 'VLESS -> REALITY -> TCP');
+    },
+  );
+
+  test('completeWrongsvImport rejects unresolved missing fields', () async {
+    final client = _ConnectionsTestClient();
+    client.wrongsvAdaptResponse = const NativeResponse(
+      ok: true,
+      message: 'adapted',
+      data: {
+        'report': {
+          'active_profile': 'trojan',
+          'listen': '127.0.0.1',
+          'listen_port': 1080,
+          'payload_networks': ['tcp'],
+          'base_carriers': ['trojan'],
+          'active_support': 'partial',
+          'active_reason': 'missing client-only fields',
+          'missing_fields': [
+            {
+              'field': 'trojan.password',
+              'reason': 'client-only field required',
+            },
+          ],
+          'profiles': [],
+        },
+        'draft_config': {
+          'local-host': '127.0.0.1',
+          'local-port': 1080,
+          'allow-socks': true,
+          'allow-http': true,
+          'endpoints': [
+            {
+              'name': 'default',
+              'enabled': true,
+              'group': null,
+              'host': 'server.example',
+              'port': 443,
+              'proxy': {'type': 'trojan', 'password': ''},
+              'transport': {'type': 'raw'},
+              'outer-security': {'type': 'tls', 'server-name': 'example.com'},
+            },
+          ],
+          'groups': [],
+          'router': {'rules': []},
+          'active-mode': 'global',
+          'modes': [
+            {'name': 'global', 'kind': 'global'},
+          ],
+        },
+        'stack_summary': 'Trojan -> TLS -> TCP',
+      },
+    );
+    final controller = _buildController(client);
+
+    await controller.adaptWrongsv();
+    await controller.completeWrongsvImport();
+
+    expect(client.lastValidatedConfig, isNull);
+    expect(controller.lastResponse?.ok, isFalse);
+    expect(
+      controller.lastResponse?.message,
+      contains('Fill required fields before completing the import'),
+    );
   });
 }
 
@@ -721,6 +866,7 @@ class _ConnectionsTestClient implements WrongclClient {
   int closeMatchingCount = 0;
   Map<String, Object?>? lastCloseMatchingFilter;
   ClientConfigInput? lastStartConfig;
+  ClientConfigInput? lastValidatedConfig;
   Map<String, Object?> dnsSettings = const {
     'backend': {'kind': 'system'},
   };
@@ -729,6 +875,13 @@ class _ConnectionsTestClient implements WrongclClient {
     'enabled': false,
     'disabled_reason': 'TUN driver lands in Phase 7 of PLAN.md',
   };
+  NativeResponse validateResponse = const NativeResponse(
+    ok: true,
+    message: 'valid',
+    data: {},
+  );
+  NativeResponse? wrongsvInspectResponse;
+  NativeResponse? wrongsvAdaptResponse;
 
   @override
   NativeResponse version() => const NativeResponse(
@@ -765,8 +918,10 @@ class _ConnectionsTestClient implements WrongclClient {
       const NativeResponse(ok: true, message: 'stack', data: {});
 
   @override
-  NativeResponse validateConfig(ClientConfigInput config) =>
-      const NativeResponse(ok: true, message: 'valid', data: {});
+  NativeResponse validateConfig(ClientConfigInput config) {
+    lastValidatedConfig = config;
+    return validateResponse;
+  }
 
   @override
   NativeResponse loadClientConfigFile(String path) =>
@@ -778,11 +933,11 @@ class _ConnectionsTestClient implements WrongclClient {
 
   @override
   NativeResponse inspectWrongsvConfig(String path) =>
-      throw UnimplementedError();
+      wrongsvInspectResponse ?? (throw UnimplementedError());
 
   @override
   NativeResponse adaptWrongsvConfig(WrongsvAdaptRequest request) =>
-      throw UnimplementedError();
+      wrongsvAdaptResponse ?? (throw UnimplementedError());
 
   @override
   NativeResponse connectionsList() {

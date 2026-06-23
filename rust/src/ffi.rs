@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::client::WrongsvClient;
 use crate::config::{ClientConfig, Mode};
@@ -11,7 +11,7 @@ use crate::error::{ClientError, Result};
 use crate::logs::{global_ring, install_global as install_log_layer};
 use crate::manager::global_manager;
 use crate::protocol::Target;
-use crate::proxy::{global_request_log, ConnFilter};
+use crate::proxy::{ConnFilter, global_request_log};
 use crate::router::Script;
 use crate::tun;
 use crate::{adapt_wrongsv_config, inspect_wrongsv_config};
@@ -67,7 +67,7 @@ fn err(message: impl Into<String>) -> *mut c_char {
     }))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_native_version() -> *mut c_char {
     ok(
         "wrongcl native ready",
@@ -82,7 +82,7 @@ pub extern "C" fn wrongcl_native_version() -> *mut c_char {
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_start_proxy(
     server_host: *const c_char,
     server_port: u16,
@@ -97,7 +97,7 @@ pub extern "C" fn wrongcl_start_proxy(
     start_proxy_with_config(config)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_start_proxy_json(config_json: *const c_char) -> *mut c_char {
     let config = match parse_json_config(config_json) {
         Ok(config) => config,
@@ -123,7 +123,7 @@ fn start_proxy_with_config(config: ClientConfig) -> *mut c_char {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_stop_proxy() -> *mut c_char {
     match global_manager().stop_proxy() {
         Ok(snapshot) => ok("local proxy stopped", snapshot),
@@ -131,7 +131,7 @@ pub extern "C" fn wrongcl_stop_proxy() -> *mut c_char {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_proxy_status() -> *mut c_char {
     match global_manager().status() {
         Ok(snapshot) if snapshot.running => ok("local proxy is running", snapshot),
@@ -140,7 +140,7 @@ pub extern "C" fn wrongcl_proxy_status() -> *mut c_char {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_probe(
     server_host: *const c_char,
     server_port: u16,
@@ -164,7 +164,7 @@ pub extern "C" fn wrongcl_probe(
     probe_with_config(config, target_host, target_port, payload)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_probe_json(
     config_json: *const c_char,
     target_host: *const c_char,
@@ -217,7 +217,7 @@ fn probe_with_config(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_stack_summary_json(config_json: *const c_char) -> *mut c_char {
     let config = match parse_json_config(config_json) {
         Ok(config) => config,
@@ -238,7 +238,7 @@ pub extern "C" fn wrongcl_stack_summary_json(config_json: *const c_char) -> *mut
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_validate_config_json(config_json: *const c_char) -> *mut c_char {
     let config = match parse_json_config(config_json) {
         Ok(config) => config,
@@ -264,7 +264,7 @@ pub extern "C" fn wrongcl_validate_config_json(config_json: *const c_char) -> *m
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_load_config_file_json(config_path: *const c_char) -> *mut c_char {
     let path = match c_string_arg(config_path, "config path") {
         Ok(path) => path,
@@ -295,7 +295,7 @@ pub extern "C" fn wrongcl_load_config_file_json(config_path: *const c_char) -> *
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_export_config_toml_json(config_json: *const c_char) -> *mut c_char {
     let config = match parse_json_config(config_json) {
         Ok(config) => config,
@@ -312,7 +312,7 @@ pub extern "C" fn wrongcl_export_config_toml_json(config_json: *const c_char) ->
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_capabilities_json(wrongsv_config_path: *const c_char) -> *mut c_char {
     let path = match c_string_arg(wrongsv_config_path, "wrongsv config path") {
         Ok(path) => path,
@@ -324,7 +324,7 @@ pub extern "C" fn wrongcl_capabilities_json(wrongsv_config_path: *const c_char) 
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_adapt_wrongsv_config_json(
     wrongsv_config_path: *const c_char,
     server_host: *const c_char,
@@ -349,7 +349,7 @@ pub extern "C" fn wrongcl_adapt_wrongsv_config_json(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_connections_list_json() -> *mut c_char {
     match global_manager().connections_snapshot() {
         Ok(Some(snap)) => ok(
@@ -378,7 +378,7 @@ pub extern "C" fn wrongcl_connections_list_json() -> *mut c_char {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_connection_close(id: u64) -> *mut c_char {
     match global_manager().close_connection(id) {
         Ok(true) => ok(
@@ -390,7 +390,7 @@ pub extern "C" fn wrongcl_connection_close(id: u64) -> *mut c_char {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_connections_close_matching(filter_json: *const c_char) -> *mut c_char {
     let filter = if filter_json.is_null() {
         ConnFilter::default()
@@ -410,7 +410,7 @@ pub extern "C" fn wrongcl_connections_close_matching(filter_json: *const c_char)
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_logs_since(cursor: u64) -> *mut c_char {
     install_log_layer();
     let ring = global_ring();
@@ -425,7 +425,7 @@ pub extern "C" fn wrongcl_logs_since(cursor: u64) -> *mut c_char {
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_requests_since(cursor: u64) -> *mut c_char {
     let log = global_request_log();
     let (entries, next_cursor) = log.since(cursor);
@@ -440,7 +440,7 @@ pub extern "C" fn wrongcl_requests_since(cursor: u64) -> *mut c_char {
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_proxy_groups_json() -> *mut c_char {
     match global_manager().proxy_groups_snapshot() {
         Ok(Some(snapshot)) => ok("proxy groups snapshot", snapshot),
@@ -456,7 +456,7 @@ pub extern "C" fn wrongcl_proxy_groups_json() -> *mut c_char {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_proxy_group_select(
     group: *const c_char,
     member: *const c_char,
@@ -478,7 +478,7 @@ pub extern "C" fn wrongcl_proxy_group_select(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_dns_settings_json() -> *mut c_char {
     match global_manager().dns_settings_snapshot() {
         Ok(Some(snapshot)) => ok("dns settings snapshot", snapshot),
@@ -487,7 +487,7 @@ pub extern "C" fn wrongcl_dns_settings_json() -> *mut c_char {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_dns_settings_set_json(settings_json: *const c_char) -> *mut c_char {
     let text = match c_string_arg(settings_json, "dns settings JSON") {
         Ok(value) => value,
@@ -503,12 +503,12 @@ pub extern "C" fn wrongcl_dns_settings_set_json(settings_json: *const c_char) ->
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_tun_status_json() -> *mut c_char {
     ok("TUN status snapshot", json!(tun::current_status()))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_tun_enable_json(config_json: *const c_char) -> *mut c_char {
     let config_json = match c_string_arg(config_json, "tun config JSON") {
         Ok(value) => value,
@@ -520,12 +520,12 @@ pub extern "C" fn wrongcl_tun_enable_json(config_json: *const c_char) -> *mut c_
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_tun_disable() -> *mut c_char {
     ok("TUN disabled", json!(tun::disable()))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_router_snapshot_json() -> *mut c_char {
     match global_manager().router_snapshot() {
         Ok(Some(snapshot)) => ok("router snapshot", snapshot),
@@ -541,7 +541,7 @@ pub extern "C" fn wrongcl_router_snapshot_json() -> *mut c_char {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_router_set_active_mode(name: *const c_char) -> *mut c_char {
     let name = match c_string_arg(name, "mode name") {
         Ok(value) => value,
@@ -553,7 +553,7 @@ pub extern "C" fn wrongcl_router_set_active_mode(name: *const c_char) -> *mut c_
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_router_set_script_json(script_json: *const c_char) -> *mut c_char {
     let text = match c_string_arg(script_json, "script JSON") {
         Ok(value) => value,
@@ -570,7 +570,7 @@ pub extern "C" fn wrongcl_router_set_script_json(script_json: *const c_char) -> 
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_router_remove_script(name: *const c_char) -> *mut c_char {
     let name = match c_string_arg(name, "script name") {
         Ok(value) => value,
@@ -582,7 +582,7 @@ pub extern "C" fn wrongcl_router_remove_script(name: *const c_char) -> *mut c_ch
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_router_upsert_user_mode_json(mode_json: *const c_char) -> *mut c_char {
     let text = match c_string_arg(mode_json, "mode JSON") {
         Ok(value) => value,
@@ -599,7 +599,7 @@ pub extern "C" fn wrongcl_router_upsert_user_mode_json(mode_json: *const c_char)
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_router_remove_user_mode(name: *const c_char) -> *mut c_char {
     let name = match c_string_arg(name, "mode name") {
         Ok(value) => value,
@@ -611,7 +611,7 @@ pub extern "C" fn wrongcl_router_remove_user_mode(name: *const c_char) -> *mut c
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// # Safety
 ///
 /// `ptr` must be a pointer previously returned by one of this library's

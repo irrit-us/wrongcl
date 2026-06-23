@@ -13,11 +13,11 @@ mod codec;
 mod session;
 
 use codec::{
-    fragment_tuic_payload, parse_tuic_datagram_command, target_authority, TuicCommand,
-    TuicPacketAssembly,
+    TuicCommand, TuicPacketAssembly, fragment_tuic_payload, parse_tuic_datagram_command,
+    target_authority,
 };
 use session::{
-    authenticated_connection, write_tuic_connect_request, TuicDatagramSession, TuicTunnel,
+    TuicDatagramSession, TuicTunnel, authenticated_connection, write_tuic_connect_request,
 };
 
 pub fn connect_tuic(

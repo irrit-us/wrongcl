@@ -2,14 +2,18 @@
 use std::env;
 #[cfg(target_os = "linux")]
 use std::fs;
-#[cfg(target_os = "linux")]
+#[cfg(target_os = "windows")]
+use std::path::Path;
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 use std::path::PathBuf;
-#[cfg(target_os = "linux")]
+#[cfg(target_os = "windows")]
 use std::process::Command;
 #[cfg(target_os = "linux")]
+use std::process::Command;
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 use std::sync::{Mutex, OnceLock};
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -17,14 +21,18 @@ use crate::error::{ClientError, Result};
 
 #[cfg(target_os = "linux")]
 mod linux_runtime;
+#[cfg(target_os = "macos")]
+mod macos_runtime;
+#[cfg(target_os = "windows")]
+mod windows_runtime;
 
 #[cfg(target_os = "linux")]
 const CAP_NET_ADMIN_BIT: u32 = 12;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 const DEFAULT_TUN_NAME: &str = "wrongcl-tun0";
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 const DEFAULT_TUN_MTU: u32 = 1400;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 const DEFAULT_TUN_CIDR: &str = "198.18.0.1/15";
 #[cfg(target_os = "linux")]
 const ENV_TUN_DEVICE: &str = "WRONGCL_TUN_DEVICE";
@@ -32,6 +40,12 @@ const ENV_TUN_DEVICE: &str = "WRONGCL_TUN_DEVICE";
 const ENV_IP_BIN: &str = "WRONGCL_IP_BIN";
 #[cfg(target_os = "linux")]
 const ENV_FORCE_CAP: &str = "WRONGCL_FORCE_CAP_NET_ADMIN";
+#[cfg(target_os = "windows")]
+const WINDOWS_TUN_SERVICE_NAME: &str = "wintun";
+#[cfg(target_os = "windows")]
+const WINDOWS_TUN_DLL_NAME: &str = "wintun.dll";
+#[cfg(target_os = "windows")]
+const ENV_WINTUN_DLL: &str = "WRONGCL_WINTUN_DLL";
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct TunStatus {
@@ -44,6 +58,7 @@ pub struct TunStatus {
 }
 
 impl TunStatus {
+    #[cfg(not(target_os = "windows"))]
     fn unsupported(
         platform: &'static str,
         disabled_reason: impl Into<String>,
@@ -84,7 +99,8 @@ impl TunStatus {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 #[derive(Clone, Debug, Deserialize)]
 struct TunEnableConfig {
     #[serde(default = "default_tun_name")]
@@ -101,27 +117,27 @@ struct TunEnableConfig {
     proxy_port: u16,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 fn default_tun_name() -> String {
     DEFAULT_TUN_NAME.to_string()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 fn default_tun_mtu() -> u32 {
     DEFAULT_TUN_MTU
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 fn default_tun_cidr() -> String {
     DEFAULT_TUN_CIDR.to_string()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 fn default_proxy_host() -> String {
     "127.0.0.1".to_string()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 fn default_proxy_port() -> u16 {
     1080
 }
@@ -139,6 +155,19 @@ fn tun_state() -> &'static Mutex<TunState> {
     STATE.get_or_init(|| Mutex::new(TunState::default()))
 }
 
+#[cfg(target_os = "windows")]
+#[derive(Default)]
+struct TunState {
+    interface_name: Option<String>,
+    runtime: Option<windows_runtime::WindowsTunRuntimeHandle>,
+}
+
+#[cfg(target_os = "windows")]
+fn tun_state() -> &'static Mutex<TunState> {
+    static STATE: OnceLock<Mutex<TunState>> = OnceLock::new();
+    STATE.get_or_init(|| Mutex::new(TunState::default()))
+}
+
 #[cfg(target_os = "linux")]
 pub fn current_status() -> TunStatus {
     linux_status()
@@ -146,20 +175,12 @@ pub fn current_status() -> TunStatus {
 
 #[cfg(target_os = "windows")]
 pub fn current_status() -> TunStatus {
-    TunStatus::unsupported(
-        "windows",
-        "Windows TUN backend is not implemented in wrongcl yet.",
-        false,
-    )
+    windows_status()
 }
 
 #[cfg(target_os = "macos")]
 pub fn current_status() -> TunStatus {
-    TunStatus::unsupported(
-        "macos",
-        "macOS TUN backend is not implemented in wrongcl yet.",
-        false,
-    )
+    macos_status()
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
@@ -176,7 +197,17 @@ pub fn enable(config_json: &str) -> Result<TunStatus> {
     linux_enable(config_json)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
+pub fn enable(config_json: &str) -> Result<TunStatus> {
+    windows_enable(config_json)
+}
+
+#[cfg(target_os = "macos")]
+pub fn enable(config_json: &str) -> Result<TunStatus> {
+    macos_enable(config_json)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
 pub fn enable(_config_json: &str) -> Result<TunStatus> {
     Err(ClientError::Config(current_status().disabled_reason))
 }
@@ -186,9 +217,40 @@ pub fn disable() -> TunStatus {
     linux_disable()
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
+pub fn disable() -> TunStatus {
+    windows_disable()
+}
+
+#[cfg(target_os = "macos")]
+pub fn disable() -> TunStatus {
+    macos_disable()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
 pub fn disable() -> TunStatus {
     current_status()
+}
+
+#[cfg(target_os = "macos")]
+fn macos_status() -> TunStatus {
+    TunStatus::unsupported(
+        "macos",
+        "macOS TUN host wiring is planned but not implemented in wrongcl yet. Finish the native utun path and validate it on a real macOS host before enabling this control.",
+        false,
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn macos_enable(config_json: &str) -> Result<TunStatus> {
+    let config = parse_enable_config(config_json)?;
+    let _ = macos_runtime::MacosTunRuntimeHandle::start(config)?;
+    Ok(macos_status())
+}
+
+#[cfg(target_os = "macos")]
+fn macos_disable() -> TunStatus {
+    macos_status()
 }
 
 #[cfg(target_os = "linux")]
@@ -236,6 +298,59 @@ fn linux_status() -> TunStatus {
         "linux",
         "Linux TUN interface setup is available, but the routed dataplane is not attached yet.",
     )
+}
+
+#[cfg(target_os = "windows")]
+fn windows_status() -> TunStatus {
+    if runtime_running_windows() {
+        return TunStatus {
+            supported: true,
+            enabled: true,
+            disabled_reason: "Windows TUN interface and routed bridge are active.".into(),
+            needs_privileges: false,
+            preparable: true,
+            platform: "windows",
+        };
+    }
+
+    let dll_present = windows_wintun_dll_path().is_some();
+    let driver_present = windows_wintun_service_present().unwrap_or(false);
+    let is_admin = windows_is_elevated().unwrap_or(false);
+
+    let (supported, disabled_reason, needs_privileges, preparable) =
+        windows_tun_readiness(dll_present, driver_present, is_admin);
+
+    TunStatus {
+        supported,
+        enabled: false,
+        disabled_reason,
+        needs_privileges,
+        preparable,
+        platform: "windows",
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_enable(config_json: &str) -> Result<TunStatus> {
+    let config = parse_enable_config(config_json)?;
+    let status = windows_status();
+    if status.enabled {
+        return Ok(status);
+    }
+    if !status.supported || status.needs_privileges {
+        return Err(ClientError::Config(status.disabled_reason));
+    }
+
+    let runtime = windows_runtime::WindowsTunRuntimeHandle::start(config)?;
+    let interface_name = runtime.interface_name().to_string();
+    set_tun_state_windows(interface_name, runtime);
+    Ok(windows_status())
+}
+
+#[cfg(target_os = "windows")]
+fn windows_disable() -> TunStatus {
+    clear_current_interface_name_windows();
+    windows_status()
 }
 
 #[cfg(target_os = "linux")]
@@ -317,7 +432,7 @@ fn linux_disable() -> TunStatus {
     linux_status()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 fn parse_enable_config(config_json: &str) -> Result<TunEnableConfig> {
     if config_json.trim().is_empty() || config_json.trim() == "{}" {
         return Ok(TunEnableConfig {
@@ -421,6 +536,186 @@ fn terminate_runtime_linux() {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn windows_tun_readiness(
+    dll_present: bool,
+    driver_present: bool,
+    is_admin: bool,
+) -> (bool, String, bool, bool) {
+    if !dll_present && !driver_present {
+        return (
+            false,
+            "Windows TUN prerequisites are incomplete: `wintun.dll` was not found and the Wintun driver service is not installed.".into(),
+            false,
+            false,
+        );
+    }
+    if !dll_present {
+        return (
+            false,
+            "Windows TUN is blocked: `wintun.dll` was not found near the app or in the current workspace.".into(),
+            false,
+            false,
+        );
+    }
+    if !driver_present {
+        return (
+            false,
+            "Windows TUN is blocked: the Wintun driver service is not installed or not visible to the current host.".into(),
+            false,
+            false,
+        );
+    }
+    if !is_admin {
+        return (
+            false,
+            "Needs privileges: run wrongcl with Administrator rights before preparing the Windows TUN interface.".into(),
+            true,
+            false,
+        );
+    }
+    (
+        true,
+        "Windows TUN runtime is ready to start on this host.".into(),
+        false,
+        true,
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn set_tun_state_windows(name: String, runtime: windows_runtime::WindowsTunRuntimeHandle) {
+    if let Ok(mut guard) = tun_state().lock() {
+        guard.interface_name = Some(name);
+        guard.runtime = Some(runtime);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn clear_current_interface_name_windows() {
+    if let Ok(mut guard) = tun_state().lock() {
+        guard.interface_name = None;
+        if let Some(mut runtime) = guard.runtime.take() {
+            runtime.stop();
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn runtime_running_windows() -> bool {
+    let Ok(guard) = tun_state().lock() else {
+        return false;
+    };
+    guard
+        .runtime
+        .as_ref()
+        .is_some_and(|runtime| runtime.is_running())
+}
+
+#[cfg(target_os = "windows")]
+fn windows_wintun_dll_path() -> Option<PathBuf> {
+    windows_wintun_candidate_paths()
+        .into_iter()
+        .find(|path| path.exists())
+}
+
+#[cfg(target_os = "windows")]
+fn windows_wintun_candidate_paths() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(path) = std::env::var(ENV_WINTUN_DLL) {
+        if !path.trim().is_empty() {
+            candidates.push(PathBuf::from(path));
+        }
+    }
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(dir) = exe_path.parent() {
+            candidates.push(dir.join(WINDOWS_TUN_DLL_NAME));
+        }
+    }
+    if let Ok(current_dir) = std::env::current_dir() {
+        candidates.push(current_dir.join(WINDOWS_TUN_DLL_NAME));
+        candidates.push(current_dir.join("windows").join(WINDOWS_TUN_DLL_NAME));
+        candidates.push(current_dir.join("runner").join(WINDOWS_TUN_DLL_NAME));
+    }
+    dedupe_paths(candidates)
+}
+
+#[cfg(target_os = "windows")]
+fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut deduped: Vec<PathBuf> = Vec::new();
+    for path in paths {
+        if !deduped.iter().any(|candidate| same_path(candidate, &path)) {
+            deduped.push(path);
+        }
+    }
+    deduped
+}
+
+#[cfg(target_os = "windows")]
+fn same_path(left: &Path, right: &Path) -> bool {
+    left.to_string_lossy()
+        .eq_ignore_ascii_case(&right.to_string_lossy())
+}
+
+#[cfg(target_os = "windows")]
+fn windows_wintun_service_present() -> Result<bool> {
+    let output = Command::new("sc.exe")
+        .args(["query", WINDOWS_TUN_SERVICE_NAME])
+        .output();
+    let output = output
+        .map_err(|error| ClientError::Io(std::io::Error::new(error.kind(), error.to_string())))?;
+    Ok(parse_windows_sc_query_service_present(
+        &String::from_utf8_lossy(&output.stdout),
+        &String::from_utf8_lossy(&output.stderr),
+    ))
+}
+
+#[cfg(target_os = "windows")]
+fn parse_windows_sc_query_service_present(stdout: &str, stderr: &str) -> bool {
+    let stdout_lower = stdout.to_ascii_lowercase();
+    if stdout_lower.contains("service_name:") || stdout_lower.contains("state") {
+        return true;
+    }
+    let stderr_lower = stderr.to_ascii_lowercase();
+    !stderr_lower.contains("does not exist")
+        && !stderr_lower.contains("openservice failed 1060")
+        && !stdout_lower.contains("does not exist")
+        && !stdout_lower.contains("openservice failed 1060")
+}
+
+#[cfg(target_os = "windows")]
+fn windows_is_elevated() -> Result<bool> {
+    let output = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)",
+        ])
+        .output();
+    let output = output
+        .map_err(|error| ClientError::Io(std::io::Error::new(error.kind(), error.to_string())))?;
+    Ok(parse_windows_admin_check_output(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
+}
+
+#[cfg(target_os = "windows")]
+fn parse_windows_admin_check_output(output: &str) -> bool {
+    output
+        .lines()
+        .find_map(|line| {
+            let value = line.trim();
+            if value.eq_ignore_ascii_case("true") {
+                Some(true)
+            } else if value.eq_ignore_ascii_case("false") {
+                Some(false)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(false)
+}
+
 #[cfg(target_os = "linux")]
 fn read_linux_cap_net_admin() -> Result<bool> {
     if let Ok(value) = env::var(ENV_FORCE_CAP) {
@@ -461,6 +756,60 @@ mod tests {
         fn parses_missing_cap_net_admin_from_proc_status() {
             let status = "Name:\twrongcl\nCapEff:\t0000000000000000\n";
             assert_eq!(parse_cap_net_admin_from_proc_status(status), Some(false));
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    mod windows {
+        use super::*;
+
+        #[test]
+        fn parses_windows_admin_check_output() {
+            assert!(parse_windows_admin_check_output("True\r\n"));
+            assert!(!parse_windows_admin_check_output("False\r\n"));
+            assert!(!parse_windows_admin_check_output("unexpected\r\n"));
+        }
+
+        #[test]
+        fn parses_windows_sc_query_missing_service() {
+            let stderr = "[SC] OpenService FAILED 1060:\r\nThe specified service does not exist as an installed service.\r\n";
+            assert!(!parse_windows_sc_query_service_present("", stderr));
+        }
+
+        #[test]
+        fn parses_windows_sc_query_present_service() {
+            let stdout = "SERVICE_NAME: wintun\r\n        TYPE               : 1  KERNEL_DRIVER\r\n        STATE              : 4  RUNNING\r\n";
+            assert!(parse_windows_sc_query_service_present(stdout, ""));
+        }
+
+        #[test]
+        fn windows_tun_readiness_reports_missing_prerequisites() {
+            let (supported, message, needs_privileges, preparable) =
+                windows_tun_readiness(false, false, false);
+            assert!(!supported);
+            assert!(message.contains("prerequisites are incomplete"));
+            assert!(!needs_privileges);
+            assert!(!preparable);
+        }
+
+        #[test]
+        fn windows_tun_readiness_reports_admin_requirement() {
+            let (supported, message, needs_privileges, preparable) =
+                windows_tun_readiness(true, true, false);
+            assert!(!supported);
+            assert!(message.contains("Administrator rights"));
+            assert!(needs_privileges);
+            assert!(!preparable);
+        }
+
+        #[test]
+        fn windows_tun_readiness_marks_ready_host_as_prepairable() {
+            let (supported, message, needs_privileges, preparable) =
+                windows_tun_readiness(true, true, true);
+            assert!(supported);
+            assert!(message.contains("ready to start"));
+            assert!(!needs_privileges);
+            assert!(preparable);
         }
     }
 }

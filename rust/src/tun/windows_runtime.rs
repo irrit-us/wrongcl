@@ -1,17 +1,18 @@
 use std::collections::{HashSet, VecDeque};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::os::windows::process::CommandExt;
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc as std_mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use bytes::{Bytes, BytesMut};
-use ipnet::IpNet;
+use ipnet::{IpNet, Ipv4Net};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream as TokioTcpStream, UdpSocket as TokioUdpSocket};
 use tokio::runtime::Builder;
 use tokio::sync::{Notify, mpsc, oneshot, watch};
-use tokio_tun::Tun;
 use tracing::{debug, error, warn};
 use ts_netstack_smoltcp_core as netcore;
 use ts_netstack_smoltcp_core::smoltcp::{
@@ -24,20 +25,29 @@ use ts_netstack_smoltcp_core::smoltcp::{
 use ts_netstack_smoltcp_core::{HasChannel, Netstack, NetstackControl};
 use ts_netstack_smoltcp_socket as netsock;
 use ts_netstack_smoltcp_socket::CreateSocket;
+use tun_rs::{AsyncDevice, DeviceBuilder};
 
 use super::TunEnableConfig;
 use crate::error::{ClientError, Result};
 
 const IDLE_SLEEP: Duration = Duration::from_millis(100);
 const MAX_PACKET: usize = 65_536;
+const DEFAULT_ROUTE_METRIC: u32 = 6;
+const DEFAULT_RING_CAPACITY: u32 = 0x20_0000;
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-pub(super) struct LinuxTunRuntimeHandle {
+type StartupResult = std::result::Result<(String, u32, Vec<String>), String>;
+
+pub(super) struct WindowsTunRuntimeHandle {
     running: Arc<AtomicBool>,
     shutdown: Option<watch::Sender<bool>>,
     thread: Option<JoinHandle<()>>,
+    interface_name: String,
+    if_index: u32,
+    routes: Vec<String>,
 }
 
-impl LinuxTunRuntimeHandle {
+impl WindowsTunRuntimeHandle {
     pub(super) fn start(config: TunEnableConfig) -> Result<Self> {
         let (startup_tx, startup_rx) = std_mpsc::channel();
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -49,19 +59,22 @@ impl LinuxTunRuntimeHandle {
             let result = Builder::new_multi_thread()
                 .enable_all()
                 .build()
-                .map_err(|error| ClientError::Config(format!("build Linux TUN runtime: {error}")))
+                .map_err(|error| ClientError::Config(format!("build Windows TUN runtime: {error}")))
                 .and_then(|runtime| runtime.block_on(run(config, shutdown_rx, startup_tx)));
             if let Err(error) = result {
-                error!("Linux TUN runtime exited: {error}");
+                error!("Windows TUN runtime exited: {error}");
             }
             thread_running.store(false, Ordering::SeqCst);
         });
 
-        match startup_rx.recv_timeout(Duration::from_secs(3)) {
-            Ok(Ok(())) => Ok(Self {
+        match startup_rx.recv_timeout(Duration::from_secs(5)) {
+            Ok(Ok((interface_name, if_index, routes))) => Ok(Self {
                 running,
                 shutdown: Some(shutdown_tx),
                 thread: Some(thread),
+                interface_name,
+                if_index,
+                routes,
             }),
             Ok(Err(message)) => {
                 let _ = shutdown_tx.send(true);
@@ -72,10 +85,14 @@ impl LinuxTunRuntimeHandle {
                 let _ = shutdown_tx.send(true);
                 let _ = thread.join();
                 Err(ClientError::Config(
-                    "timed out waiting for Linux TUN runtime startup".into(),
+                    "timed out waiting for Windows TUN runtime startup".into(),
                 ))
             }
         }
+    }
+
+    pub(super) fn interface_name(&self) -> &str {
+        &self.interface_name
     }
 
     pub(super) fn is_running(&self) -> bool {
@@ -89,11 +106,14 @@ impl LinuxTunRuntimeHandle {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
+        for route in &self.routes {
+            let _ = remove_windows_route(route, self.if_index);
+        }
         self.running.store(false, Ordering::SeqCst);
     }
 }
 
-impl Drop for LinuxTunRuntimeHandle {
+impl Drop for WindowsTunRuntimeHandle {
     fn drop(&mut self) {
         self.stop();
     }
@@ -208,7 +228,7 @@ impl stack_smoltcp::phy::TxToken for TxToken {
         let mut buffer = vec![0u8; len];
         let result = f(&mut buffer);
         if self.outbound.send(buffer).is_err() {
-            warn!("failed to enqueue outbound TUN packet");
+            warn!("failed to enqueue outbound Windows TUN packet");
         }
         result
     }
@@ -316,10 +336,11 @@ fn classify_packet(packet: &[u8], routes: &RouteSet) -> Option<PacketEnsure> {
 async fn run(
     config: TunEnableConfig,
     shutdown_rx: watch::Receiver<bool>,
-    startup_tx: Option<std_mpsc::Sender<std::result::Result<(), String>>>,
+    startup_tx: Option<std_mpsc::Sender<StartupResult>>,
 ) -> Result<()> {
     let route_set = RouteSet::parse(&config.routes)?;
     let stack_ip = parse_stack_ip(&config.address_cidr)?;
+    let (tun_ip, tun_prefix) = parse_windows_ipv4_cidr(&config.address_cidr)?;
     let proxy_addr = SocketAddr::new(
         config
             .proxy_host
@@ -328,23 +349,30 @@ async fn run(
         config.proxy_port,
     );
 
+    let wintun_file = super::windows_wintun_dll_path()
+        .ok_or_else(|| ClientError::Config("wintun.dll path was not resolved".into()))?;
     let tun = Arc::new(
-        tokio_tun::Tun::builder()
-            .name(&config.interface_name)
-            .mtu(config.mtu as i32)
-            .build()
-            .map_err(|error| {
-                ClientError::Config(format!(
-                    "open Linux TUN interface {}: {error}",
-                    config.interface_name
-                ))
-            })?
-            .into_iter()
-            .next()
-            .ok_or_else(|| {
-                ClientError::Config("tokio-tun did not return a Linux TUN handle".into())
-            })?,
+        DeviceBuilder::new()
+            .name(config.interface_name.clone())
+            .description("wrongcl TUN")
+            .mtu(config.mtu as u16)
+            .metric(5)
+            .ring_capacity(DEFAULT_RING_CAPACITY)
+            .wintun_file(wintun_file.to_string_lossy().to_string())
+            .ipv4(tun_ip, tun_prefix, None)
+            .build_async()
+            .map_err(|error| ClientError::Config(format!("open Windows TUN interface: {error}")))?,
     );
+    let interface_name = tun.name().map_err(|error| {
+        ClientError::Config(format!("read Windows TUN interface name: {error}"))
+    })?;
+    let if_index = tun.if_index().map_err(|error| {
+        ClientError::Config(format!("read Windows TUN interface index: {error}"))
+    })?;
+
+    for route in &config.routes {
+        add_windows_route(route, if_index)?;
+    }
 
     let netstack_config = netcore::Config {
         mtu: config.mtu as usize,
@@ -353,7 +381,7 @@ async fn run(
     let mut netstack = Netstack::new(netstack_config, stack_smoltcp::time::Instant::ZERO);
     if !netstack.direct_set_ips([stack_ip]) {
         return Err(ClientError::Config(
-            "smoltcp could not store the initial Linux TUN address".into(),
+            "smoltcp could not store the initial Windows TUN address".into(),
         ));
     }
     let channel = netstack.command_channel();
@@ -400,7 +428,7 @@ async fn run(
     });
 
     if let Some(startup_tx) = startup_tx {
-        let _ = startup_tx.send(Ok(()));
+        let _ = startup_tx.send(Ok((interface_name, if_index, config.routes.clone())));
     }
 
     let result = tokio::select! {
@@ -409,9 +437,9 @@ async fn run(
             Ok(())
         }
         Some(error) = driver_error_rx.recv() => Err(ClientError::Config(error)),
-        result = &mut manager => join_task("Linux TUN manager", result),
-        result = &mut reader => join_task("Linux TUN reader", result),
-        result = &mut writer => join_task("Linux TUN writer", result),
+        result = &mut manager => join_task("Windows TUN manager", result),
+        result = &mut reader => join_task("Windows TUN reader", result),
+        result = &mut writer => join_task("Windows TUN writer", result),
     };
 
     driver.abort();
@@ -507,7 +535,7 @@ async fn run_manager_loop(
 }
 
 async fn run_reader_loop(
-    tun: Arc<Tun>,
+    tun: Arc<AsyncDevice>,
     routes: RouteSet,
     ensure_tx: mpsc::UnboundedSender<EnsureRequest>,
     feed: DeviceFeed,
@@ -530,7 +558,8 @@ async fn run_reader_loop(
                 continue;
             }
             result = tun.recv(&mut buffer) => result,
-        }?;
+        }
+        .map_err(wrap_tun_io)?;
 
         let packet = Bytes::copy_from_slice(&buffer[..read]);
         match classify_packet(&packet, &routes) {
@@ -552,7 +581,7 @@ async fn run_reader_loop(
 }
 
 async fn run_writer_loop(
-    tun: Arc<Tun>,
+    tun: Arc<AsyncDevice>,
     outbound_rx: &mut mpsc::UnboundedReceiver<Vec<u8>>,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<()> {
@@ -574,13 +603,22 @@ async fn run_writer_loop(
         let Some(packet) = packet else {
             return Ok(());
         };
-        tun.send_all(&packet).await.map_err(|error| {
-            ClientError::Io(std::io::Error::new(
-                error.kind(),
-                format!("write Linux TUN packet: {error}"),
-            ))
-        })?;
+        write_all_tun(&tun, &packet).await?;
     }
+}
+
+async fn write_all_tun(tun: &AsyncDevice, packet: &[u8]) -> Result<()> {
+    let mut written = 0;
+    while written < packet.len() {
+        let sent = tun.send(&packet[written..]).await.map_err(wrap_tun_io)?;
+        if sent == 0 {
+            return Err(ClientError::Config(
+                "Windows TUN writer returned a zero-byte write".into(),
+            ));
+        }
+        written += sent;
+    }
+    Ok(())
 }
 
 async fn wait_for_endpoint(
@@ -600,12 +638,12 @@ async fn wait_for_endpoint(
     };
     ensure_tx
         .send(request)
-        .map_err(|_| ClientError::Config("Linux TUN manager channel is closed".into()))?;
+        .map_err(|_| ClientError::Config("Windows TUN manager channel is closed".into()))?;
     match response_rx.await {
         Ok(Ok(())) => Ok(()),
         Ok(Err(message)) => Err(ClientError::Config(message)),
         Err(_) => Err(ClientError::Config(
-            "Linux TUN manager dropped the endpoint registration response".into(),
+            "Windows TUN manager dropped the endpoint registration response".into(),
         )),
     }
 }
@@ -623,7 +661,7 @@ async fn ensure_ip(
     channel
         .set_ips(configured_ips.iter().copied())
         .await
-        .map_err(|error| ClientError::Config(format!("update Linux TUN netstack IPs: {error}")))
+        .map_err(|error| ClientError::Config(format!("update Windows TUN netstack IPs: {error}")))
 }
 
 fn ensure_tcp_listener(
@@ -641,7 +679,9 @@ fn ensure_tcp_listener(
     tokio::spawn(async move {
         match channel.tcp_listen(endpoint).await {
             Ok(listener) => run_tcp_listener(listener, proxy_addr, shutdown).await,
-            Err(error) => warn!("failed to create Linux TUN TCP listener for {endpoint}: {error}"),
+            Err(error) => {
+                warn!("failed to create Windows TUN TCP listener for {endpoint}: {error}")
+            }
         }
     });
 
@@ -663,7 +703,7 @@ fn ensure_udp_socket(
     tokio::spawn(async move {
         match channel.udp_bind(endpoint).await {
             Ok(socket) => run_udp_bridge(socket, endpoint, proxy_addr, shutdown).await,
-            Err(error) => warn!("failed to create Linux TUN UDP socket for {endpoint}: {error}"),
+            Err(error) => warn!("failed to create Windows TUN UDP socket for {endpoint}: {error}"),
         }
     });
 
@@ -697,13 +737,13 @@ async fn run_tcp_listener(
                     if let Err(error) =
                         run_tcp_bridge(stream, target, proxy_addr, child_shutdown).await
                     {
-                        debug!("Linux TUN TCP bridge for {target} ended: {error}");
+                        debug!("Windows TUN TCP bridge for {target} ended: {error}");
                     }
                 });
             }
             Err(error) => {
                 warn!(
-                    "Linux TUN TCP listener on {} stopped accepting: {error}",
+                    "Windows TUN TCP listener on {} stopped accepting: {error}",
                     listener.local_addr()
                 );
                 return;
@@ -780,14 +820,14 @@ async fn run_udp_bridge(
     let mut control = match TokioTcpStream::connect(proxy_addr).await {
         Ok(stream) => stream,
         Err(error) => {
-            warn!("Linux TUN UDP bridge could not connect to SOCKS proxy {proxy_addr}: {error}");
+            warn!("Windows TUN UDP bridge could not connect to SOCKS proxy {proxy_addr}: {error}");
             return;
         }
     };
     let relay = match socks5_udp_associate(&mut control).await {
         Ok(relay) => relay,
         Err(error) => {
-            warn!("Linux TUN UDP bridge could not open SOCKS UDP associate: {error}");
+            warn!("Windows TUN UDP bridge could not open SOCKS UDP associate: {error}");
             return;
         }
     };
@@ -799,12 +839,12 @@ async fn run_udp_bridge(
     let relay_socket = match TokioUdpSocket::bind(bind_addr).await {
         Ok(socket) => Arc::new(socket),
         Err(error) => {
-            warn!("Linux TUN UDP bridge could not bind relay socket: {error}");
+            warn!("Windows TUN UDP bridge could not bind relay socket: {error}");
             return;
         }
     };
     if let Err(error) = relay_socket.connect(relay).await {
-        warn!("Linux TUN UDP bridge could not connect relay socket to {relay}: {error}");
+        warn!("Windows TUN UDP bridge could not connect relay socket to {relay}: {error}");
         return;
     }
 
@@ -908,6 +948,15 @@ fn parse_stack_ip(address_cidr: &str) -> Result<IpAddr> {
         .map_err(|error| ClientError::Config(format!("invalid TUN address_cidr IP: {error}")))
 }
 
+fn parse_windows_ipv4_cidr(address_cidr: &str) -> Result<(Ipv4Addr, u8)> {
+    let network = address_cidr.parse::<Ipv4Net>().map_err(|error| {
+        ClientError::Config(format!(
+            "Windows TUN currently expects an IPv4 address_cidr: {error}"
+        ))
+    })?;
+    Ok((network.addr(), network.prefix_len()))
+}
+
 async fn wait_for_shutdown(
     mut shutdown: watch::Receiver<bool>,
 ) -> std::result::Result<(), watch::error::RecvError> {
@@ -919,6 +968,62 @@ async fn wait_for_shutdown(
 
 fn netstack_io(error: netcore::Error) -> std::io::Error {
     std::io::Error::other(error.to_string())
+}
+
+fn wrap_tun_io(error: std::io::Error) -> ClientError {
+    ClientError::Io(std::io::Error::new(
+        error.kind(),
+        format!("Windows TUN I/O failed: {error}"),
+    ))
+}
+
+fn add_windows_route(route: &str, if_index: u32) -> Result<()> {
+    let net = route.parse::<Ipv4Net>().map_err(|error| {
+        ClientError::Config(format!(
+            "Windows TUN currently supports IPv4 routes only ({route}): {error}"
+        ))
+    })?;
+    let prefix = format!("{}/{}", net.network(), net.prefix_len());
+    let script = format!(
+        "$ErrorActionPreference='Stop'; Remove-NetRoute -DestinationPrefix '{prefix}' -InterfaceIndex {if_index} -NextHop '0.0.0.0' -Confirm:$false -ErrorAction SilentlyContinue; New-NetRoute -DestinationPrefix '{prefix}' -InterfaceIndex {if_index} -NextHop '0.0.0.0' -RouteMetric {DEFAULT_ROUTE_METRIC} -PolicyStore ActiveStore | Out-Null"
+    );
+    run_powershell_script(&script)
+}
+
+fn remove_windows_route(route: &str, if_index: u32) -> Result<()> {
+    let net = route.parse::<Ipv4Net>().map_err(|error| {
+        ClientError::Config(format!(
+            "Windows TUN currently supports IPv4 routes only ({route}): {error}"
+        ))
+    })?;
+    let prefix = format!("{}/{}", net.network(), net.prefix_len());
+    let script = format!(
+        "$ErrorActionPreference='SilentlyContinue'; Remove-NetRoute -DestinationPrefix '{prefix}' -InterfaceIndex {if_index} -NextHop '0.0.0.0' -Confirm:$false"
+    );
+    run_powershell_script(&script)
+}
+
+fn run_powershell_script(script: &str) -> Result<()> {
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|error| ClientError::Io(std::io::Error::new(error.kind(), error.to_string())))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let detail = if !stderr.is_empty() {
+        stderr
+    } else if !stdout.is_empty() {
+        stdout
+    } else {
+        format!("exit status {}", output.status)
+    };
+    Err(ClientError::Config(format!(
+        "PowerShell route command failed: {detail}"
+    )))
 }
 
 async fn socks5_connect(stream: &mut TokioTcpStream, target: SocketAddr) -> std::io::Result<()> {
@@ -1032,7 +1137,7 @@ async fn read_socks5_bound_addr(
             let mut domain = vec![0u8; length[0] as usize + 2];
             stream.read_exact(&mut domain).await?;
             Err(std::io::Error::other(
-                "SOCKS5 proxy returned a domain relay address, which Linux TUN does not support",
+                "SOCKS5 proxy returned a domain relay address, which Windows TUN does not support",
             ))
         }
         other => Err(std::io::Error::other(format!(

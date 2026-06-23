@@ -186,6 +186,19 @@ void main() {
     },
   );
 
+  test('system proxy manager reports planned status on macOS', () async {
+    final manager = SystemProxyManager(
+      runner: (executable, arguments) async => ProcessResult(0, 0, '', ''),
+      platform: SystemProxyPlatform.macos,
+    );
+
+    final status = await manager.loadStatus();
+    expect(status.supported, isFalse);
+    expect(status.enabled, isFalse);
+    expect(status.mode, 'planned');
+    expect(status.message, contains('planned but not implemented'));
+  });
+
   final subpages = <(String, String)>[
     ('Profiles', 'Current draft'),
     ('Proxies', 'Start the proxy to inspect endpoints and groups.'),
@@ -592,6 +605,75 @@ void main() {
       expect(calls, contains('gsettings set org.gnome.system.proxy mode none'));
     },
   );
+
+  test('system proxy manager enables and disables Windows SOCKS proxy', () async {
+    final calls = <String>[];
+    final manager = SystemProxyManager(
+      runner: (executable, arguments) async {
+        calls.add('$executable ${arguments.join(' ')}');
+        if (executable == 'reg' &&
+            arguments.length >= 4 &&
+            arguments[0] == 'query' &&
+            arguments[3] == 'ProxyEnable') {
+          return ProcessResult(
+            0,
+            0,
+            'HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\n'
+                '    ProxyEnable    REG_DWORD    0x1\n',
+            '',
+          );
+        }
+        if (executable == 'reg' &&
+            arguments.length >= 4 &&
+            arguments[0] == 'query' &&
+            arguments[3] == 'ProxyServer') {
+          return ProcessResult(
+            0,
+            0,
+            'HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\n'
+                '    ProxyServer    REG_SZ    socks=127.0.0.1:1080\n',
+            '',
+          );
+        }
+        return ProcessResult(0, 0, '', '');
+      },
+      platform: SystemProxyPlatform.windows,
+    );
+
+    final initial = await manager.loadStatus();
+    expect(initial.supported, isTrue);
+    expect(initial.enabled, isTrue);
+    expect(initial.message, contains('socks=127.0.0.1:1080'));
+
+    await manager.enableSocks('127.0.0.1', 1080);
+    await manager.disable();
+
+    expect(
+      calls,
+      contains(
+        'reg add HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings /v ProxyServer /t REG_SZ /d socks=127.0.0.1:1080 /f',
+      ),
+    );
+    expect(
+      calls,
+      contains(
+        'reg add HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings /v ProxyEnable /t REG_DWORD /d 1 /f',
+      ),
+    );
+    expect(
+      calls,
+      contains(
+        'reg add HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings /v ProxyEnable /t REG_DWORD /d 0 /f',
+      ),
+    );
+    expect(
+      calls.where(
+        (entry) =>
+            entry.startsWith('powershell -NoProfile -NonInteractive -Command '),
+      ),
+      isNotEmpty,
+    );
+  });
 }
 
 class FakeWrongclClient implements WrongclClient {

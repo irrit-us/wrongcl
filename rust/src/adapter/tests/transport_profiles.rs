@@ -352,10 +352,6 @@ allowed_ips = ["10.77.0.2/32"]
     match err {
         ClientError::Config(msg) => {
             assert!(msg.contains("wireguard.private-key"), "msg: {msg}");
-            assert!(
-                msg.contains("no TUN or routed-tunnel runtime"),
-                "msg: {msg}"
-            );
         }
         other => panic!("expected Config error, got {other:?}"),
     }

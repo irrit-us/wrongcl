@@ -182,7 +182,7 @@ fn read_reality(
                 return Err(io::Error::new(
                     io::ErrorKind::ConnectionAborted,
                     "TLS alert",
-                ))
+                ));
             }
             0x14 => continue,
             _ => continue,

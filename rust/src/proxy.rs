@@ -8,7 +8,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::client::{Tunnel, UdpSession, WrongsvClient};
 use crate::config::ClientConfig;
@@ -26,12 +26,12 @@ mod udp;
 const SOCKS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub use registry::{ConnFilter, ConnInfo, ConnRegistry, ConnState, RegistrySnapshot};
-pub use requests::{global_request_log, RequestEntry, RequestLog, RequestRecord};
+pub use requests::{RequestEntry, RequestLog, RequestRecord, global_request_log};
 
 use relay::{relay, relay_with_initial};
 use request::{
-    detect_local_proxy_request, write_http_connect_ok, write_http_error, write_socks5_reply,
-    LocalProxyRequest, SocksRequest,
+    LocalProxyRequest, SocksRequest, detect_local_proxy_request, write_http_connect_ok,
+    write_http_error, write_socks5_reply,
 };
 use udp::relay_udp_associate;
 

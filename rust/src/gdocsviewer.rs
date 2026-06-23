@@ -8,11 +8,11 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use base64::Engine as _;
 use rand::RngCore;
 
-use crate::client::{connect_tcp, Tunnel, TunnelReader, TunnelWriter};
+use crate::client::{Tunnel, TunnelReader, TunnelWriter, connect_tcp};
 use crate::endpoint::{GdocsViewerOptions, OuterSecurity};
 use crate::error::{ClientError, Result};
 use crate::protocol::{
-    encode_raw_vless_header, encode_udp_vless_header, read_raw_vless_response, Target,
+    Target, encode_raw_vless_header, encode_udp_vless_header, read_raw_vless_response,
 };
 use crate::tls;
 

@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_if)]
+
 pub mod adapter;
 pub mod anytls;
 pub mod client;
@@ -17,6 +19,7 @@ pub mod naive;
 pub mod protocol;
 pub mod proxy;
 pub mod quic;
+mod quic_obfs;
 pub mod reality;
 pub mod router;
 pub mod shadowsocks;
@@ -32,7 +35,7 @@ pub mod wireguard;
 mod wireguard_runtime;
 pub mod xhttp;
 
-pub use adapter::{adapt_wrongsv_config, inspect_wrongsv_config, AdaptedConfig, CapabilityReport};
+pub use adapter::{AdaptedConfig, CapabilityReport, adapt_wrongsv_config, inspect_wrongsv_config};
 pub use client::{ProbeResult, Tunnel, WrongsvClient};
 pub use config::{
     ActiveSelection, ClientConfig, LocalProxyConfig, NamedEndpoint, ProxyGroup, ProxyGroupKind,
@@ -45,10 +48,10 @@ pub use endpoint::{
     VlessOptions, WebTransportOptions, WireGuardOptions, WsOptions, XhttpOptions,
 };
 pub use error::{ClientError, Result};
-pub use manager::{global_manager, ConnectionManager};
+pub use manager::{ConnectionManager, global_manager};
 pub use protocol::{Target, VlessAddress};
 pub use proxy::{
-    global_request_log, ConnFilter, ConnInfo, ConnRegistry, ConnState, ProxySnapshot,
-    RegistrySnapshot, RequestEntry, RequestLog,
+    ConnFilter, ConnInfo, ConnRegistry, ConnState, ProxySnapshot, RegistrySnapshot, RequestEntry,
+    RequestLog, global_request_log,
 };
-pub use tun::TunStatus;
+pub use tun::{TunStatus, current_status as current_tun_status};

@@ -100,10 +100,22 @@ impl WrongsvClient {
         target: &Target,
         opts: &VlessOptions,
     ) -> Result<Box<dyn UdpSession>> {
-        if matches!(self.server.endpoint.transport, Transport::Kcp(_)) {
-            return Err(ClientError::UnsupportedProtocol(
-                "KCP UDP relay is not implemented in wrongcl yet".into(),
-            ));
+        if let Transport::Kcp(kcp_opts) = &self.server.endpoint.transport {
+            if opts.flow.trim() == VISION_FLOW {
+                return Err(ClientError::UnsupportedProtocol(
+                    "XTLS Vision does not support UDP".into(),
+                ));
+            }
+            let stream = kcp::connect_kcp(
+                &self.server.host,
+                self.server.port,
+                kcp_opts,
+                &opts.uuid,
+                target,
+                &opts.flow,
+                true,
+            )?;
+            return open_stream_udp_session(stream, target.clone());
         }
         if let Transport::Meek(meek_opts) = &self.server.endpoint.transport {
             if opts.flow.trim() == VISION_FLOW {
@@ -210,7 +222,7 @@ impl WrongsvClient {
             _ => {
                 return Err(ClientError::Config(
                     "Naive requires TLS as outer security".into(),
-                ))
+                ));
             }
         };
         naive::connect_naive(

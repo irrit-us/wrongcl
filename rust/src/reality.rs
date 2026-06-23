@@ -18,7 +18,7 @@ use crate::error::{ClientError, Result};
 
 mod session;
 
-use session::{hkdf_expand_label, hkdf_extract, iv_from, AeadState, RealityTunnel};
+use session::{AeadState, RealityTunnel, hkdf_expand_label, hkdf_extract, iv_from};
 
 pub fn wrap(socket: TcpStream, opts: &RealityOptions) -> Result<Box<dyn Tunnel>> {
     let server_pk_bytes = decode_server_pubkey(&opts.public_key)?;

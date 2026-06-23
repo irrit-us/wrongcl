@@ -1,7 +1,7 @@
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::JoinHandle;
 
 use quinn::{Connection as QuinnConnection, Endpoint};

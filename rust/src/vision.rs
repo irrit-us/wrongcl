@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use uuid::Uuid;
 use wrongsv_vless::vision::{
-    is_complete_record, xtls_filter_tls, xtls_padding, xtls_unpadding, TrafficState,
-    CMD_PADDING_CONTINUE, CMD_PADDING_DIRECT, CMD_PADDING_END,
+    CMD_PADDING_CONTINUE, CMD_PADDING_DIRECT, CMD_PADDING_END, TrafficState, is_complete_record,
+    xtls_filter_tls, xtls_padding, xtls_unpadding,
 };
 
 use crate::client::{Tunnel, TunnelReader, TunnelWriter};

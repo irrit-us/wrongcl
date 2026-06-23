@@ -30,10 +30,10 @@ Verified local proxy coverage currently includes:
 - VLESS + AnyTLS (TCP and UDP)
 - VLESS + ShadowTLS (TCP and UDP)
 - VLESS + REALITY (TCP and UDP, with client public key supplied)
-- Hysteria2 over QUIC/TLS (TCP and UDP; Gecko/Salamander obfs not yet wired in wrongcl)
+- Hysteria2 over QUIC/TLS (TCP and UDP, including Gecko/Salamander obfs)
 - TUIC over QUIC/TLS (TCP and UDP)
 - VLESS + QUIC (TCP and UDP)
-- VLESS + KCP (TCP only; UDP relay not yet wired in wrongcl)
+- VLESS + KCP (TCP and UDP)
 - VLESS + Meek, with and without TLS (TCP and UDP)
 - VLESS + Google Docs Viewer, with and without TLS (TCP and UDP)
 - VLESS + WebTransport (TCP and UDP)
@@ -54,12 +54,10 @@ Direct-probe coverage also exists for the same core transport families.
 Current remaining gaps are no longer in the implemented TCP/UDP transport
 matrix. The main remaining work is:
 
-- KCP UDP relay
-- Hysteria2 Gecko / Salamander packet obfuscation
 - desktop product work in Flutter / FFI / persistence / packaging
 - client-side prompts for missing fields such as REALITY `public-key`
-- full WireGuard routed-tunnel / TUN exposure is still missing; imported wrongsv
-  configs stay partial until the client private-key is supplied
+- host-parity TUN work is still incomplete outside Linux, and imported wrongsv
+  WireGuard configs stay partial until the client private-key is supplied
 
 The capability adapter recognizes the rest of wrongsv's profile surface and
 reports `supported`, `partial`, or `unsupported` plus structured missing
@@ -80,6 +78,17 @@ The Flutter shell now includes:
 - an `Activity` section for recent actions
 - a `Desktop Integration` section with tray controls plus Linux autostart and system-proxy management
 
+## Development And Validation Model
+
+- Linux is the primary development and first-landing platform.
+- Windows is the current primary validation and gap-closure platform.
+- macOS and other supported hosts remain explicit follow-on verification
+  targets.
+
+This distinction matters for release claims: Linux-complete does not imply
+Windows-complete or macOS-complete. Platform status should always be stated
+explicitly in docs, handoff notes, and release summaries.
+
 ## Platform Verification
 
 Verified in this environment:
@@ -91,6 +100,8 @@ Verified in this environment:
 Host-specific verification entry points:
 
 - macOS host: `bash scripts/verify-macos-host.sh`
+- macOS TUN smoke: `bash scripts/smoke-macos-tun.sh`
+- Windows dependency prep: `powershell -ExecutionPolicy Bypass -File scripts/setup-windows-deps.ps1`
 - Windows host: `powershell -ExecutionPolicy Bypass -File scripts/verify-windows-host.ps1`
 - Android host/CI: `bash scripts/verify-android-host.sh`
 - iOS host/CI: `bash scripts/verify-ios-host.sh`
@@ -115,6 +126,38 @@ Current limitations:
   usable here with plain GNU `cc`.
 - macOS Rust checks from Linux require Apple-target toolchains/SDKs; Apple
   target `cargo check` is not usable here with the default Linux compiler.
+- Some desktop integrations are still host-specific in practice. When a
+  control is real on Linux but not yet implemented on Windows or macOS, the UI
+  should remain truthful and docs should call out the platform scope directly.
+
+## Windows Dependency Prep
+
+Before Windows verification or packaging, place `wintun.dll` with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/setup-windows-deps.ps1
+```
+
+The script pins the currently verified Wintun package, copies `wintun.dll`
+into the repo root plus `windows/runner`, and also refreshes the built release
+bundle if it already exists.
+
+Useful overrides:
+
+- `WRONGCL_PROXY=http://127.0.0.1:7897` to download through a local proxy
+- `WRONGCL_WINTUN_ZIP=E:\path\to\wintun.zip` to reuse a local archive
+- `WRONGCL_WINTUN_URL=https://...` to override the archive source explicitly
+
+## macOS Follow-On Prep
+
+The repo now prewires a macOS TUN seam and a truthful smoke entrypoint, but it
+does not claim a runnable macOS TUN implementation yet.
+
+Useful entry points on a real macOS host:
+
+- `bash scripts/verify-macos-host.sh`
+- `WRONGCL_RUN_MACOS_TUN_SMOKE=1 bash scripts/verify-macos-host.sh`
+- `bash scripts/smoke-macos-tun.sh`
 
 ## Build
 

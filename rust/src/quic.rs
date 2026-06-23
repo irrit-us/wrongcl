@@ -1,7 +1,7 @@
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::JoinHandle;
 
 use quinn::Endpoint;
@@ -9,7 +9,7 @@ use quinn::Endpoint;
 use crate::client::{Tunnel, TunnelReader, TunnelWriter};
 use crate::endpoint::{QuicOptions, TlsOptions};
 use crate::error::{ClientError, Result};
-use crate::protocol::{encode_raw_vless_header, encode_udp_vless_header, Target};
+use crate::protocol::{Target, encode_raw_vless_header, encode_udp_vless_header};
 use crate::tls;
 
 pub fn connect_quic(

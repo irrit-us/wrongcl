@@ -155,6 +155,22 @@ class ProfilesView extends StatelessWidget {
                       ),
                     ),
                   ),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: controller.busy
+                          ? null
+                          : () => controller.runTask(
+                              'complete wrongsv import',
+                              controller.completeWrongsvImport,
+                            ),
+                      icon: const Icon(Icons.verified_outlined),
+                      label: const Text('Complete import'),
+                    ),
+                  ],
+                ),
               ],
             ],
           ),

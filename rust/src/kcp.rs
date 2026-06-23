@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use crate::client::{Tunnel, TunnelReader, TunnelWriter};
 use crate::endpoint::KcpOptions;
 use crate::error::{ClientError, Result};
-use crate::protocol::{encode_raw_vless_header, encode_udp_vless_header, Target};
+use crate::protocol::{Target, encode_raw_vless_header, encode_udp_vless_header};
 
 mod mask;
 

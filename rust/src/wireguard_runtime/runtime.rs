@@ -1,7 +1,7 @@
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use bytes::Bytes;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::mpsc;

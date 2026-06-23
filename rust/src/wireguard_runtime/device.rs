@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use bytes::{Bytes, BytesMut};
 use smoltcp::phy::{DeviceCapabilities, Medium};
 use smoltcp::time::Instant;
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::{Notify, mpsc};
 use tracing::error;
 
 #[derive(Clone)]

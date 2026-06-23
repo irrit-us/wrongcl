@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 
-use crate::client::{split_cloneable_tunnel, Tunnel, UdpPacket, UdpSession};
+use crate::client::{Tunnel, UdpPacket, UdpSession, split_cloneable_tunnel};
 use crate::error::Result;
 use crate::protocol::Target;
 use crate::wireguard_runtime::{

@@ -100,17 +100,29 @@ class Hysteria2Config {
     required this.serverName,
     required this.password,
     this.udpEnabled = true,
+    this.obfsType,
+    this.obfsPassword,
+    this.obfsMinPacketSize,
+    this.obfsMaxPacketSize,
   });
 
   final String serverName;
   final String password;
   final bool udpEnabled;
+  final String? obfsType;
+  final String? obfsPassword;
+  final int? obfsMinPacketSize;
+  final int? obfsMaxPacketSize;
 
   Map<String, Object?> toJson() => {
     'type': 'hysteria2',
     'server-name': serverName,
     'password': password,
     'udp-enabled': udpEnabled,
+    'obfs-type': obfsType,
+    'obfs-password': obfsPassword,
+    'obfs-min-packet-size': obfsMinPacketSize,
+    'obfs-max-packet-size': obfsMaxPacketSize,
   };
 }
 

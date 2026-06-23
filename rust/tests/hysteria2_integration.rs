@@ -21,6 +21,10 @@ struct Hysteria2Server {
 }
 
 fn spawn_hysteria2_server(udp_enabled: bool) -> Hysteria2Server {
+    spawn_hysteria2_server_with_obfs(udp_enabled, "")
+}
+
+fn spawn_hysteria2_server_with_obfs(udp_enabled: bool, obfs_toml: &str) -> Hysteria2Server {
     let port = free_udp_port();
     let config: WrongsvServerConfig = toml::from_str(&format!(
         r#"
@@ -29,10 +33,12 @@ listen = "127.0.0.1:{port}"
 [hysteria2]
 password = "{password}"
 disable_udp = {disable_udp}
+{obfs_toml}
 "#,
         port = port,
         password = TEST_PASSWORD,
         disable_udp = (!udp_enabled),
+        obfs_toml = obfs_toml,
     ))
     .unwrap();
     let shutdown = ShutdownSignal::new();
@@ -106,6 +112,10 @@ fn probe_works_against_hysteria2_server() {
                 server_name: "foo.cloudfront.net".into(),
                 password: TEST_PASSWORD.into(),
                 udp_enabled: true,
+                obfs_type: None,
+                obfs_password: None,
+                obfs_min_packet_size: None,
+                obfs_max_packet_size: None,
             }),
             transport: Transport::Raw,
             outer_security: OuterSecurity::None,
@@ -137,6 +147,10 @@ fn socks_proxy_works_against_hysteria2_server() {
                     server_name: "foo.cloudfront.net".into(),
                     password: TEST_PASSWORD.into(),
                     udp_enabled: true,
+                    obfs_type: None,
+                    obfs_password: None,
+                    obfs_min_packet_size: None,
+                    obfs_max_packet_size: None,
                 }),
                 transport: Transport::Raw,
                 outer_security: OuterSecurity::None,
@@ -175,6 +189,10 @@ fn socks_proxy_udp_works_against_hysteria2_server() {
                 server_name: "foo.cloudfront.net".into(),
                 password: TEST_PASSWORD.into(),
                 udp_enabled: true,
+                obfs_type: None,
+                obfs_password: None,
+                obfs_min_packet_size: None,
+                obfs_max_packet_size: None,
             }),
             transport: Transport::Raw,
             outer_security: OuterSecurity::None,
@@ -197,6 +215,98 @@ fn socks_proxy_udp_works_against_hysteria2_server() {
 }
 
 #[test]
+fn socks_proxy_udp_works_against_hysteria2_salamander_server() {
+    let server = spawn_hysteria2_server_with_obfs(
+        true,
+        r#"
+[hysteria2.obfs]
+type = "salamander"
+password = "obfs-secret"
+"#,
+    );
+    let echo_addr = spawn_udp_echo_server();
+
+    let client = WrongsvClient::new(ServerConfig {
+        host: "127.0.0.1".into(),
+        port: server.port,
+        endpoint: Endpoint {
+            proxy: ProxyProtocol::Hysteria2(Hysteria2Options {
+                server_name: "foo.cloudfront.net".into(),
+                password: TEST_PASSWORD.into(),
+                udp_enabled: true,
+                obfs_type: Some("salamander".into()),
+                obfs_password: Some("obfs-secret".into()),
+                obfs_min_packet_size: None,
+                obfs_max_packet_size: None,
+            }),
+            transport: Transport::Raw,
+            outer_security: OuterSecurity::None,
+        },
+    })
+    .unwrap();
+
+    let mut session = client
+        .connect_udp_session(&Target::new(echo_addr.ip().to_string(), echo_addr.port()).unwrap())
+        .unwrap();
+    session.send_packet(b"ping-udp").unwrap();
+    for _ in 0..40 {
+        if let Some(packet) = session.try_recv_packet().unwrap() {
+            assert_eq!(packet.payload, b"ping-udp");
+            return;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    panic!("no UDP response from Hysteria2 salamander session");
+}
+
+#[test]
+fn socks_proxy_udp_works_against_hysteria2_gecko_server() {
+    let server = spawn_hysteria2_server_with_obfs(
+        true,
+        r#"
+[hysteria2.obfs]
+type = "gecko"
+password = "obfs-secret"
+min_packet_size = 640
+max_packet_size = 1200
+"#,
+    );
+    let echo_addr = spawn_udp_echo_server();
+
+    let client = WrongsvClient::new(ServerConfig {
+        host: "127.0.0.1".into(),
+        port: server.port,
+        endpoint: Endpoint {
+            proxy: ProxyProtocol::Hysteria2(Hysteria2Options {
+                server_name: "foo.cloudfront.net".into(),
+                password: TEST_PASSWORD.into(),
+                udp_enabled: true,
+                obfs_type: Some("gecko".into()),
+                obfs_password: Some("obfs-secret".into()),
+                obfs_min_packet_size: Some(640),
+                obfs_max_packet_size: Some(1200),
+            }),
+            transport: Transport::Raw,
+            outer_security: OuterSecurity::None,
+        },
+    })
+    .unwrap();
+
+    let mut session = client
+        .connect_udp_session(&Target::new(echo_addr.ip().to_string(), echo_addr.port()).unwrap())
+        .unwrap();
+    session.send_packet(b"ping-udp").unwrap();
+    for _ in 0..40 {
+        if let Some(packet) = session.try_recv_packet().unwrap() {
+            assert_eq!(packet.payload, b"ping-udp");
+            return;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    panic!("no UDP response from Hysteria2 gecko session");
+}
+
+#[test]
 fn hysteria2_udp_disabled_profile_rejects_udp_session() {
     let server = spawn_hysteria2_server(false);
 
@@ -208,6 +318,10 @@ fn hysteria2_udp_disabled_profile_rejects_udp_session() {
                 server_name: "foo.cloudfront.net".into(),
                 password: TEST_PASSWORD.into(),
                 udp_enabled: false,
+                obfs_type: None,
+                obfs_password: None,
+                obfs_min_packet_size: None,
+                obfs_max_packet_size: None,
             }),
             transport: Transport::Raw,
             outer_security: OuterSecurity::None,

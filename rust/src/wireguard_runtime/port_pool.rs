@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use std::sync::Mutex;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 

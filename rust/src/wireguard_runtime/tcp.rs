@@ -12,7 +12,7 @@ use tracing::{debug, error};
 
 use super::device::ChannelIpDevice;
 use super::port_pool::VirtualPort;
-use super::{configure_interface, TargetRoute};
+use super::{TargetRoute, configure_interface};
 
 const MAX_PACKET: usize = 65_536;
 

@@ -1,6 +1,6 @@
 use std::net::IpAddr;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use smoltcp::iface::{Interface, SocketSet};
 use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address, Ipv6Address};
 use tokio::time::{Duration, Instant};
@@ -63,9 +63,5 @@ pub fn sleep_until(next_poll: Option<Instant>, has_sessions: bool) -> tokio::tim
 }
 
 fn addr_prefix_len(addr: IpAddr) -> u8 {
-    if addr.is_ipv4() {
-        32
-    } else {
-        128
-    }
+    if addr.is_ipv4() { 32 } else { 128 }
 }
