@@ -161,8 +161,13 @@ class _WrongclAppState extends State<WrongclApp> {
       brightness: brightness,
     );
     final isDark = brightness == Brightness.dark;
+    final typography = Typography.material2021();
+    final baseTextTheme = typography.englishLike.merge(
+      isDark ? typography.white : typography.black,
+    );
     return ThemeData(
       brightness: brightness,
+      textTheme: baseTextTheme.apply(fontSizeFactor: 1.05),
       colorScheme: scheme.copyWith(
         surface: palette.surface.surface,
         surfaceContainerHighest:

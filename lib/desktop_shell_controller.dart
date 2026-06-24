@@ -106,8 +106,8 @@ class TrayDesktopShellController
       await windowManager.ensureInitialized();
       _enabled = true;
       const windowOptions = WindowOptions(
-        size: Size(1280, 920),
-        minimumSize: Size(1040, 760),
+        size: Size(768, 552),
+        minimumSize: Size(640, 480),
         center: true,
         skipTaskbar: false,
         title: 'Wrongcl',

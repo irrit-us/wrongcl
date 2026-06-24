@@ -17,7 +17,7 @@ class MainView extends StatelessWidget {
     final snapshot = controller.dashboardSnapshot;
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -28,7 +28,7 @@ class MainView extends StatelessWidget {
               onAdd: controller.openAddMode,
               disabledReason: controller.modeStripDisabledReason,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Expanded(
               flex: 4,
               child: Row(
@@ -89,7 +89,7 @@ class MainView extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Expanded(flex: 3, child: _EntriesGrid(controller: controller)),
           ],
         ),

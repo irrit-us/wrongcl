@@ -122,10 +122,10 @@ void main() {
     expect(_modeStripCellCount(tester), 7);
   });
 
-  testWidgets('main view fits the 1024x640 dashboard target without scroll', (
+  testWidgets('main view fits the 768x552 dashboard target without scroll', (
     tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(1024, 640));
+    await tester.binding.setSurfaceSize(const Size(768, 552));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     final harness = _makeHarness();
@@ -136,7 +136,7 @@ void main() {
     expect(tester.getTopLeft(find.text('Global')).dy, greaterThanOrEqualTo(0));
     expect(
       tester.getBottomLeft(find.text('Advanced')).dy,
-      lessThanOrEqualTo(640),
+      lessThanOrEqualTo(552),
     );
   });
 
