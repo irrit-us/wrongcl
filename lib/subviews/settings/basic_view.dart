@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../client_home_controller.dart';
 import '../../theme/wrongcl_colors.dart';
+import '../../widgets/entry_chip.dart';
 import '../../widgets/subpage_scaffold.dart';
 
 class BasicSettingsView extends StatelessWidget {
@@ -15,6 +16,8 @@ class BasicSettingsView extends StatelessWidget {
     required this.onLocaleCodeChanged,
     required this.themeVariant,
     required this.onThemeVariantChanged,
+    required this.chipIconSide,
+    required this.onChipIconSideChanged,
   });
 
   final ClientHomeController controller;
@@ -25,6 +28,8 @@ class BasicSettingsView extends StatelessWidget {
   final Future<void> Function(String value) onLocaleCodeChanged;
   final WrongclThemeVariant themeVariant;
   final Future<void> Function(WrongclThemeVariant value) onThemeVariantChanged;
+  final ChipIconSide chipIconSide;
+  final Future<void> Function(ChipIconSide value) onChipIconSideChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -157,6 +162,39 @@ class BasicSettingsView extends StatelessWidget {
                         },
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _Block(
+            title: 'Layout',
+            message: 'Move chip icons to the right when reading right-to-left '
+                '(Arabic, Hebrew, ...).',
+            child: DropdownButtonFormField<ChipIconSide>(
+              initialValue: chipIconSide,
+              decoration: const InputDecoration(
+                labelText: 'Chip icon side',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: ChipIconSide.left,
+                  child: Text('Left (default)'),
+                ),
+                DropdownMenuItem(
+                  value: ChipIconSide.right,
+                  child: Text('Right (RTL)'),
+                ),
+              ],
+              onChanged: controller.busy
+                  ? null
+                  : (value) {
+                      if (value != null) {
+                        controller.runTask(
+                          'update chip icon side',
+                          () => onChipIconSideChanged(value),
+                        );
+                      }
+                    },
             ),
           ),
         ],

@@ -8,9 +8,14 @@ import 'widgets/traffic_chart.dart';
 import 'widgets/traffic_stats.dart';
 
 class MainView extends StatelessWidget {
-  const MainView({super.key, required this.controller});
+  const MainView({
+    super.key,
+    required this.controller,
+    this.chipIconSide = ChipIconSide.left,
+  });
 
   final ClientHomeController controller;
+  final ChipIconSide chipIconSide;
 
   @override
   Widget build(BuildContext context) {
@@ -82,15 +87,22 @@ class MainView extends StatelessWidget {
                     child: TrafficStats(
                       bytesUploaded: controller.bytesUploaded,
                       bytesDownloaded: controller.bytesDownloaded,
-                      upRatePerSecond: controller.upRatePerSecond,
-                      downRatePerSecond: controller.downRatePerSecond,
+                      uploadSeries: snapshot.signalSnapshot.uploadedBytesSeries,
+                      downloadSeries:
+                          snapshot.signalSnapshot.downloadedBytesSeries,
                     ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 10),
-            Expanded(flex: 3, child: _EntriesGrid(controller: controller)),
+            Expanded(
+              flex: 3,
+              child: _EntriesGrid(
+                controller: controller,
+                iconSide: chipIconSide,
+              ),
+            ),
           ],
         ),
       ),
@@ -99,9 +111,10 @@ class MainView extends StatelessWidget {
 }
 
 class _EntriesGrid extends StatelessWidget {
-  const _EntriesGrid({required this.controller});
+  const _EntriesGrid({required this.controller, required this.iconSide});
 
   final ClientHomeController controller;
+  final ChipIconSide iconSide;
 
   @override
   Widget build(BuildContext context) {
@@ -117,6 +130,7 @@ class _EntriesGrid extends StatelessWidget {
                   label: 'Proxies',
                   icon: Icons.lan_outlined,
                   subtitle: 'Phase 4 — groups & members',
+                  iconSide: iconSide,
                   onTap: () => controller.openRoute(HomeRoute.proxies),
                 ),
               ),
@@ -126,6 +140,7 @@ class _EntriesGrid extends StatelessWidget {
                   label: 'Profiles',
                   icon: Icons.folder_copy_outlined,
                   subtitle: selectedProfile?.name,
+                  iconSide: iconSide,
                   onTap: () => controller.openRoute(HomeRoute.profiles),
                 ),
               ),
@@ -141,6 +156,7 @@ class _EntriesGrid extends StatelessWidget {
                   label: 'Connections',
                   icon: Icons.swap_horiz,
                   subtitle: '${controller.activeConnections.length} active',
+                  iconSide: iconSide,
                   onTap: () => controller.openRoute(HomeRoute.connections),
                 ),
               ),
@@ -150,6 +166,7 @@ class _EntriesGrid extends StatelessWidget {
                   label: 'Requests',
                   icon: Icons.http_outlined,
                   subtitle: '${controller.recentRequests.length} captured',
+                  iconSide: iconSide,
                   onTap: () => controller.openRoute(HomeRoute.requests),
                 ),
               ),
@@ -159,6 +176,7 @@ class _EntriesGrid extends StatelessWidget {
                   label: 'Logs',
                   icon: Icons.article_outlined,
                   subtitle: '${controller.recentLogs.length} entries',
+                  iconSide: iconSide,
                   onTap: () => controller.openRoute(HomeRoute.logs),
                 ),
               ),
@@ -173,6 +191,7 @@ class _EntriesGrid extends StatelessWidget {
                 child: EntryChip(
                   label: 'Basic',
                   icon: Icons.tune,
+                  iconSide: iconSide,
                   onTap: () => controller.openRoute(HomeRoute.settingsBasic),
                 ),
               ),
@@ -181,6 +200,7 @@ class _EntriesGrid extends StatelessWidget {
                 child: EntryChip(
                   label: 'Network',
                   icon: Icons.cable,
+                  iconSide: iconSide,
                   onTap: () => controller.openRoute(HomeRoute.settingsNetwork),
                 ),
               ),
@@ -189,6 +209,7 @@ class _EntriesGrid extends StatelessWidget {
                 child: EntryChip(
                   label: 'DNS',
                   icon: Icons.dns_outlined,
+                  iconSide: iconSide,
                   onTap: () => controller.openRoute(HomeRoute.settingsDns),
                 ),
               ),
@@ -197,6 +218,7 @@ class _EntriesGrid extends StatelessWidget {
                 child: EntryChip(
                   label: 'Advanced',
                   icon: Icons.science_outlined,
+                  iconSide: iconSide,
                   onTap: () => controller.openRoute(HomeRoute.settingsAdvanced),
                 ),
               ),

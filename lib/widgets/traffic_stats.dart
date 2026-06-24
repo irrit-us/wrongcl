@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
+import '../control_state.dart';
 import '../signal_widgets.dart';
 import '../theme/wrongcl_colors.dart';
 
@@ -8,18 +11,20 @@ class TrafficStats extends StatelessWidget {
     super.key,
     required this.bytesUploaded,
     required this.bytesDownloaded,
-    required this.upRatePerSecond,
-    required this.downRatePerSecond,
+    required this.uploadSeries,
+    required this.downloadSeries,
   });
 
   final int bytesUploaded;
   final int bytesDownloaded;
-  final double upRatePerSecond;
-  final double downRatePerSecond;
+  final DashboardTrendSeries uploadSeries;
+  final DashboardTrendSeries downloadSeries;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
+    final upRates = _rateSeries(uploadSeries.points);
+    final downRates = _rateSeries(downloadSeries.points);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -28,64 +33,131 @@ class TrafficStats extends StatelessWidget {
         border: Border.all(color: palette.border.regular),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _StatRow(
+          _StatBlock(
             label: 'Up',
-            total: formatSignalBytes(bytesUploaded),
-            rate: '${formatSignalBytes(upRatePerSecond)}/s',
+            peak: _peakRate(upRates),
+            average: _averageRate(upRates),
+            total: bytesUploaded.toDouble(),
           ),
-          const SizedBox(height: 6),
           Divider(height: 1, color: palette.border.subtle),
-          const SizedBox(height: 6),
-          _StatRow(
+          _StatBlock(
             label: 'Down',
-            total: formatSignalBytes(bytesDownloaded),
-            rate: '${formatSignalBytes(downRatePerSecond)}/s',
+            peak: _peakRate(downRates),
+            average: _averageRate(downRates),
+            total: bytesDownloaded.toDouble(),
           ),
         ],
       ),
     );
   }
+
+  static List<double> _rateSeries(List<DashboardSeriesPoint> points) {
+    if (points.length < 2) {
+      return const [];
+    }
+    final rates = <double>[];
+    for (var i = 1; i < points.length; i++) {
+      final a = points[i - 1];
+      final b = points[i];
+      final dt = b.timestamp.difference(a.timestamp).inMilliseconds / 1000;
+      if (dt <= 0) {
+        rates.add(0);
+      } else {
+        final delta = b.value - a.value;
+        rates.add(delta < 0 ? 0 : delta / dt);
+      }
+    }
+    return rates;
+  }
+
+  static double _peakRate(List<double> rates) {
+    if (rates.isEmpty) return 0;
+    return rates.fold<double>(0, math.max);
+  }
+
+  static double _averageRate(List<double> rates) {
+    if (rates.isEmpty) return 0;
+    final sum = rates.fold<double>(0, (acc, v) => acc + v);
+    return sum / rates.length;
+  }
 }
 
-class _StatRow extends StatelessWidget {
-  const _StatRow({
+class _StatBlock extends StatelessWidget {
+  const _StatBlock({
     required this.label,
+    required this.peak,
+    required this.average,
     required this.total,
-    required this.rate,
   });
 
   final String label;
-  final String total;
-  final String rate;
+  final double peak;
+  final double average;
+  final double total;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
+    final theme = Theme.of(context);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           label,
           textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.labelSmall,
+          style: theme.textTheme.labelSmall,
         ),
-        const SizedBox(height: 2),
-        Text(
-          total,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleMedium,
+        const SizedBox(height: 4),
+        _StatLine(
+          name: 'Peak',
+          value: '${formatSignalBytes(peak)}/s',
+          palette: palette,
         ),
+        _StatLine(
+          name: 'Avg',
+          value: '${formatSignalBytes(average)}/s',
+          palette: palette,
+        ),
+        _StatLine(
+          name: 'Total',
+          value: formatSignalBytes(total),
+          palette: palette,
+        ),
+      ],
+    );
+  }
+}
+
+class _StatLine extends StatelessWidget {
+  const _StatLine({
+    required this.name,
+    required this.value,
+    required this.palette,
+  });
+
+  final String name;
+  final String value;
+  final WrongclColors palette;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
         Text(
-          'rate $rate',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          name,
+          style: theme.textTheme.bodySmall?.copyWith(
             color: palette.text.secondary,
           ),
+        ),
+        Text(
+          value,
+          style: theme.textTheme.bodyMedium,
         ),
       ],
     );

@@ -257,9 +257,24 @@ void main() {
       find.widgetWithText(TextField, 'wrongsv config path'),
       '/tmp/server.toml',
     );
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Inspect wrongsv'));
+    final inspectButton =
+        find.widgetWithText(OutlinedButton, 'Inspect wrongsv');
+    await tester.dragUntilVisible(
+      inspectButton,
+      find.byType(Scrollable).last,
+      const Offset(0, -120),
+    );
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Adapt wrongsv'));
+    await tester.tap(inspectButton);
+    await tester.pumpAndSettle();
+    final adaptButton = find.widgetWithText(FilledButton, 'Adapt wrongsv');
+    await tester.dragUntilVisible(
+      adaptButton,
+      find.byType(Scrollable).last,
+      const Offset(0, -120),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(adaptButton);
     await tester.pumpAndSettle();
 
     expect(client.inspectCount, 1);
@@ -293,7 +308,14 @@ void main() {
     await _pumpReady(tester, harness);
 
     await _tapEntryChip(tester, 'Basic');
-    await tester.tap(find.byType(DropdownButtonFormField<ThemeMode>).first);
+    final modeDropdown = find.byType(DropdownButtonFormField<ThemeMode>).first;
+    await tester.dragUntilVisible(
+      modeDropdown,
+      find.byType(Scrollable).last,
+      const Offset(0, -120),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(modeDropdown);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Dark').last);
     await tester.pumpAndSettle();
@@ -377,6 +399,12 @@ void main() {
       OutlinedButton,
       'Load current draft',
     );
+    await tester.dragUntilVisible(
+      loadButton,
+      find.byType(Scrollable).last,
+      const Offset(0, -120),
+    );
+    await tester.pumpAndSettle();
     tester.widget<OutlinedButton>(loadButton).onPressed!();
     await tester.pumpAndSettle();
 

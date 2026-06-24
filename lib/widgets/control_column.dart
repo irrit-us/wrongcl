@@ -32,37 +32,38 @@ class ControlColumn extends StatelessWidget {
         border: Border.all(color: palette.border.contrast, width: 1.5),
         borderRadius: BorderRadius.circular(16),
       ),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _ControlPill(
-            label: 'SysProxy',
-            value: systemProxy.enabled,
-            disabledReason: systemProxy.supported
-                ? ''
-                : systemProxy.disabledReason,
-            onChanged: systemProxy.supported && !busy
-                ? onSystemProxyChanged
-                : null,
+          Expanded(
+            child: _ControlPill(
+              label: 'SysProxy',
+              value: systemProxy.enabled,
+              disabledReason: systemProxy.supported
+                  ? ''
+                  : systemProxy.disabledReason,
+              onChanged: systemProxy.supported && !busy
+                  ? onSystemProxyChanged
+                  : null,
+            ),
           ),
-          const SizedBox(height: 12),
-          _RuntimePill(
-            running: running,
-            busy: busy,
-            onChanged: onRuntimeChanged,
+          const SizedBox(height: 8),
+          Expanded(
+            child: _RuntimePill(
+              running: running,
+              busy: busy,
+              onChanged: onRuntimeChanged,
+            ),
           ),
-          const SizedBox(height: 6),
-          Container(
-            height: 1,
-            color: palette.border.subtle,
-          ),
-          const SizedBox(height: 6),
-          _ControlPill(
-            label: 'TUN',
-            value: tun.enabled,
-            disabledReason: tun.supported ? '' : tun.disabledReason,
-            onChanged: tun.supported && !busy ? onTunChanged : null,
+          const SizedBox(height: 8),
+          Expanded(
+            child: _ControlPill(
+              label: 'TUN',
+              value: tun.enabled,
+              disabledReason: tun.supported ? '' : tun.disabledReason,
+              onChanged: tun.supported && !busy ? onTunChanged : null,
+            ),
           ),
         ],
       ),
@@ -97,30 +98,33 @@ class _ControlPill extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: enabled ? null : palette.text.secondary,
-                  ),
-                ),
-                if (!enabled && disabledReason.isNotEmpty) ...[
-                  const SizedBox(height: 2),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   Text(
-                    disabledReason,
-                    maxLines: 1,
+                    label,
                     textAlign: TextAlign.center,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: palette.text.secondary,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: enabled ? null : palette.text.secondary,
                     ),
                   ),
+                  if (!enabled && disabledReason.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      disabledReason,
+                      maxLines: 1,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: palette.text.secondary,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
           Switch.adaptive(
@@ -160,32 +164,35 @@ class _RuntimePill extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Runtime',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: palette.accent.runtimeOn,
-                    fontWeight: FontWeight.w600,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Runtime',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: palette.accent.runtimeOn,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  busy
-                      ? 'Working...'
-                      : running
-                          ? 'Running'
-                          : 'Stopped',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: palette.accent.runtimeOn.withAlpha(180),
-                    fontSize: 12,
+                  const SizedBox(height: 2),
+                  Text(
+                    busy
+                        ? 'Working...'
+                        : running
+                            ? 'Running'
+                            : 'Stopped',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: palette.accent.runtimeOn.withAlpha(180),
+                      fontSize: 12,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           IconButton(

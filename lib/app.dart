@@ -21,6 +21,7 @@ import 'subviews/settings/dns_view.dart';
 import 'subviews/settings/network_view.dart';
 import 'system_proxy_manager.dart';
 import 'theme/wrongcl_colors.dart';
+import 'widgets/entry_chip.dart';
 import 'wrongcl_client.dart';
 
 class WrongclApp extends StatefulWidget {
@@ -55,6 +56,7 @@ class _WrongclAppState extends State<WrongclApp> {
   ThemeMode _themeMode = ThemeMode.system;
   Locale _locale = const Locale('en');
   WrongclThemeVariant _themeVariant = WrongclThemeVariant.wrongcl;
+  ChipIconSide _chipIconSide = ChipIconSide.left;
 
   @override
   void initState() {
@@ -77,6 +79,7 @@ class _WrongclAppState extends State<WrongclApp> {
         _themeMode = settings.themeMode;
         _locale = _localeFromCode(settings.localeCode);
         _themeVariant = settings.themeVariant;
+        _chipIconSide = settings.chipIconSide;
       });
     } catch (_) {}
   }
@@ -85,11 +88,13 @@ class _WrongclAppState extends State<WrongclApp> {
     ThemeMode? themeMode,
     Locale? locale,
     WrongclThemeVariant? themeVariant,
+    ChipIconSide? chipIconSide,
   }) {
     return AppSettings(
       themeMode: themeMode ?? _themeMode,
       localeCode: (locale ?? _locale).languageCode,
       themeVariant: themeVariant ?? _themeVariant,
+      chipIconSide: chipIconSide ?? _chipIconSide,
     );
   }
 
@@ -113,6 +118,13 @@ class _WrongclAppState extends State<WrongclApp> {
       _themeVariant = value;
     });
     await _appSettingsStore.save(_currentSettings(themeVariant: value));
+  }
+
+  Future<void> _setChipIconSide(ChipIconSide value) async {
+    setState(() {
+      _chipIconSide = value;
+    });
+    await _appSettingsStore.save(_currentSettings(chipIconSide: value));
   }
 
   Locale _localeFromCode(String code) {
@@ -150,6 +162,8 @@ class _WrongclAppState extends State<WrongclApp> {
         onLocaleCodeChanged: _setLocaleCode,
         themeVariant: _themeVariant,
         onThemeVariantChanged: _setThemeVariant,
+        chipIconSide: _chipIconSide,
+        onChipIconSideChanged: _setChipIconSide,
       ),
     );
   }
@@ -167,7 +181,7 @@ class _WrongclAppState extends State<WrongclApp> {
     );
     return ThemeData(
       brightness: brightness,
-      textTheme: baseTextTheme.apply(fontSizeFactor: 1.05),
+      textTheme: baseTextTheme.apply(fontSizeFactor: 1.40),
       colorScheme: scheme.copyWith(
         surface: palette.surface.surface,
         surfaceContainerHighest:
@@ -235,6 +249,8 @@ class ClientHome extends StatefulWidget {
     required this.onLocaleCodeChanged,
     required this.themeVariant,
     required this.onThemeVariantChanged,
+    required this.chipIconSide,
+    required this.onChipIconSideChanged,
   });
 
   final WrongclClient client;
@@ -248,6 +264,8 @@ class ClientHome extends StatefulWidget {
   final Future<void> Function(String value) onLocaleCodeChanged;
   final WrongclThemeVariant themeVariant;
   final Future<void> Function(WrongclThemeVariant value) onThemeVariantChanged;
+  final ChipIconSide chipIconSide;
+  final Future<void> Function(ChipIconSide value) onChipIconSideChanged;
 
   @override
   State<ClientHome> createState() => _ClientHomeState();
@@ -283,7 +301,10 @@ class _ClientHomeState extends State<ClientHome> {
         return Scaffold(
           body: Stack(
             children: [
-              MainView(controller: controller),
+              MainView(
+                controller: controller,
+                chipIconSide: widget.chipIconSide,
+              ),
               if (controller.showingSubpage)
                 Positioned.fill(child: _buildActiveSubpage()),
             ],
@@ -320,6 +341,8 @@ class _ClientHomeState extends State<ClientHome> {
           onLocaleCodeChanged: widget.onLocaleCodeChanged,
           themeVariant: widget.themeVariant,
           onThemeVariantChanged: widget.onThemeVariantChanged,
+          chipIconSide: widget.chipIconSide,
+          onChipIconSideChanged: widget.onChipIconSideChanged,
         );
       case HomeRoute.settingsNetwork:
         return NetworkSettingsView(controller: controller, onClose: close);

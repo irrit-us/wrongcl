@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'theme/wrongcl_colors.dart';
+import 'widgets/entry_chip.dart';
 
 const _appSettingsVersion = 1;
 
@@ -13,21 +14,25 @@ class AppSettings {
     this.themeMode = ThemeMode.system,
     this.localeCode = 'en',
     this.themeVariant = WrongclThemeVariant.wrongcl,
+    this.chipIconSide = ChipIconSide.left,
   });
 
   final ThemeMode themeMode;
   final String localeCode;
   final WrongclThemeVariant themeVariant;
+  final ChipIconSide chipIconSide;
 
   AppSettings copyWith({
     ThemeMode? themeMode,
     String? localeCode,
     WrongclThemeVariant? themeVariant,
+    ChipIconSide? chipIconSide,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
       localeCode: localeCode ?? this.localeCode,
       themeVariant: themeVariant ?? this.themeVariant,
+      chipIconSide: chipIconSide ?? this.chipIconSide,
     );
   }
 
@@ -36,6 +41,7 @@ class AppSettings {
         'theme_mode': _themeModeId(themeMode),
         'locale_code': localeCode,
         'theme_variant': themeVariant.id,
+        'chip_icon_side': _chipIconSideId(chipIconSide),
       };
 
   factory AppSettings.fromJson(Map<String, Object?> json) {
@@ -49,6 +55,8 @@ class AppSettings {
       themeVariant: WrongclThemeVariantId.fromId(
         json['theme_variant'] as String?,
       ),
+      chipIconSide:
+          _chipIconSideFromId(json['chip_icon_side'] as String? ?? 'left'),
     );
   }
 
@@ -62,6 +70,16 @@ class AppSettings {
         'light' => ThemeMode.light,
         'dark' => ThemeMode.dark,
         _ => ThemeMode.system,
+      };
+
+  static String _chipIconSideId(ChipIconSide side) => switch (side) {
+        ChipIconSide.left => 'left',
+        ChipIconSide.right => 'right',
+      };
+
+  static ChipIconSide _chipIconSideFromId(String id) => switch (id) {
+        'right' => ChipIconSide.right,
+        _ => ChipIconSide.left,
       };
 }
 
