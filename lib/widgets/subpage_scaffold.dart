@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/wrongcl_colors.dart';
+
 class SubpageScaffold extends StatelessWidget {
   const SubpageScaffold({
     super.key,
@@ -16,6 +18,7 @@ class SubpageScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     return Material(
       color: Theme.of(context).scaffoldBackgroundColor,
       child: SafeArea(
@@ -24,9 +27,10 @@ class SubpageScaffold extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.fromLTRB(12, 10, 16, 10),
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
+                color: palette.topBar.background,
                 border: Border(
-                  bottom: BorderSide(color: Color(0xFFD7D2C8), width: 1),
+                  bottom: BorderSide(color: palette.border.subtle, width: 1),
                 ),
               ),
               child: Row(
@@ -39,7 +43,10 @@ class SubpageScaffold extends StatelessWidget {
                   const SizedBox(width: 4),
                   Text(
                     title,
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: palette.topBar.foreground,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const Spacer(),
                   ...actions,

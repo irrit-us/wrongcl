@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../control_state.dart';
+import '../theme/wrongcl_colors.dart';
 
 class ModeStrip extends StatelessWidget {
   const ModeStrip({
@@ -20,12 +21,14 @@ class ModeStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     final canAdd = slots.length < kMaxModeSlots;
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF1F2933),
-        borderRadius: BorderRadius.all(Radius.circular(14)),
+      decoration: BoxDecoration(
+        color: palette.topBar.background,
+        borderRadius: const BorderRadius.all(Radius.circular(14)),
+        border: Border.all(color: palette.border.subtle),
       ),
       child: Row(
         children: [
@@ -68,24 +71,33 @@ class ModeStrip extends StatelessWidget {
   }
 
   Widget _buildModeCell(BuildContext context, ModeSlot slot) {
+    final palette = context.wrongclColors;
     final isActive = slot.id == activeId;
     final disabled = disabledReason.isNotEmpty;
+    final foreground = disabled
+        ? palette.topBar.foregroundMuted
+        : palette.topBar.foreground;
     return Tooltip(
       message: disabled ? disabledReason : '',
       child: InkWell(
         onTap: disabled ? null : () => onSelect(slot.id),
+        borderRadius: BorderRadius.circular(10),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
           decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF2F4858) : Colors.transparent,
+            color: isActive ? palette.topBar.activeCell : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
+            border: isActive
+                ? Border.all(color: palette.topBar.activeBorder)
+                : null,
           ),
           child: Center(
             child: Text(
               slot.name,
+              textAlign: TextAlign.center,
               style: TextStyle(
-                color: disabled ? Colors.white38 : Colors.white,
-                fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                color: foreground,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
               ),
               overflow: TextOverflow.ellipsis,
             ),
@@ -96,17 +108,22 @@ class ModeStrip extends StatelessWidget {
   }
 
   Widget _buildAddCell(BuildContext context) {
+    final palette = context.wrongclColors;
     return InkWell(
       onTap: onAdd,
+      borderRadius: BorderRadius.circular(10),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-        child: const Center(
+        child: Center(
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.add, color: Colors.white70, size: 16),
-              SizedBox(width: 4),
-              Text('Add', style: TextStyle(color: Colors.white70)),
+              Icon(Icons.add, color: palette.topBar.foregroundMuted, size: 16),
+              const SizedBox(width: 4),
+              Text(
+                'Add',
+                style: TextStyle(color: palette.topBar.foregroundMuted),
+              ),
             ],
           ),
         ),

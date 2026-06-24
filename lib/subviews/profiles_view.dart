@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../client_home_controller.dart';
 import '../profile_store.dart';
+import '../theme/wrongcl_colors.dart';
 import '../widgets/subpage_scaffold.dart';
 
 class ProfilesView extends StatelessWidget {
@@ -53,7 +54,7 @@ class ProfilesView extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF4F1EA),
+                    color: context.wrongclColors.surface.surfaceMuted,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(controller.profilesStatus),
@@ -134,7 +135,7 @@ class ProfilesView extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF4F1EA),
+                    color: context.wrongclColors.surface.surfaceMuted,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -179,10 +180,10 @@ class ProfilesView extends StatelessWidget {
             title: 'Saved profiles',
             children: [
               if (controller.savedProfiles.isEmpty)
-                const Text(
+                Text(
                   'No saved profiles yet. Save the current draft to create '
                   'a reusable entry.',
-                  style: TextStyle(color: Color(0xFF8B8579)),
+                  style: TextStyle(color: context.wrongclColors.text.secondary),
                 )
               else
                 Column(
@@ -240,13 +241,12 @@ class ProfilesView extends StatelessWidget {
   }
 
   Widget _profileRow(BuildContext context, SavedProfile profile) {
+    final palette = context.wrongclColors;
     final selected = controller.selectedProfileId == profile.id;
-    final borderColor = selected
-        ? const Color(0xFF111111)
-        : const Color(0xFFD8D1C5);
+    final borderColor = selected ? palette.accent.runtime : palette.border.muted;
     final background = selected
-        ? const Color(0xFFF2EEE6)
-        : const Color(0xFFF8F6F1);
+        ? palette.surface.surfaceSelected
+        : palette.surface.surfaceWarm;
     return InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: () => controller.selectProfile(profile),
@@ -264,12 +264,12 @@ class ProfilesView extends StatelessWidget {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: const Color(0xFF111111),
+                color: palette.accent.runtime,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.folder_copy_outlined,
-                color: Colors.white,
+                color: palette.accent.runtimeOn,
                 size: 18,
               ),
             ),
@@ -288,10 +288,10 @@ class ProfilesView extends StatelessWidget {
                         ),
                       ),
                       if (selected)
-                        const Icon(
+                        Icon(
                           Icons.check_circle,
                           size: 18,
-                          color: Color(0xFF0B8A6E),
+                          color: palette.status.healthy,
                         ),
                     ],
                   ),
@@ -353,12 +353,13 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F6F1),
+        color: palette.surface.surfaceWarm,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFD8D1C5)),
+        border: Border.all(color: palette.border.muted),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

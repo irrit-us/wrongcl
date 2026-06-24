@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../client_home_controller.dart';
+import '../theme/wrongcl_colors.dart';
 import '../widgets/subpage_scaffold.dart';
 import '../wrongcl_client.dart';
 
@@ -68,6 +69,7 @@ class _ModePickerViewState extends State<ModePickerView> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     final controller = widget.controller;
     final groups = controller.currentProxyGroups;
     final candidates = <String>[
@@ -85,9 +87,9 @@ class _ModePickerViewState extends State<ModePickerView> {
             constraints: const BoxConstraints(maxWidth: 520),
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: const Color(0xFFF4F1EA),
+              color: palette.surface.surfaceMuted,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFDCD5CA)),
+              border: Border.all(color: palette.border.regular),
             ),
             child: Form(
               key: _formKey,
@@ -95,12 +97,12 @@ class _ModePickerViewState extends State<ModePickerView> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'New user mode',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF2F4858),
+                      color: palette.accent.primary,
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -158,7 +160,7 @@ class _ModePickerViewState extends State<ModePickerView> {
                     const SizedBox(height: 12),
                     Text(
                       _errorMessage!,
-                      style: const TextStyle(color: Color(0xFFB7401E)),
+                      style: TextStyle(color: palette.text.danger),
                     ),
                   ],
                   const SizedBox(height: 16),

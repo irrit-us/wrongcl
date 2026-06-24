@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../control_state.dart';
+import '../theme/wrongcl_colors.dart';
 
 class ControlColumn extends StatelessWidget {
   const ControlColumn({
@@ -24,10 +25,11 @@ class ControlColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFFBFAF7),
-        border: Border.all(color: const Color(0xFF1F2933), width: 1.5),
+        color: palette.surface.surfaceRaised,
+        border: Border.all(color: palette.border.contrast, width: 1.5),
         borderRadius: BorderRadius.circular(16),
       ),
       padding: const EdgeInsets.all(12),
@@ -53,7 +55,7 @@ class ControlColumn extends StatelessWidget {
           const SizedBox(height: 6),
           Container(
             height: 1,
-            color: const Color(0xFFD7D2C8),
+            color: palette.border.subtle,
           ),
           const SizedBox(height: 6),
           _ControlPill(
@@ -83,25 +85,27 @@ class _ControlPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     final enabled = onChanged != null;
     final pill = Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF4F1EA),
+        color: palette.surface.surfaceMuted,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFDCD5CA)),
+        border: Border.all(color: palette.border.regular),
       ),
       child: Row(
         children: [
           Expanded(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   label,
+                  textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: enabled ? null : const Color(0xFF8B8579),
+                    color: enabled ? null : palette.text.secondary,
                   ),
                 ),
                 if (!enabled && disabledReason.isNotEmpty) ...[
@@ -109,9 +113,10 @@ class _ControlPill extends StatelessWidget {
                   Text(
                     disabledReason,
                     maxLines: 1,
+                    textAlign: TextAlign.center,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF8B8579),
+                      color: palette.text.secondary,
                     ),
                   ),
                 ],
@@ -145,23 +150,25 @@ class _RuntimePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFF111111),
+        color: palette.accent.runtime,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         children: [
           Expanded(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
+                Text(
                   'Runtime',
+                  textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Colors.white,
+                    color: palette.accent.runtimeOn,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -172,7 +179,11 @@ class _RuntimePill extends StatelessWidget {
                       : running
                           ? 'Running'
                           : 'Stopped',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: palette.accent.runtimeOn.withAlpha(180),
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
@@ -182,7 +193,7 @@ class _RuntimePill extends StatelessWidget {
             onPressed: busy ? null : () => onChanged(!running),
             icon: Icon(
               running ? Icons.stop_circle : Icons.play_circle_fill,
-              color: Colors.white,
+              color: palette.accent.runtimeOn,
               size: 28,
             ),
           ),

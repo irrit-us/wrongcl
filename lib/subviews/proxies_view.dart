@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../client_home_controller.dart';
+import '../theme/wrongcl_colors.dart';
 import '../widgets/subpage_scaffold.dart';
 import '../wrongcl_client.dart';
 
@@ -88,19 +89,24 @@ class _ActiveBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     final label = activeKind == null || activeName.isEmpty
         ? 'No active selection'
         : 'Active $activeKind: $activeName';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFEDE7DC),
+        color: palette.surface.surfaceTinted,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFDCD5CA)),
+        border: Border.all(color: palette.border.regular),
       ),
       child: Row(
         children: [
-          const Icon(Icons.flag_outlined, size: 18, color: Color(0xFF7A6F5C)),
+          Icon(
+            Icons.flag_outlined,
+            size: 18,
+            color: palette.border.accent,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
@@ -133,16 +139,17 @@ class _GroupCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     final canSelect = group.kind == ProxyGroupKind.select;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: palette.surface.surfaceRaised,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isActiveGroup
-              ? const Color(0xFF7A6F5C)
-              : const Color(0xFFDCD5CA),
+              ? palette.border.accent
+              : palette.border.regular,
           width: isActiveGroup ? 1.4 : 1,
         ),
       ),
@@ -162,9 +169,9 @@ class _GroupCard extends StatelessWidget {
                   vertical: 2,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF4F1EA),
+                  color: palette.surface.surfaceMuted,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFDCD5CA)),
+                  border: Border.all(color: palette.border.regular),
                 ),
                 child: Text(
                   group.kind.label,
@@ -208,9 +215,13 @@ class _MemberRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     final subtitle = endpoint == null
         ? 'unknown endpoint'
         : '${endpoint!.host}:${endpoint!.port} - ${endpoint!.stack}';
+    final iconColor = enabled
+        ? (selected ? palette.status.success : palette.border.accent)
+        : palette.accent.soft;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Material(
@@ -227,11 +238,7 @@ class _MemberRow extends StatelessWidget {
                       ? Icons.radio_button_checked
                       : Icons.radio_button_off,
                   size: 18,
-                  color: enabled
-                      ? (selected
-                          ? const Color(0xFF4E7A3C)
-                          : const Color(0xFF7A6F5C))
-                      : const Color(0xFFB8AE9D),
+                  color: iconColor,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -266,16 +273,17 @@ class _EndpointTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: palette.surface.surfaceRaised,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: isActive
-              ? const Color(0xFF7A6F5C)
-              : const Color(0xFFDCD5CA),
+              ? palette.border.accent
+              : palette.border.regular,
           width: isActive ? 1.4 : 1,
         ),
       ),
@@ -297,9 +305,9 @@ class _EndpointTile extends StatelessWidget {
             ),
           ),
           if (isActive)
-            const Icon(
+            Icon(
               Icons.check_circle,
-              color: Color(0xFF4E7A3C),
+              color: palette.status.success,
               size: 18,
             ),
         ],
@@ -315,12 +323,13 @@ class _StatusBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F2E5),
+        color: palette.surface.surfaceAccent,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFDCD5CA)),
+        border: Border.all(color: palette.border.regular),
       ),
       child: Text(message, style: Theme.of(context).textTheme.bodySmall),
     );
@@ -334,20 +343,25 @@ class _Notice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: const Color(0xFFF4F1EA),
+            color: palette.surface.surfaceMuted,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFDCD5CA)),
+            border: Border.all(color: palette.border.regular),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.info_outline, size: 28, color: Color(0xFF8B8579)),
+              Icon(
+                Icons.info_outline,
+                size: 28,
+                color: palette.text.secondary,
+              ),
               const SizedBox(height: 10),
               Text(
                 message,

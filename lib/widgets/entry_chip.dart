@@ -1,5 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../theme/wrongcl_colors.dart';
+
+/// A dashboard entry tile.
+///
+/// Layout rule: both axes are centered. A title-only chip stacks the icon
+/// above the label; a subtitle adds a second centered line beneath. We
+/// intentionally omit a trailing chevron — the centered glyph + label is
+/// already a strong tap affordance and the chevron was the main contributor
+/// to the empty right-edge band on the dashboard.
 class EntryChip extends StatelessWidget {
   const EntryChip({
     super.key,
@@ -16,6 +25,9 @@ class EntryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
+    final hasSubtitle = subtitle != null && subtitle!.isNotEmpty;
+    final theme = Theme.of(context);
     return SizedBox.expand(
       child: Material(
         color: Colors.transparent,
@@ -25,40 +37,47 @@ class EntryChip extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: const Color(0xFFFBFAF7),
+              color: palette.surface.surfaceRaised,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFDCD5CA)),
+              border: Border.all(color: palette.border.regular),
             ),
-            child: Row(
-              children: [
-                if (icon != null) ...[
-                  Icon(icon, size: 18, color: const Color(0xFF1F2933)),
-                  const SizedBox(width: 8),
-                ],
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        label,
-                        style: Theme.of(context).textTheme.titleSmall,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (subtitle != null && subtitle!.isNotEmpty)
-                        Text(
-                          subtitle!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: const Color(0xFF8B8579),
-                          ),
-                        ),
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (icon != null) ...[
+                      Icon(icon, size: 24, color: palette.accent.primary),
+                      const SizedBox(height: 6),
                     ],
-                  ),
+                    Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: palette.text.primary,
+                      ),
+                    ),
+                    if (hasSubtitle) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        maxLines: 1,
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: palette.text.secondary,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-                const Icon(Icons.chevron_right, color: Color(0xFF8B8579)),
-              ],
+              ),
             ),
           ),
         ),

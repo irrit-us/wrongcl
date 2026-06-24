@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../client_home_controller.dart';
+import '../../theme/wrongcl_colors.dart';
 import '../../widgets/subpage_scaffold.dart';
 
 class AdvancedSettingsView extends StatelessWidget {
@@ -187,12 +188,13 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F6F1),
+        color: palette.surface.surfaceWarm,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFD8D1C5)),
+        border: Border.all(color: palette.border.muted),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

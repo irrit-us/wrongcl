@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../client_home_controller.dart';
+import '../theme/wrongcl_colors.dart';
 import '../widgets/subpage_scaffold.dart';
 
 class RequestsView extends StatelessWidget {
@@ -15,19 +16,20 @@ class RequestsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     final requests = controller.recentRequests.reversed.toList(growable: false);
     return SubpageScaffold(
       title: 'Requests',
       onClose: onClose,
       child: requests.isEmpty
-          ? const Center(
+          ? Center(
               child: Padding(
-                padding: EdgeInsets.all(24),
+                padding: const EdgeInsets.all(24),
                 child: Text(
                   'No captured requests yet. Send traffic through the local '
                   'proxy and the most recent requests will appear here.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Color(0xFF8B8579)),
+                  style: TextStyle(color: palette.text.secondary),
                 ),
               ),
             )
@@ -50,9 +52,9 @@ class RequestsView extends StatelessWidget {
                 return Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFBFAF7),
+                    color: palette.surface.surfaceRaised,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFDCD5CA)),
+                    border: Border.all(color: palette.border.regular),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -67,7 +69,7 @@ class RequestsView extends StatelessWidget {
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFEFE6D5),
+                              color: palette.surface.surfaceHighlight,
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
@@ -96,7 +98,7 @@ class RequestsView extends StatelessWidget {
                         Text(
                           subtitleParts.join(' · '),
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: const Color(0xFF8B8579),
+                            color: palette.text.secondary,
                           ),
                         ),
                       ],

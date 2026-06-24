@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../signal_widgets.dart';
+import '../theme/wrongcl_colors.dart';
 
 class TrafficStats extends StatelessWidget {
   const TrafficStats({
@@ -18,22 +19,26 @@ class TrafficStats extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFBFAF7),
+        color: palette.surface.surfaceRaised,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFDCD5CA)),
+        border: Border.all(color: palette.border.regular),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _StatRow(
             label: 'Up',
             total: formatSignalBytes(bytesUploaded),
             rate: '${formatSignalBytes(upRatePerSecond)}/s',
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 6),
+          Divider(height: 1, color: palette.border.subtle),
+          const SizedBox(height: 6),
           _StatRow(
             label: 'Down',
             total: formatSignalBytes(bytesDownloaded),
@@ -58,17 +63,28 @@ class _StatRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      mainAxisAlignment: MainAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(label, style: Theme.of(context).textTheme.labelSmall),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.labelSmall,
+        ),
         const SizedBox(height: 2),
-        Text(total, style: Theme.of(context).textTheme.titleMedium),
+        Text(
+          total,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
         Text(
           'rate $rate',
+          textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: const Color(0xFF8B8579),
+            color: palette.text.secondary,
           ),
         ),
       ],

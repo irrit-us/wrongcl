@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../client_home_controller.dart';
+import '../theme/wrongcl_colors.dart';
 import '../widgets/subpage_scaffold.dart';
 
 class LogsView extends StatelessWidget {
@@ -11,6 +12,7 @@ class LogsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     final logs = controller.visibleLogs;
     final hasSourceLogs = controller.recentLogs.isNotEmpty;
     return SubpageScaffold(
@@ -26,7 +28,7 @@ class LogsView extends StatelessWidget {
                       : 'No log entries captured yet. Recent runtime events '
                             'will stream here while the proxy is active.',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: Color(0xFF8B8579)),
+                  style: TextStyle(color: palette.text.secondary),
                 ),
               ),
             )
@@ -55,33 +57,34 @@ class _LogRow extends StatefulWidget {
 class _LogRowState extends State<_LogRow> {
   bool expanded = false;
 
-  Color _levelColor() {
+  Color _levelColor(WrongclColors palette) {
     switch (widget.entry.level.toUpperCase()) {
       case 'ERROR':
-        return const Color(0xFFB00020);
+        return palette.status.danger;
       case 'WARN':
-        return const Color(0xFF9A6700);
+        return palette.status.warning;
       case 'INFO':
-        return const Color(0xFF2F4858);
+        return palette.status.info;
       case 'DEBUG':
-        return const Color(0xFF6F6A5F);
+        return palette.text.tertiary;
       default:
-        return const Color(0xFF8B8579);
+        return palette.text.secondary;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final color = _levelColor();
+    final palette = context.wrongclColors;
+    final color = _levelColor(palette);
     return InkWell(
       onTap: () => setState(() => expanded = !expanded),
       borderRadius: BorderRadius.circular(8),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: const Color(0xFFFBFAF7),
+          color: palette.surface.surfaceRaised,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFE5E2DA)),
+          border: Border.all(color: palette.chart.grid),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -124,9 +127,9 @@ class _LogRowState extends State<_LogRow> {
                 padding: const EdgeInsets.only(top: 4, left: 4),
                 child: Text(
                   widget.entry.target,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: Color(0xFF8B8579),
+                    color: palette.text.secondary,
                   ),
                 ),
               ),

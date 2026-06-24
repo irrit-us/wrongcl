@@ -4,21 +4,30 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'theme/wrongcl_colors.dart';
+
 const _appSettingsVersion = 1;
 
 class AppSettings {
   const AppSettings({
     this.themeMode = ThemeMode.system,
     this.localeCode = 'en',
+    this.themeVariant = WrongclThemeVariant.wrongcl,
   });
 
   final ThemeMode themeMode;
   final String localeCode;
+  final WrongclThemeVariant themeVariant;
 
-  AppSettings copyWith({ThemeMode? themeMode, String? localeCode}) {
+  AppSettings copyWith({
+    ThemeMode? themeMode,
+    String? localeCode,
+    WrongclThemeVariant? themeVariant,
+  }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
       localeCode: localeCode ?? this.localeCode,
+      themeVariant: themeVariant ?? this.themeVariant,
     );
   }
 
@@ -26,6 +35,7 @@ class AppSettings {
         'version': _appSettingsVersion,
         'theme_mode': _themeModeId(themeMode),
         'locale_code': localeCode,
+        'theme_variant': themeVariant.id,
       };
 
   factory AppSettings.fromJson(Map<String, Object?> json) {
@@ -36,6 +46,9 @@ class AppSettings {
     return AppSettings(
       themeMode: _themeModeFromId(json['theme_mode'] as String? ?? 'system'),
       localeCode: json['locale_code'] as String? ?? 'en',
+      themeVariant: WrongclThemeVariantId.fromId(
+        json['theme_variant'] as String?,
+      ),
     );
   }
 

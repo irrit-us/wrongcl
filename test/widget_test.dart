@@ -8,6 +8,7 @@ import 'package:wrongcl/autostart_manager.dart';
 import 'package:wrongcl/desktop_shell_controller.dart';
 import 'package:wrongcl/profile_store.dart';
 import 'package:wrongcl/system_proxy_manager.dart';
+import 'package:wrongcl/theme/wrongcl_colors.dart';
 import 'package:wrongcl/widgets/mode_strip.dart';
 import 'package:wrongcl/wrongcl_client.dart';
 
@@ -319,6 +320,29 @@ void main() {
       tester.widget<MaterialApp>(find.byType(MaterialApp)).locale,
       const Locale('zh', 'CN'),
     );
+  });
+
+  testWidgets('basic palette selector swaps the active WrongclColors palette',
+      (tester) async {
+    final harness = _makeHarness();
+    await _pumpReady(tester, harness);
+
+    await _tapEntryChip(tester, 'Basic');
+
+    final dropdown = tester.widget<DropdownButtonFormField<WrongclThemeVariant>>(
+      find.byType(DropdownButtonFormField<WrongclThemeVariant>),
+    );
+    expect(dropdown.initialValue, WrongclThemeVariant.wrongcl);
+    expect(dropdown.onChanged, isNotNull);
+
+    await tester.runAsync(() async {
+      dropdown.onChanged!(WrongclThemeVariant.nord);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    final stored = await tester.runAsync(
+      () => harness.appSettingsStore.load(),
+    );
+    expect(stored!.themeVariant, WrongclThemeVariant.nord);
   });
 
   testWidgets('advanced subpage validate config calls the native client', (

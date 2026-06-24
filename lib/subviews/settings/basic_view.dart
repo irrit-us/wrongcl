@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../client_home_controller.dart';
+import '../../theme/wrongcl_colors.dart';
 import '../../widgets/subpage_scaffold.dart';
 
 class BasicSettingsView extends StatelessWidget {
@@ -12,6 +13,8 @@ class BasicSettingsView extends StatelessWidget {
     required this.onThemeModeChanged,
     required this.locale,
     required this.onLocaleCodeChanged,
+    required this.themeVariant,
+    required this.onThemeVariantChanged,
   });
 
   final ClientHomeController controller;
@@ -20,6 +23,8 @@ class BasicSettingsView extends StatelessWidget {
   final Future<void> Function(ThemeMode value) onThemeModeChanged;
   final Locale locale;
   final Future<void> Function(String value) onLocaleCodeChanged;
+  final WrongclThemeVariant themeVariant;
+  final Future<void> Function(WrongclThemeVariant value) onThemeVariantChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -91,31 +96,67 @@ class BasicSettingsView extends StatelessWidget {
           const SizedBox(height: 16),
           _Block(
             title: 'Theme',
-            message: 'Theme preference is saved locally.',
-            child: DropdownButtonFormField<ThemeMode>(
-              initialValue: themeMode,
-              decoration: const InputDecoration(
-                labelText: 'Theme mode',
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(
-                  value: ThemeMode.system,
-                  child: Text('Follow system'),
+            message: 'Theme mode and palette are saved locally.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                DropdownButtonFormField<ThemeMode>(
+                  initialValue: themeMode,
+                  decoration: const InputDecoration(
+                    labelText: 'Theme mode',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: ThemeMode.system,
+                      child: Text('Follow system'),
+                    ),
+                    DropdownMenuItem(
+                      value: ThemeMode.light,
+                      child: Text('Light'),
+                    ),
+                    DropdownMenuItem(
+                      value: ThemeMode.dark,
+                      child: Text('Dark'),
+                    ),
+                  ],
+                  onChanged: controller.busy
+                      ? null
+                      : (value) {
+                          if (value != null) {
+                            controller.runTask(
+                              'update theme',
+                              () => onThemeModeChanged(value),
+                            );
+                          }
+                        },
                 ),
-                DropdownMenuItem(value: ThemeMode.light, child: Text('Light')),
-                DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark')),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<WrongclThemeVariant>(
+                  initialValue: themeVariant,
+                  decoration: const InputDecoration(
+                    labelText: 'Theme palette',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    for (final variant in WrongclThemeVariant.values)
+                      DropdownMenuItem(
+                        value: variant,
+                        child: Text(variant.label),
+                      ),
+                  ],
+                  onChanged: controller.busy
+                      ? null
+                      : (value) {
+                          if (value != null) {
+                            controller.runTask(
+                              'update palette',
+                              () => onThemeVariantChanged(value),
+                            );
+                          }
+                        },
+                ),
               ],
-              onChanged: controller.busy
-                  ? null
-                  : (value) {
-                      if (value != null) {
-                        controller.runTask(
-                          'update theme',
-                          () => onThemeModeChanged(value),
-                        );
-                      }
-                    },
             ),
           ),
         ],
@@ -137,12 +178,13 @@ class _Block extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F6F1),
+        color: palette.surface.surfaceWarm,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFD8D1C5)),
+        border: Border.all(color: palette.border.muted),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

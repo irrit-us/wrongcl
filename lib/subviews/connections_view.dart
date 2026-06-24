@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../client_home_controller.dart';
+import '../theme/wrongcl_colors.dart';
 import '../widgets/subpage_scaffold.dart';
 
 class ConnectionsView extends StatelessWidget {
@@ -57,12 +58,13 @@ class _ConnectionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFBFAF7),
+        color: palette.surface.surfaceRaised,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFDCD5CA)),
+        border: Border.all(color: palette.border.regular),
       ),
       child: Row(
         children: [
@@ -79,7 +81,7 @@ class _ConnectionRow extends StatelessWidget {
                   Text(
                     'via ${connection.sourceApp}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF8B8579),
+                      color: palette.text.secondary,
                     ),
                   ),
               ],
@@ -103,6 +105,7 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -111,7 +114,7 @@ class _EmptyState extends StatelessWidget {
           textAlign: TextAlign.center,
           style: Theme.of(
             context,
-          ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF8B8579)),
+          ).textTheme.bodyMedium?.copyWith(color: palette.text.secondary),
         ),
       ),
     );

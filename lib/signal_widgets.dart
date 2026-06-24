@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'control_state.dart';
+import 'theme/wrongcl_colors.dart';
 
 String formatSignalNumber(num value) {
   if (value >= 1000000) {
@@ -27,17 +28,18 @@ String formatSignalBytes(num bytes) {
 }
 
 Color signalToneColor(BuildContext context, DashboardSignalTone tone) {
+  final palette = context.wrongclColors;
   switch (tone) {
     case DashboardSignalTone.accent:
-      return const Color(0xFF2F4858);
+      return palette.accent.primary;
     case DashboardSignalTone.healthy:
-      return const Color(0xFF0B8A6E);
+      return palette.status.healthy;
     case DashboardSignalTone.warning:
-      return const Color(0xFF9A6700);
+      return palette.status.warning;
     case DashboardSignalTone.danger:
       return Theme.of(context).colorScheme.error;
     case DashboardSignalTone.neutral:
-      return const Color(0xFF616161);
+      return palette.text.neutral;
   }
 }
 
@@ -61,14 +63,15 @@ class TrendSummaryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     final color = signalToneColor(context, tone);
     final hasEnoughPoints = series.points.length >= 2;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF4F1EA),
+        color: palette.surface.surfaceMuted,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFDCD5CA)),
+        border: Border.all(color: palette.border.regular),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -162,10 +165,12 @@ class SignalSparkline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     return CustomPaint(
       painter: _SignalSparklinePainter(
         points: series.points,
         color: color,
+        gridColor: palette.chart.gridSubtle,
       ),
       size: const Size(double.infinity, 40),
     );
@@ -176,10 +181,12 @@ class _SignalSparklinePainter extends CustomPainter {
   const _SignalSparklinePainter({
     required this.points,
     required this.color,
+    required this.gridColor,
   });
 
   final List<DashboardSeriesPoint> points;
   final Color color;
+  final Color gridColor;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -192,7 +199,7 @@ class _SignalSparklinePainter extends CustomPainter {
     final valueRange = maxValue - minValue;
 
     final gridPaint = Paint()
-      ..color = const Color(0xFFD8D1C5)
+      ..color = gridColor
       ..strokeWidth = 1;
     canvas.drawLine(
       Offset(0, size.height - 1),
@@ -254,6 +261,8 @@ class _SignalSparklinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SignalSparklinePainter oldDelegate) {
-    return oldDelegate.points != points || oldDelegate.color != color;
+    return oldDelegate.points != points ||
+        oldDelegate.color != color ||
+        oldDelegate.gridColor != gridColor;
   }
 }

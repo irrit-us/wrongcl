@@ -20,6 +20,7 @@ import 'subviews/settings/basic_view.dart';
 import 'subviews/settings/dns_view.dart';
 import 'subviews/settings/network_view.dart';
 import 'system_proxy_manager.dart';
+import 'theme/wrongcl_colors.dart';
 import 'wrongcl_client.dart';
 
 class WrongclApp extends StatefulWidget {
@@ -53,6 +54,7 @@ class _WrongclAppState extends State<WrongclApp> {
   late final AppSettingsStore _appSettingsStore;
   ThemeMode _themeMode = ThemeMode.system;
   Locale _locale = const Locale('en');
+  WrongclThemeVariant _themeVariant = WrongclThemeVariant.wrongcl;
 
   @override
   void initState() {
@@ -74,17 +76,28 @@ class _WrongclAppState extends State<WrongclApp> {
       setState(() {
         _themeMode = settings.themeMode;
         _locale = _localeFromCode(settings.localeCode);
+        _themeVariant = settings.themeVariant;
       });
     } catch (_) {}
+  }
+
+  AppSettings _currentSettings({
+    ThemeMode? themeMode,
+    Locale? locale,
+    WrongclThemeVariant? themeVariant,
+  }) {
+    return AppSettings(
+      themeMode: themeMode ?? _themeMode,
+      localeCode: (locale ?? _locale).languageCode,
+      themeVariant: themeVariant ?? _themeVariant,
+    );
   }
 
   Future<void> _setThemeMode(ThemeMode value) async {
     setState(() {
       _themeMode = value;
     });
-    await _appSettingsStore.save(
-      AppSettings(themeMode: value, localeCode: _locale.languageCode),
-    );
+    await _appSettingsStore.save(_currentSettings(themeMode: value));
   }
 
   Future<void> _setLocaleCode(String value) async {
@@ -92,9 +105,14 @@ class _WrongclAppState extends State<WrongclApp> {
     setState(() {
       _locale = locale;
     });
-    await _appSettingsStore.save(
-      AppSettings(themeMode: _themeMode, localeCode: locale.languageCode),
-    );
+    await _appSettingsStore.save(_currentSettings(locale: locale));
+  }
+
+  Future<void> _setThemeVariant(WrongclThemeVariant value) async {
+    setState(() {
+      _themeVariant = value;
+    });
+    await _appSettingsStore.save(_currentSettings(themeVariant: value));
   }
 
   Locale _localeFromCode(String code) {
@@ -108,14 +126,6 @@ class _WrongclAppState extends State<WrongclApp> {
 
   @override
   Widget build(BuildContext context) {
-    final lightScheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF006D77),
-      brightness: Brightness.light,
-    );
-    final darkScheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF4A8C8A),
-      brightness: Brightness.dark,
-    );
     return MaterialApp(
       title: 'Wrongcl',
       themeMode: _themeMode,
@@ -126,102 +136,8 @@ class _WrongclAppState extends State<WrongclApp> {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      theme: ThemeData(
-        colorScheme: lightScheme.copyWith(
-          surface: const Color(0xFFF7F6F2),
-          surfaceContainerHighest: const Color(0xFFE5E2DA),
-        ),
-        scaffoldBackgroundColor: const Color(0xFFF2EFE8),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFFF2EFE8),
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-        ),
-        inputDecorationTheme: const InputDecorationTheme(
-          border: OutlineInputBorder(),
-          isDense: true,
-        ),
-        cardTheme: const CardThemeData(
-          margin: EdgeInsets.zero,
-          color: Color(0xFFFBFAF7),
-          surfaceTintColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(18)),
-          ),
-        ),
-        dividerTheme: const DividerThemeData(
-          color: Color(0xFFD7D2C8),
-          thickness: 1,
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF111111),
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-        ),
-        outlinedButtonTheme: OutlinedButtonThemeData(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: const Color(0xFF1F2933),
-            side: const BorderSide(color: Color(0xFFB8B1A4)),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-        ),
-      ),
-      darkTheme: ThemeData(
-        colorScheme: darkScheme.copyWith(
-          surface: const Color(0xFF171C1F),
-          surfaceContainerHighest: const Color(0xFF253038),
-        ),
-        scaffoldBackgroundColor: const Color(0xFF101417),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF101417),
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-        ),
-        inputDecorationTheme: const InputDecorationTheme(
-          border: OutlineInputBorder(),
-          isDense: true,
-        ),
-        cardTheme: const CardThemeData(
-          margin: EdgeInsets.zero,
-          color: Color(0xFF171C1F),
-          surfaceTintColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(18)),
-          ),
-        ),
-        dividerTheme: const DividerThemeData(
-          color: Color(0xFF2F3940),
-          thickness: 1,
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFFE6F1EF),
-            foregroundColor: const Color(0xFF101417),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-        ),
-        outlinedButtonTheme: OutlinedButtonThemeData(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: const Color(0xFFE6F1EF),
-            side: const BorderSide(color: Color(0xFF4B5963)),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-        ),
-      ),
+      theme: _buildTheme(Brightness.light),
+      darkTheme: _buildTheme(Brightness.dark),
       home: ClientHome(
         client: _client,
         profileStore: _profileStore,
@@ -232,6 +148,69 @@ class _WrongclAppState extends State<WrongclApp> {
         onThemeModeChanged: _setThemeMode,
         locale: _locale,
         onLocaleCodeChanged: _setLocaleCode,
+        themeVariant: _themeVariant,
+        onThemeVariantChanged: _setThemeVariant,
+      ),
+    );
+  }
+
+  ThemeData _buildTheme(Brightness brightness) {
+    final palette = WrongclColors.forVariant(_themeVariant, brightness);
+    final scheme = ColorScheme.fromSeed(
+      seedColor: palette.accent.seed,
+      brightness: brightness,
+    );
+    final isDark = brightness == Brightness.dark;
+    return ThemeData(
+      brightness: brightness,
+      colorScheme: scheme.copyWith(
+        surface: palette.surface.surface,
+        surfaceContainerHighest:
+            isDark ? palette.surface.surfaceAccent : palette.surface.surfaceTinted,
+      ),
+      extensions: [palette],
+      scaffoldBackgroundColor: palette.surface.scaffold,
+      appBarTheme: AppBarTheme(
+        backgroundColor: palette.topBar.background,
+        foregroundColor: palette.topBar.foreground,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+      ),
+      inputDecorationTheme: const InputDecorationTheme(
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      cardTheme: CardThemeData(
+        margin: EdgeInsets.zero,
+        color: isDark ? palette.surface.surface : palette.surface.surfaceRaised,
+        surfaceTintColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(18)),
+        ),
+      ),
+      dividerTheme: DividerThemeData(
+        color: palette.border.subtle,
+        thickness: 1,
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: palette.accent.runtime,
+          foregroundColor: palette.accent.runtimeOn,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: palette.text.primary,
+          side: BorderSide(color: palette.border.strong),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
       ),
     );
   }
@@ -249,6 +228,8 @@ class ClientHome extends StatefulWidget {
     required this.onThemeModeChanged,
     required this.locale,
     required this.onLocaleCodeChanged,
+    required this.themeVariant,
+    required this.onThemeVariantChanged,
   });
 
   final WrongclClient client;
@@ -260,6 +241,8 @@ class ClientHome extends StatefulWidget {
   final Future<void> Function(ThemeMode value) onThemeModeChanged;
   final Locale locale;
   final Future<void> Function(String value) onLocaleCodeChanged;
+  final WrongclThemeVariant themeVariant;
+  final Future<void> Function(WrongclThemeVariant value) onThemeVariantChanged;
 
   @override
   State<ClientHome> createState() => _ClientHomeState();
@@ -330,6 +313,8 @@ class _ClientHomeState extends State<ClientHome> {
           onThemeModeChanged: widget.onThemeModeChanged,
           locale: widget.locale,
           onLocaleCodeChanged: widget.onLocaleCodeChanged,
+          themeVariant: widget.themeVariant,
+          onThemeVariantChanged: widget.onThemeVariantChanged,
         );
       case HomeRoute.settingsNetwork:
         return NetworkSettingsView(controller: controller, onClose: close);

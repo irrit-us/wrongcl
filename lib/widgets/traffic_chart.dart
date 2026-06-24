@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../control_state.dart';
 import '../signal_widgets.dart';
+import '../theme/wrongcl_colors.dart';
 
 class TrafficChart extends StatelessWidget {
   const TrafficChart({
@@ -17,14 +18,15 @@ class TrafficChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     final upRate = _latestRate(uploadSeries.points);
     final downRate = _latestRate(downloadSeries.points);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFBFAF7),
+        color: palette.surface.surfaceRaised,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFDCD5CA)),
+        border: Border.all(color: palette.border.regular),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -32,14 +34,16 @@ class TrafficChart extends StatelessWidget {
           _ChartRow(
             label: 'Up',
             valueText: '${formatSignalBytes(upRate)}/s',
-            color: const Color(0xFF2F4858),
+            color: palette.chart.upload,
+            gridColor: palette.chart.grid,
             points: uploadSeries.points,
           ),
           const SizedBox(height: 8),
           _ChartRow(
             label: 'Down',
             valueText: '${formatSignalBytes(downRate)}/s',
-            color: const Color(0xFF0B8A6E),
+            color: palette.chart.download,
+            gridColor: palette.chart.grid,
             points: downloadSeries.points,
           ),
         ],
@@ -70,12 +74,14 @@ class _ChartRow extends StatelessWidget {
     required this.label,
     required this.valueText,
     required this.color,
+    required this.gridColor,
     required this.points,
   });
 
   final String label;
   final String valueText;
   final Color color;
+  final Color gridColor;
   final List<DashboardSeriesPoint> points;
 
   @override
@@ -104,7 +110,11 @@ class _ChartRow extends StatelessWidget {
           Expanded(
             child: CustomPaint(
               size: Size.infinite,
-              painter: _TrafficLinePainter(points: points, color: color),
+              painter: _TrafficLinePainter(
+                points: points,
+                color: color,
+                gridColor: gridColor,
+              ),
             ),
           ),
         ],
@@ -114,10 +124,15 @@ class _ChartRow extends StatelessWidget {
 }
 
 class _TrafficLinePainter extends CustomPainter {
-  _TrafficLinePainter({required this.points, required this.color});
+  _TrafficLinePainter({
+    required this.points,
+    required this.color,
+    required this.gridColor,
+  });
 
   final List<DashboardSeriesPoint> points;
   final Color color;
+  final Color gridColor;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -126,7 +141,7 @@ class _TrafficLinePainter extends CustomPainter {
     }
     final rates = _rateSeries(points);
     final gridPaint = Paint()
-      ..color = const Color(0xFFE5E2DA)
+      ..color = gridColor
       ..strokeWidth = 1;
     canvas.drawLine(
       Offset(0, size.height - 0.5),
@@ -195,6 +210,8 @@ class _TrafficLinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _TrafficLinePainter oldDelegate) {
-    return oldDelegate.points != points || oldDelegate.color != color;
+    return oldDelegate.points != points ||
+        oldDelegate.color != color ||
+        oldDelegate.gridColor != gridColor;
   }
 }

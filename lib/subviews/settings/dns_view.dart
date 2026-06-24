@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../client_home_controller.dart';
+import '../../theme/wrongcl_colors.dart';
 import '../../widgets/subpage_scaffold.dart';
 import '../../wrongcl_client.dart';
 
@@ -134,7 +135,9 @@ class _DnsSettingsViewState extends State<DnsSettingsView> {
                 _helperText(),
                 style: Theme.of(
                   context,
-                ).textTheme.bodySmall?.copyWith(color: const Color(0xFF6F6558)),
+                ).textTheme.bodySmall?.copyWith(
+                  color: context.wrongclColors.text.muted,
+                ),
               ),
               if (controller.dnsStatus.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -144,7 +147,7 @@ class _DnsSettingsViewState extends State<DnsSettingsView> {
                 const SizedBox(height: 12),
                 Text(
                   _errorMessage!,
-                  style: const TextStyle(color: Color(0xFFB7401E)),
+                  style: TextStyle(color: context.wrongclColors.text.danger),
                 ),
               ],
               const SizedBox(height: 16),
@@ -183,12 +186,13 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F6F1),
+        color: palette.surface.surfaceWarm,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFD8D1C5)),
+        border: Border.all(color: palette.border.muted),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -209,10 +213,11 @@ class _Banner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF4F1EA),
+        color: palette.surface.surfaceMuted,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(message),
