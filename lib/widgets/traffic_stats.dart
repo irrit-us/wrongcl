@@ -39,20 +39,28 @@ class TrafficStats extends StatelessWidget {
           _StatBlock(
             label: 'Up',
             peak: _peakRate(upRates),
-            average: _averageRate(upRates),
+            recentAverage: _recentAverageRate(
+              uploadSeries.points,
+              _averageWindow,
+            ),
             total: bytesUploaded.toDouble(),
           ),
           Divider(height: 1, color: palette.border.subtle),
           _StatBlock(
             label: 'Down',
             peak: _peakRate(downRates),
-            average: _averageRate(downRates),
+            recentAverage: _recentAverageRate(
+              downloadSeries.points,
+              _averageWindow,
+            ),
             total: bytesDownloaded.toDouble(),
           ),
         ],
       ),
     );
   }
+
+  static const Duration _averageWindow = Duration(minutes: 1);
 
   static List<double> _rateSeries(List<DashboardSeriesPoint> points) {
     if (points.length < 2) {
@@ -78,10 +86,27 @@ class TrafficStats extends StatelessWidget {
     return rates.fold<double>(0, math.max);
   }
 
-  static double _averageRate(List<double> rates) {
-    if (rates.isEmpty) return 0;
-    final sum = rates.fold<double>(0, (acc, v) => acc + v);
-    return sum / rates.length;
+  static double _recentAverageRate(
+    List<DashboardSeriesPoint> points,
+    Duration window,
+  ) {
+    if (points.length < 2) return 0;
+    final cutoff = points.last.timestamp.subtract(window);
+    var totalDelta = 0.0;
+    var totalSeconds = 0.0;
+    for (var i = 1; i < points.length; i++) {
+      final a = points[i - 1];
+      final b = points[i];
+      if (b.timestamp.isBefore(cutoff)) continue;
+      final dt = b.timestamp.difference(a.timestamp).inMilliseconds / 1000;
+      if (dt <= 0) continue;
+      final delta = b.value - a.value;
+      if (delta <= 0) continue;
+      totalDelta += delta;
+      totalSeconds += dt;
+    }
+    if (totalSeconds <= 0) return 0;
+    return totalDelta / totalSeconds;
   }
 }
 
@@ -89,13 +114,13 @@ class _StatBlock extends StatelessWidget {
   const _StatBlock({
     required this.label,
     required this.peak,
-    required this.average,
+    required this.recentAverage,
     required this.total,
   });
 
   final String label;
   final double peak;
-  final double average;
+  final double recentAverage;
   final double total;
 
   @override
@@ -118,13 +143,13 @@ class _StatBlock extends StatelessWidget {
           palette: palette,
         ),
         _StatLine(
-          name: 'Avg',
-          value: '${formatSignalBytes(average)}/s',
+          name: 'Total',
+          value: formatSignalBytes(total),
           palette: palette,
         ),
         _StatLine(
-          name: 'Total',
-          value: formatSignalBytes(total),
+          name: 'Avg(1min)',
+          value: '${formatSignalBytes(recentAverage)}/s',
           palette: palette,
         ),
       ],

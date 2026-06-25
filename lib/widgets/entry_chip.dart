@@ -16,6 +16,7 @@ class EntryChip extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.subtitle,
+    this.trailing,
     this.icon,
     this.iconSide = ChipIconSide.left,
   });
@@ -23,6 +24,7 @@ class EntryChip extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
   final String? subtitle;
+  final String? trailing;
   final IconData? icon;
   final ChipIconSide iconSide;
 
@@ -72,12 +74,33 @@ class EntryChip extends StatelessWidget {
     final iconWidget = icon == null
         ? null
         : Icon(icon, size: 22, color: palette.accent.primary);
+    final trailingWidget = trailing == null
+        ? null
+        : FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              trailing!,
+              maxLines: 1,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: palette.text.primary,
+              ),
+            ),
+          );
     final rowChildren = <Widget>[
       if (iconWidget != null && !iconOnRight) ...[
         iconWidget,
         const SizedBox(width: 8),
       ],
+      if (trailingWidget != null && iconOnRight) ...[
+        trailingWidget,
+        const SizedBox(width: 8),
+      ],
       Expanded(child: textBlock),
+      if (trailingWidget != null && !iconOnRight) ...[
+        const SizedBox(width: 8),
+        trailingWidget,
+      ],
       if (iconWidget != null && iconOnRight) ...[
         const SizedBox(width: 8),
         iconWidget,

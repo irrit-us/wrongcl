@@ -191,7 +191,7 @@ class _InspectBlock extends StatelessWidget {
         child: EntryChip(
           label: 'Connections',
           icon: Icons.swap_horiz,
-          subtitle: '${controller.activeConnections.length} active',
+          trailing: '${controller.activeConnections.length}',
           iconSide: iconSide,
           onTap: () => controller.openRoute(HomeRoute.connections),
         ),
@@ -202,7 +202,7 @@ class _InspectBlock extends StatelessWidget {
         child: EntryChip(
           label: 'Requests',
           icon: Icons.http_outlined,
-          subtitle: '${controller.recentRequests.length} captured',
+          trailing: '${controller.recentRequests.length}',
           iconSide: iconSide,
           onTap: () => controller.openRoute(HomeRoute.requests),
         ),
@@ -212,7 +212,7 @@ class _InspectBlock extends StatelessWidget {
         child: EntryChip(
           label: 'Logs',
           icon: Icons.article_outlined,
-          subtitle: '${controller.recentLogs.length} entries',
+          trailing: '${controller.recentLogs.length}',
           iconSide: iconSide,
           onTap: () => controller.openRoute(HomeRoute.logs),
         ),
@@ -341,11 +341,16 @@ class _BlockTitle extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Align(
         alignment: iconOnRight ? Alignment.centerRight : Alignment.centerLeft,
-        child: Text(
-          label,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-            color: palette.text.primary,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: iconOnRight ? Alignment.centerRight : Alignment.centerLeft,
+          child: Text(
+            label,
+            maxLines: 1,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: palette.text.primary,
+            ),
           ),
         ),
       ),

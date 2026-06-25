@@ -396,7 +396,7 @@ class ClientHomeController extends ChangeNotifier {
           )
         : ControlAvailability(
             supported: systemProxyStatus!.supported,
-            enabled: false,
+            enabled: systemProxyStatus!.enabled,
             disabledReason: systemProxyStatus!.supported
                 ? ''
                 : systemProxyStatus!.message,
