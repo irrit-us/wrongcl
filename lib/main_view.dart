@@ -32,6 +32,7 @@ class MainView extends StatelessWidget {
               onSelect: controller.setActiveMode,
               onAdd: controller.openAddMode,
               disabledReason: controller.modeStripDisabledReason,
+              iconSide: chipIconSide,
             ),
             const SizedBox(height: 10),
             Expanded(
@@ -53,6 +54,7 @@ class MainView extends StatelessWidget {
                       tun: controller.tunAvailability,
                       running: controller.running,
                       busy: controller.busy,
+                      iconSide: chipIconSide,
                       onSystemProxyChanged: (value) {
                         final task = value
                             ? controller.enableSystemProxy
@@ -119,6 +121,7 @@ class _EntriesGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selectedProfile = controller.selectedProfile;
+    final activeProxy = controller.proxyGroups.active?.name;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -129,7 +132,7 @@ class _EntriesGrid extends StatelessWidget {
                 child: EntryChip(
                   label: 'Proxies',
                   icon: Icons.lan_outlined,
-                  subtitle: 'Phase 4 — groups & members',
+                  subtitle: activeProxy,
                   iconSide: iconSide,
                   onTap: () => controller.openRoute(HomeRoute.proxies),
                 ),
@@ -180,13 +183,7 @@ class _EntriesGrid extends StatelessWidget {
                   onTap: () => controller.openRoute(HomeRoute.logs),
                 ),
               ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: Row(
-            children: [
+              const SizedBox(width: 16),
               Expanded(
                 child: EntryChip(
                   label: 'Basic',

@@ -181,7 +181,7 @@ class _WrongclAppState extends State<WrongclApp> {
     );
     return ThemeData(
       brightness: brightness,
-      textTheme: baseTextTheme.apply(fontSizeFactor: 1.40),
+      textTheme: baseTextTheme.apply(fontSizeFactor: 1.0),
       colorScheme: scheme.copyWith(
         surface: palette.surface.surface,
         surfaceContainerHighest:

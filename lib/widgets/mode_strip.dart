@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../control_state.dart';
 import '../theme/wrongcl_colors.dart';
+import 'entry_chip.dart';
 
 class ModeStrip extends StatelessWidget {
   const ModeStrip({
@@ -11,6 +12,7 @@ class ModeStrip extends StatelessWidget {
     required this.onSelect,
     required this.onAdd,
     required this.disabledReason,
+    this.iconSide = ChipIconSide.left,
   });
 
   final List<ModeSlot> slots;
@@ -18,23 +20,32 @@ class ModeStrip extends StatelessWidget {
   final ValueChanged<String> onSelect;
   final VoidCallback onAdd;
   final String disabledReason;
+  final ChipIconSide iconSide;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
     final canAdd = slots.length < kMaxModeSlots;
+    final iconOnRight = iconSide == ChipIconSide.right;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: palette.topBar.background,
-        borderRadius: const BorderRadius.all(Radius.circular(14)),
-        border: Border.all(color: palette.border.subtle),
+    final cells = <Widget>[
+      for (var i = 0; i < kMaxModeSlots + 1; i++)
+        Expanded(child: _buildCell(context, i, canAdd)),
+    ];
+
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(
+        textScaler: const TextScaler.linear(1.4),
       ),
-      child: Row(
-        children: [
-          for (var i = 0; i < kMaxModeSlots + 1; i++)
-            Expanded(child: _buildCell(context, i, canAdd)),
-        ],
+      child: Container(
+        decoration: BoxDecoration(
+          color: palette.topBar.background,
+          borderRadius: const BorderRadius.all(Radius.circular(14)),
+          border: Border.all(color: palette.border.subtle),
+        ),
+        child: Row(
+          children: iconOnRight ? cells.reversed.toList() : cells,
+        ),
       ),
     );
   }

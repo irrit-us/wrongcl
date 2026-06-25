@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../control_state.dart';
 import '../theme/wrongcl_colors.dart';
+import 'entry_chip.dart';
 
 class ControlColumn extends StatelessWidget {
   const ControlColumn({
@@ -13,6 +14,7 @@ class ControlColumn extends StatelessWidget {
     required this.onSystemProxyChanged,
     required this.onRuntimeChanged,
     required this.onTunChanged,
+    this.iconSide = ChipIconSide.left,
   });
 
   final ControlAvailability systemProxy;
@@ -22,6 +24,7 @@ class ControlColumn extends StatelessWidget {
   final ValueChanged<bool> onSystemProxyChanged;
   final ValueChanged<bool> onRuntimeChanged;
   final ValueChanged<bool> onTunChanged;
+  final ChipIconSide iconSide;
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +49,7 @@ class ControlColumn extends StatelessWidget {
               onChanged: systemProxy.supported && !busy
                   ? onSystemProxyChanged
                   : null,
+              iconSide: iconSide,
             ),
           ),
           const SizedBox(height: 8),
@@ -54,6 +58,7 @@ class ControlColumn extends StatelessWidget {
               running: running,
               busy: busy,
               onChanged: onRuntimeChanged,
+              iconSide: iconSide,
             ),
           ),
           const SizedBox(height: 8),
@@ -63,6 +68,7 @@ class ControlColumn extends StatelessWidget {
               value: tun.enabled,
               disabledReason: tun.supported ? '' : tun.disabledReason,
               onChanged: tun.supported && !busy ? onTunChanged : null,
+              iconSide: iconSide,
             ),
           ),
         ],
@@ -77,17 +83,60 @@ class _ControlPill extends StatelessWidget {
     required this.value,
     required this.disabledReason,
     required this.onChanged,
+    required this.iconSide,
   });
 
   final String label;
   final bool value;
   final String disabledReason;
   final ValueChanged<bool>? onChanged;
+  final ChipIconSide iconSide;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
     final enabled = onChanged != null;
+    final iconOnRight = iconSide == ChipIconSide.right;
+    final textAlign = iconOnRight ? TextAlign.end : TextAlign.start;
+    final crossAxis = iconOnRight
+        ? CrossAxisAlignment.end
+        : CrossAxisAlignment.start;
+    final textBlock = Column(
+      crossAxisAlignment: crossAxis,
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: iconOnRight
+              ? Alignment.centerRight
+              : Alignment.centerLeft,
+          child: Text(
+            label,
+            textAlign: textAlign,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: enabled ? null : palette.text.secondary,
+            ),
+          ),
+        ),
+        if (!enabled && disabledReason.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(
+            disabledReason,
+            maxLines: 1,
+            textAlign: textAlign,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: palette.text.secondary,
+            ),
+          ),
+        ],
+      ],
+    );
+    final switchWidget = Switch.adaptive(
+      value: value,
+      onChanged: onChanged,
+    );
     final pill = Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
@@ -96,42 +145,9 @@ class _ControlPill extends StatelessWidget {
         border: Border.all(color: palette.border.regular),
       ),
       child: Row(
-        children: [
-          Expanded(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: enabled ? null : palette.text.secondary,
-                    ),
-                  ),
-                  if (!enabled && disabledReason.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      disabledReason,
-                      maxLines: 1,
-                      textAlign: TextAlign.center,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: palette.text.secondary,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          Switch.adaptive(
-            value: value,
-            onChanged: onChanged,
-          ),
-        ],
+        children: iconOnRight
+            ? [switchWidget, const SizedBox(width: 8), Expanded(child: textBlock)]
+            : [Expanded(child: textBlock), const SizedBox(width: 8), switchWidget],
       ),
     );
     if (!enabled && disabledReason.isNotEmpty) {
@@ -146,15 +162,62 @@ class _RuntimePill extends StatelessWidget {
     required this.running,
     required this.busy,
     required this.onChanged,
+    required this.iconSide,
   });
 
   final bool running;
   final bool busy;
   final ValueChanged<bool> onChanged;
+  final ChipIconSide iconSide;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
+    final iconOnRight = iconSide == ChipIconSide.right;
+    final textAlign = iconOnRight ? TextAlign.end : TextAlign.start;
+    final crossAxis = iconOnRight
+        ? CrossAxisAlignment.end
+        : CrossAxisAlignment.start;
+    final textBlock = FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: iconOnRight ? Alignment.centerRight : Alignment.centerLeft,
+      child: Column(
+        crossAxisAlignment: crossAxis,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Runtime',
+            textAlign: textAlign,
+            style: TextStyle(
+              color: palette.accent.runtimeOn,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            busy
+                ? 'Working...'
+                : running
+                    ? 'Running'
+                    : 'Stopped',
+            textAlign: textAlign,
+            style: TextStyle(
+              color: palette.accent.runtimeOn.withAlpha(180),
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+    final iconWidget = IconButton(
+      tooltip: running ? 'Stop' : 'Start',
+      onPressed: busy ? null : () => onChanged(!running),
+      icon: Icon(
+        running ? Icons.stop_circle : Icons.play_circle_fill,
+        color: palette.accent.runtimeOn,
+        size: 28,
+      ),
+    );
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -162,49 +225,9 @@ class _RuntimePill extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
-        children: [
-          Expanded(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Runtime',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: palette.accent.runtimeOn,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    busy
-                        ? 'Working...'
-                        : running
-                            ? 'Running'
-                            : 'Stopped',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: palette.accent.runtimeOn.withAlpha(180),
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: running ? 'Stop' : 'Start',
-            onPressed: busy ? null : () => onChanged(!running),
-            icon: Icon(
-              running ? Icons.stop_circle : Icons.play_circle_fill,
-              color: palette.accent.runtimeOn,
-              size: 28,
-            ),
-          ),
-        ],
+        children: iconOnRight
+            ? [iconWidget, const SizedBox(width: 8), Expanded(child: textBlock)]
+            : [Expanded(child: textBlock), const SizedBox(width: 8), iconWidget],
       ),
     );
   }
