@@ -101,6 +101,9 @@ jobs:
       - name: Package Windows release bundle
         run: powershell -ExecutionPolicy Bypass -File scripts/package-windows-release.ps1
 
+      - name: Package Windows MSIX installer
+        run: powershell -ExecutionPolicy Bypass -File scripts/package-windows-msix.ps1
+
       - name: Package Windows headless release bundle
         run: powershell -ExecutionPolicy Bypass -File scripts/package-headless-windows-release.ps1
 
@@ -110,6 +113,7 @@ jobs:
           name: wrongcl-windows-x64
           path: |
             dist/*.zip
+            dist/*.msix
             dist/*.sha256
 
   macos:

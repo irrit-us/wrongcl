@@ -52,6 +52,24 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+  # MSIX packager for Windows. Used by scripts/package-windows-msix.ps1
+  # to produce a Microsoft Store-style installer that declares the
+  # VCLibs.140.UWPDesktop framework dependency, so end-users do not hit
+  # `0xc000007b "application was unable to start"` when the VC++ runtime
+  # is missing on their machine.
+  msix: ^3.16.7
+
+msix_config:
+  display_name: wrongcl
+  publisher_display_name: us.irrit
+  identity_name: us.irrit.wrongcl
+  publisher: CN=us.irrit
+  logo_path: windows/runner/resources/app_icon.ico
+  architecture: x64
+  capabilities: internetClient, internetClientServer, privateNetworkClientServer
+  languages: en-us, zh-cn
+  store: false
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
