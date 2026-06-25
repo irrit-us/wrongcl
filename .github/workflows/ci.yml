@@ -47,6 +47,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free disk space on runner
+        run: |
+          # ubuntu-latest ships with ~14GB free; Rust × multiple Android ABIs
+          # + Flutter SDK + Android SDK/NDK + Gradle blow past that and the
+          # build dies mid-link with `No space left on device`. Remove the
+          # bundled toolchains we never use (~12GB freed) to give the build
+          # headroom. Keep /usr/local/lib/android — cargo-ndk needs it.
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h /
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy

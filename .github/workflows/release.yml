@@ -114,6 +114,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free disk space on runner
+        run: |
+          # See .github/workflows/ci.yml for the rationale: Rust × multiple
+          # Android ABIs + Flutter + Android SDK/NDK blows past the runner's
+          # default headroom. Keep /usr/local/lib/android (cargo-ndk).
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h /
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
