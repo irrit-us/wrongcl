@@ -1,0 +1,71 @@
+name: Bug report
+description: Report a defect or regression in wrongcl.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please fill in as much of
+        the form as you can — a small reproducer is the single most useful
+        thing you can include.
+
+        Please do **not** use this template for security issues. Follow
+        [SECURITY.md](https://github.com/irrit-us/wrongcl/blob/main/SECURITY.md)
+        instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear, concise description of the bug and what you expected to happen.
+      placeholder: When I do X, wrongcl does Y, but I expected Z.
+    validations:
+      required: true
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps (or a small config/snippet) someone else can follow to reach the same state.
+      placeholder: |
+        1. Start wrongcl with profile ...
+        2. Click ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: wrongcl version
+      description: Release tag, commit hash, or "main".
+      placeholder: e.g. 0.1.1, or commit d4d5e3a
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      multiple: true
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Android
+        - iOS
+        - FreeBSD (headless)
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / output
+      description: Paste any error messages, stack traces, or log lines that look related. Redact anything sensitive.
+      render: shell
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: This is not a security issue. (If it is, I will use SECURITY.md instead.)
+          required: true
