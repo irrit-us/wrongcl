@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.2 - 2026-06-25
+
+- Replaced the native window chrome on Linux, macOS, and Windows with a
+  themed in-app title bar that follows the app palette and adds a pin button
+  for "keep on top".
+- Shipped a Windows MSIX installer that declares the VCLibs framework
+  dependency, fixing first-run `0xc000007b "application was unable to start"`
+  errors on machines without the VC++ runtime.
+- Reworked the dashboard into separate Inspect and Settings blocks, added a
+  time-weighted Avg(1min) traffic stat, and slimmed chip counts so the label
+  leads the trailing number.
+- Centralized the color palette with runtime theme variants, and added an
+  RTL-aware control strip plus a chip-icon-side toggle.
+- Shrunk the default window to fit on smaller screens and bumped the base
+  font size for readability.
+- Hardened FFI handle safety and the on-disk profile store.
+- Stabilized macOS CI by widening the gdocsviewer and Meek UDP integration
+  test windows.
+- Added LICENSE (MIT), Code of Conduct, Contributing, Security policy, and
+  GitHub issue templates.
+
 ## 0.1.1 - 2026-06-22
 
 - Reworked the desktop app into the planned single-screen control surface with
