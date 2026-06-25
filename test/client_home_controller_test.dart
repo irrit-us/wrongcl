@@ -584,6 +584,35 @@ void main() {
       contains('Fill required fields before completing the import'),
     );
   });
+
+  test('startProxy recovers busy flag if native call throws synchronously',
+      () async {
+    final client = _ThrowingStartClient();
+    final controller = _buildController(client);
+
+    await controller.startProxy();
+
+    expect(controller.busy, isFalse);
+    expect(controller.lastResponse?.ok, isFalse);
+    expect(controller.lastResponse?.message, contains('boom'));
+    expect(controller.lastError?.action, 'start');
+    expect(controller.status, 'start failed');
+  });
+
+  test('enableSystemProxy via runUtility recovers busy flag on sync throw',
+      () async {
+    final controller = _buildController(_ConnectionsTestClient());
+
+    await controller.runUtility('demo utility', () {
+      throw StateError('kaboom');
+    });
+
+    expect(controller.busy, isFalse);
+    expect(controller.lastResponse?.ok, isFalse);
+    expect(controller.lastResponse?.message, contains('kaboom'));
+    expect(controller.status, 'demo utility failed');
+    expect(controller.lastError?.action, 'demo utility');
+  });
 }
 
 ClientHomeController _buildController(WrongclClient client) {
@@ -1148,4 +1177,11 @@ Map<String, Object?> _phaseFiveConfigMap() {
     'dns': {'mode': 'system'},
     'local': {'host': '127.0.0.1', 'port': 1080},
   };
+}
+
+class _ThrowingStartClient extends _ConnectionsTestClient {
+  @override
+  NativeResponse startProxy(ClientConfigInput config) {
+    throw StateError('boom');
+  }
 }

@@ -396,7 +396,7 @@ class ClientHomeController extends ChangeNotifier {
           )
         : ControlAvailability(
             supported: systemProxyStatus!.supported,
-            enabled: systemProxyStatus!.enabled,
+            enabled: false,
             disabledReason: systemProxyStatus!.supported
                 ? ''
                 : systemProxyStatus!.message,
@@ -1691,7 +1691,12 @@ class ClientHomeController extends ChangeNotifier {
           !savedProfiles.any((profile) => profile.id == selectedProfileId)) {
         selectedProfileId = null;
       }
-      profilesStatus = profiles.isEmpty ? 'No saved profiles yet' : '';
+      final backup = profileStore.lastCorruptBackupPath;
+      if (backup != null) {
+        profilesStatus = 'Corrupt profiles.json backed up to $backup';
+      } else {
+        profilesStatus = profiles.isEmpty ? 'No saved profiles yet' : '';
+      }
     } catch (e) {
       profilesStatus = 'Failed to load profiles: $e';
     }
@@ -2202,55 +2207,91 @@ class ClientHomeController extends ChangeNotifier {
     notifyListeners();
     _scheduleDesktopShellSync();
 
-    final response = await Future<NativeResponse>(call);
-    final proxyData = response.data['proxy'];
-    final summary = response.data['stack'] as String?;
-    final nextStats = proxyData is Map<String, Object?>
-        ? proxyData
-        : response.data;
-    final runtimeStats = _extractRuntimeStats(nextStats);
-    final nextRunning = nextStats['running'];
-    final nextLocalHost = nextStats['local_host'];
-    final nextLocalPort = nextStats['local_port'];
-    final now = DateTime.now();
+    try {
+      final response = await Future<NativeResponse>(call);
+      final proxyData = response.data['proxy'];
+      final summary = response.data['stack'] as String?;
+      final nextStats = proxyData is Map<String, Object?>
+          ? proxyData
+          : response.data;
+      final runtimeStats = _extractRuntimeStats(nextStats);
+      final nextRunning = nextStats['running'];
+      final nextLocalHost = nextStats['local_host'];
+      final nextLocalPort = nextStats['local_port'];
+      final now = DateTime.now();
 
-    busy = false;
-    lastResponse = response;
-    if (response.ok) {
-      if (runtimeStats != null) {
-        stats = runtimeStats;
-        _appendRuntimeSignalSamples(
-          runtimeStats,
-          timestamp: now,
-          action: action,
-        );
-      }
-      if (summary != null && summary.isNotEmpty) {
-        stackSummary = summary;
-      }
-      if (action == 'probe') {
-        final probe = response.data['probe'];
-        if (probe is Map) {
-          final payload = Map<String, Object?>.from(probe);
-          lastProbe = HealthProbeSnapshot(
-            bytesRead: (payload['bytes_read'] as num?)?.toInt() ?? 0,
-            preview: payload['preview'] as String? ?? '',
+      lastResponse = response;
+      if (response.ok) {
+        if (runtimeStats != null) {
+          stats = runtimeStats;
+          _appendRuntimeSignalSamples(
+            runtimeStats,
             timestamp: now,
+            action: action,
           );
         }
-        _appendProbeOutcome(
-          success: true,
-          label: 'Probe ok',
+        if (summary != null && summary.isNotEmpty) {
+          stackSummary = summary;
+        }
+        if (action == 'probe') {
+          final probe = response.data['probe'];
+          if (probe is Map) {
+            final payload = Map<String, Object?>.from(probe);
+            lastProbe = HealthProbeSnapshot(
+              bytesRead: (payload['bytes_read'] as num?)?.toInt() ?? 0,
+              preview: payload['preview'] as String? ?? '',
+              timestamp: now,
+            );
+          }
+          _appendProbeOutcome(
+            success: true,
+            label: 'Probe ok',
+            timestamp: now,
+            tone: DashboardSignalTone.healthy,
+          );
+        }
+      } else {
+        lastError = HealthErrorSnapshot(
+          action: action,
+          message: response.message,
           timestamp: now,
-          tone: DashboardSignalTone.healthy,
         );
+        if (action == 'probe') {
+          _appendProbeOutcome(
+            success: false,
+            label: 'Probe failed',
+            timestamp: now,
+            tone: DashboardSignalTone.danger,
+          );
+        }
       }
-    } else {
+      if (nextRunning is bool) {
+        running = nextRunning;
+        status = nextRunning
+            ? 'Running at $nextLocalHost:$nextLocalPort'
+            : 'Stopped';
+        if (nextRunning) {
+          _ensureStatusPolling();
+        } else {
+          _stopStatusPolling();
+        }
+      } else if (!response.ok) {
+        status = '$action failed';
+      }
+      _recordActivity(action, response.message, success: response.ok);
+    } catch (e) {
+      final now = DateTime.now();
+      lastResponse = NativeResponse(
+        ok: false,
+        message: '$action failed: $e',
+        data: const {},
+      );
       lastError = HealthErrorSnapshot(
         action: action,
-        message: response.message,
+        message: '$e',
         timestamp: now,
       );
+      status = '$action failed';
       if (action == 'probe') {
         _appendProbeOutcome(
           success: false,
@@ -2259,23 +2300,12 @@ class ClientHomeController extends ChangeNotifier {
           tone: DashboardSignalTone.danger,
         );
       }
+      _recordActivity(action, '$e', success: false);
+    } finally {
+      busy = false;
+      notifyListeners();
+      _scheduleDesktopShellSync();
     }
-    if (nextRunning is bool) {
-      running = nextRunning;
-      status = nextRunning
-          ? 'Running at $nextLocalHost:$nextLocalPort'
-          : 'Stopped';
-      if (nextRunning) {
-        _ensureStatusPolling();
-      } else {
-        _stopStatusPolling();
-      }
-    } else if (!response.ok) {
-      status = '$action failed';
-    }
-    _recordActivity(action, response.message, success: response.ok);
-    notifyListeners();
-    _scheduleDesktopShellSync();
   }
 
   Future<void> runUtility(
@@ -2288,24 +2318,40 @@ class ClientHomeController extends ChangeNotifier {
     notifyListeners();
     _scheduleDesktopShellSync();
 
-    final response = await Future<NativeResponse>(call);
-    if (response.ok) {
-      onSuccess?.call(response);
-    }
+    try {
+      final response = await Future<NativeResponse>(call);
+      if (response.ok) {
+        onSuccess?.call(response);
+      }
 
-    busy = false;
-    lastResponse = response;
-    status = response.ok ? '$action complete' : '$action failed';
-    if (!response.ok) {
+      lastResponse = response;
+      status = response.ok ? '$action complete' : '$action failed';
+      if (!response.ok) {
+        lastError = HealthErrorSnapshot(
+          action: action,
+          message: response.message,
+          timestamp: DateTime.now(),
+        );
+      }
+      _recordActivity(action, response.message, success: response.ok);
+    } catch (e) {
+      lastResponse = NativeResponse(
+        ok: false,
+        message: '$action failed: $e',
+        data: const {},
+      );
       lastError = HealthErrorSnapshot(
         action: action,
-        message: response.message,
+        message: '$e',
         timestamp: DateTime.now(),
       );
+      status = '$action failed';
+      _recordActivity(action, '$e', success: false);
+    } finally {
+      busy = false;
+      notifyListeners();
+      _scheduleDesktopShellSync();
     }
-    _recordActivity(action, response.message, success: response.ok);
-    notifyListeners();
-    _scheduleDesktopShellSync();
   }
 
   Future<void> runTask(String action, Future<void> Function() task) async {

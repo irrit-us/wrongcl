@@ -87,8 +87,10 @@ class AppSettingsStore {
   AppSettingsStore({this.file});
 
   final File? file;
+  String? lastCorruptBackupPath;
 
   Future<AppSettings> load() async {
+    lastCorruptBackupPath = null;
     final resolved = await _resolveFile();
     if (!await resolved.exists()) {
       return const AppSettings();
@@ -97,17 +99,34 @@ class AppSettingsStore {
     if (raw.trim().isEmpty) {
       return const AppSettings();
     }
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map<String, Object?>) {
-      throw const FormatException('app settings must be a JSON object');
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, Object?>) {
+        throw const FormatException('app settings must be a JSON object');
+      }
+      return AppSettings.fromJson(decoded);
+    } on FormatException {
+      lastCorruptBackupPath = await _backupCorruptFile(resolved);
+      return const AppSettings();
+    } on TypeError {
+      lastCorruptBackupPath = await _backupCorruptFile(resolved);
+      return const AppSettings();
     }
-    return AppSettings.fromJson(decoded);
+  }
+
+  Future<String> _backupCorruptFile(File file) async {
+    final stamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final backup = '${file.path}.corrupt-$stamp';
+    await file.rename(backup);
+    return backup;
   }
 
   Future<void> save(AppSettings settings) async {
     final resolved = await _resolveFile();
     await resolved.parent.create(recursive: true);
-    await resolved.writeAsString(jsonEncode(settings.toJson()));
+    final tmp = File('${resolved.path}.tmp');
+    await tmp.writeAsString(jsonEncode(settings.toJson()), flush: true);
+    await tmp.rename(resolved.path);
   }
 
   Future<File> _resolveFile() async {

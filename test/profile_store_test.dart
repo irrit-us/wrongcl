@@ -59,7 +59,7 @@ void main() {
     expect(loaded.first.id, 'one');
   });
 
-  test('profile store rejects unsupported payload versions', () async {
+  test('profile store backs up unsupported payload versions', () async {
     final tempDir = Directory.systemTemp.createTempSync('wrongcl-profile-test');
     final file = File('${tempDir.path}/profiles.json');
     final store = ProfileStore(file: file);
@@ -71,7 +71,79 @@ void main() {
       }),
     );
 
-    await expectLater(store.loadProfiles(), throwsFormatException);
+    final loaded = await store.loadProfiles();
+    expect(loaded, isEmpty);
+    expect(file.existsSync(), isFalse);
+    expect(store.lastCorruptBackupPath, isNotNull);
+    expect(store.lastCorruptBackupPath, startsWith('${file.path}.corrupt-'));
+    expect(File(store.lastCorruptBackupPath!).existsSync(), isTrue);
+  });
+
+  test('profile store backs up syntactically broken JSON', () async {
+    final tempDir = Directory.systemTemp.createTempSync('wrongcl-profile-test');
+    final file = File('${tempDir.path}/profiles.json');
+    file.writeAsStringSync('{ this is not json');
+    final store = ProfileStore(file: file);
+
+    final loaded = await store.loadProfiles();
+    expect(loaded, isEmpty);
+    expect(file.existsSync(), isFalse);
+    expect(store.lastCorruptBackupPath, isNotNull);
+    expect(File(store.lastCorruptBackupPath!).existsSync(), isTrue);
+  });
+
+  test('profile store backs up structurally broken payloads', () async {
+    final tempDir = Directory.systemTemp.createTempSync('wrongcl-profile-test');
+    final file = File('${tempDir.path}/profiles.json');
+    file.writeAsStringSync(
+      jsonEncode({
+        'version': 1,
+        'profiles': [42],
+      }),
+    );
+    final store = ProfileStore(file: file);
+
+    final loaded = await store.loadProfiles();
+    expect(loaded, isEmpty);
+    expect(file.existsSync(), isFalse);
+    expect(store.lastCorruptBackupPath, isNotNull);
+  });
+
+  test('profile store clears lastCorruptBackupPath on successful load',
+      () async {
+    final tempDir = Directory.systemTemp.createTempSync('wrongcl-profile-test');
+    final file = File('${tempDir.path}/profiles.json');
+    final store = ProfileStore(file: file);
+    store.lastCorruptBackupPath = '/stale/path';
+
+    file.writeAsStringSync(jsonEncode([]));
+    await store.loadProfiles();
+
+    expect(store.lastCorruptBackupPath, isNull);
+  });
+
+  test('profile store writes via .tmp then renames over target', () async {
+    final tempDir = Directory.systemTemp.createTempSync('wrongcl-profile-test');
+    final file = File('${tempDir.path}/profiles.json');
+    file.writeAsStringSync('PRE-EXISTING');
+    final originalLength = file.lengthSync();
+
+    final store = ProfileStore(file: file);
+    await store.saveProfiles([
+      SavedProfile(
+        id: 'one',
+        name: 'p',
+        config: const {},
+        stackSummary: '',
+        updatedAt: DateTime(2026, 6, 17),
+      ),
+    ]);
+
+    expect(file.existsSync(), isTrue);
+    expect(File('${file.path}.tmp').existsSync(), isFalse);
+    expect(file.lengthSync(), isNot(originalLength));
+    final reloaded = await store.loadProfiles();
+    expect(reloaded.single.id, 'one');
   });
 }
 

@@ -281,3 +281,18 @@ fn ffi_reports_tun_status_snapshot() {
     assert!(value["data"]["enabled"].is_boolean());
     assert!(value["data"]["disabled_reason"].is_string());
 }
+
+#[test]
+fn ffi_catches_panic_at_boundary() {
+    let value = take_json(wrongcl_debug_trigger_panic());
+    assert_eq!(value["ok"], false);
+    let message = value["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("internal panic:"),
+        "expected panic envelope, got {message}"
+    );
+    assert!(message.contains("debug-triggered panic"));
+
+    let follow_up = take_json(wrongcl_native_version());
+    assert_eq!(follow_up["ok"], true);
+}

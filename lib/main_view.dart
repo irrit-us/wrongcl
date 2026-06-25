@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'client_home_controller.dart';
+import 'theme/wrongcl_colors.dart';
 import 'widgets/control_column.dart';
 import 'widgets/entry_chip.dart';
 import 'widgets/mode_strip.dart';
@@ -122,6 +123,18 @@ class _EntriesGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final selectedProfile = controller.selectedProfile;
     final activeProxy = controller.proxyGroups.active?.name;
+    final iconOnRight = iconSide == ChipIconSide.right;
+    final blocks = <Widget>[
+      Expanded(
+        flex: 2,
+        child: _InspectBlock(controller: controller, iconSide: iconSide),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        flex: 3,
+        child: _SettingsBlock(controller: controller, iconSide: iconSide),
+      ),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -153,76 +166,189 @@ class _EntriesGrid extends StatelessWidget {
         const SizedBox(height: 8),
         Expanded(
           child: Row(
-            children: [
-              Expanded(
-                child: EntryChip(
-                  label: 'Connections',
-                  icon: Icons.swap_horiz,
-                  subtitle: '${controller.activeConnections.length} active',
-                  iconSide: iconSide,
-                  onTap: () => controller.openRoute(HomeRoute.connections),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: EntryChip(
-                  label: 'Requests',
-                  icon: Icons.http_outlined,
-                  subtitle: '${controller.recentRequests.length} captured',
-                  iconSide: iconSide,
-                  onTap: () => controller.openRoute(HomeRoute.requests),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: EntryChip(
-                  label: 'Logs',
-                  icon: Icons.article_outlined,
-                  subtitle: '${controller.recentLogs.length} entries',
-                  iconSide: iconSide,
-                  onTap: () => controller.openRoute(HomeRoute.logs),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: EntryChip(
-                  label: 'Basic',
-                  icon: Icons.tune,
-                  iconSide: iconSide,
-                  onTap: () => controller.openRoute(HomeRoute.settingsBasic),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: EntryChip(
-                  label: 'Network',
-                  icon: Icons.cable,
-                  iconSide: iconSide,
-                  onTap: () => controller.openRoute(HomeRoute.settingsNetwork),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: EntryChip(
-                  label: 'DNS',
-                  icon: Icons.dns_outlined,
-                  iconSide: iconSide,
-                  onTap: () => controller.openRoute(HomeRoute.settingsDns),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: EntryChip(
-                  label: 'Advanced',
-                  icon: Icons.science_outlined,
-                  iconSide: iconSide,
-                  onTap: () => controller.openRoute(HomeRoute.settingsAdvanced),
-                ),
-              ),
-            ],
+            children: iconOnRight ? blocks.reversed.toList() : blocks,
           ),
         ),
       ],
+    );
+  }
+}
+
+class _InspectBlock extends StatelessWidget {
+  const _InspectBlock({required this.controller, required this.iconSide});
+
+  final ClientHomeController controller;
+  final ChipIconSide iconSide;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
+    final iconOnRight = iconSide == ChipIconSide.right;
+    final topRow = <Widget>[
+      Expanded(child: _BlockTitle(label: 'Inspect', iconOnRight: iconOnRight)),
+      const SizedBox(width: 8),
+      Expanded(
+        child: EntryChip(
+          label: 'Connections',
+          icon: Icons.swap_horiz,
+          subtitle: '${controller.activeConnections.length} active',
+          iconSide: iconSide,
+          onTap: () => controller.openRoute(HomeRoute.connections),
+        ),
+      ),
+    ];
+    final bottomRow = <Widget>[
+      Expanded(
+        child: EntryChip(
+          label: 'Requests',
+          icon: Icons.http_outlined,
+          subtitle: '${controller.recentRequests.length} captured',
+          iconSide: iconSide,
+          onTap: () => controller.openRoute(HomeRoute.requests),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: EntryChip(
+          label: 'Logs',
+          icon: Icons.article_outlined,
+          subtitle: '${controller.recentLogs.length} entries',
+          iconSide: iconSide,
+          onTap: () => controller.openRoute(HomeRoute.logs),
+        ),
+      ),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: palette.surface.surfaceMuted,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: [
+          Expanded(
+            child: Row(
+              children: iconOnRight ? topRow.reversed.toList() : topRow,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Row(
+              children: iconOnRight ? bottomRow.reversed.toList() : bottomRow,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsBlock extends StatelessWidget {
+  const _SettingsBlock({required this.controller, required this.iconSide});
+
+  final ClientHomeController controller;
+  final ChipIconSide iconSide;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
+    final iconOnRight = iconSide == ChipIconSide.right;
+    final topRow = <Widget>[
+      Expanded(
+        flex: 2,
+        child: _BlockTitle(label: 'Settings', iconOnRight: iconOnRight),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        flex: 2,
+        child: EntryChip(
+          label: 'Basic',
+          icon: Icons.tune,
+          iconSide: iconSide,
+          onTap: () => controller.openRoute(HomeRoute.settingsBasic),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        flex: 2,
+        child: EntryChip(
+          label: 'Network',
+          icon: Icons.cable,
+          iconSide: iconSide,
+          onTap: () => controller.openRoute(HomeRoute.settingsNetwork),
+        ),
+      ),
+    ];
+    final bottomRow = <Widget>[
+      const Spacer(),
+      Expanded(
+        flex: 2,
+        child: EntryChip(
+          label: 'DNS',
+          icon: Icons.dns_outlined,
+          iconSide: iconSide,
+          onTap: () => controller.openRoute(HomeRoute.settingsDns),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        flex: 2,
+        child: EntryChip(
+          label: 'Advanced',
+          icon: Icons.science_outlined,
+          iconSide: iconSide,
+          onTap: () => controller.openRoute(HomeRoute.settingsAdvanced),
+        ),
+      ),
+      const Spacer(),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: palette.surface.surfaceHighlight,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: [
+          Expanded(
+            child: Row(
+              children: iconOnRight ? topRow.reversed.toList() : topRow,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Row(
+              children: iconOnRight ? bottomRow.reversed.toList() : bottomRow,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BlockTitle extends StatelessWidget {
+  const _BlockTitle({required this.label, required this.iconOnRight});
+
+  final String label;
+  final bool iconOnRight;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.wrongclColors;
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Align(
+        alignment: iconOnRight ? Alignment.centerRight : Alignment.centerLeft,
+        child: Text(
+          label,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: palette.text.primary,
+          ),
+        ),
+      ),
     );
   }
 }

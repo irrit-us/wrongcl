@@ -99,8 +99,10 @@ class ProfileStore {
   ProfileStore({this.file});
 
   final File? file;
+  String? lastCorruptBackupPath;
 
   Future<List<SavedProfile>> loadProfiles() async {
+    lastCorruptBackupPath = null;
     final file = await _resolveFile();
     if (!await file.exists()) {
       return const [];
@@ -109,28 +111,43 @@ class ProfileStore {
     if (raw.trim().isEmpty) {
       return const [];
     }
-    final decoded = jsonDecode(raw);
-    if (decoded is List) {
-      return _decodeProfiles(decoded);
-    }
-    if (decoded is Map) {
-      final document = Map<String, Object?>.from(decoded);
-      final version = document['version'];
-      if (version is! num || version != version.toInt()) {
-        throw const FormatException(
-          'profiles.json version must be an integer',
-        );
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return _decodeProfiles(decoded);
       }
-      if (version.toInt() != _profileStoreVersion) {
-        throw FormatException(
-          'unsupported profiles.json version: ${version.toInt()}',
-        );
+      if (decoded is Map) {
+        final document = Map<String, Object?>.from(decoded);
+        final version = document['version'];
+        if (version is! num || version != version.toInt()) {
+          throw const FormatException(
+            'profiles.json version must be an integer',
+          );
+        }
+        if (version.toInt() != _profileStoreVersion) {
+          throw FormatException(
+            'unsupported profiles.json version: ${version.toInt()}',
+          );
+        }
+        return _decodeProfiles(document['profiles']);
       }
-      return _decodeProfiles(document['profiles']);
+      throw const FormatException(
+        'profiles.json must contain a profile array or versioned profile document',
+      );
+    } on FormatException {
+      lastCorruptBackupPath = await _backupCorruptFile(file);
+      return const [];
+    } on TypeError {
+      lastCorruptBackupPath = await _backupCorruptFile(file);
+      return const [];
     }
-    throw const FormatException(
-      'profiles.json must contain a profile array or versioned profile document',
-    );
+  }
+
+  Future<String> _backupCorruptFile(File file) async {
+    final stamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final backup = '${file.path}.corrupt-$stamp';
+    await file.rename(backup);
+    return backup;
   }
 
   Future<void> saveProfiles(List<SavedProfile> profiles) async {
@@ -140,7 +157,9 @@ class ProfileStore {
       'version': _profileStoreVersion,
       'profiles': [for (final profile in profiles) profile.toJson()],
     });
-    await file.writeAsString(payload);
+    final tmp = File('${file.path}.tmp');
+    await tmp.writeAsString(payload, flush: true);
+    await tmp.rename(file.path);
   }
 
   List<SavedProfile> _decodeProfiles(Object? rawProfiles) {

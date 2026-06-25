@@ -1,5 +1,6 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -67,19 +68,40 @@ fn err(message: impl Into<String>) -> *mut c_char {
     }))
 }
 
+fn guarded<F>(f: F) -> *mut c_char
+where
+    F: FnOnce() -> *mut c_char,
+{
+    match catch_unwind(AssertUnwindSafe(f)) {
+        Ok(ptr) => ptr,
+        Err(payload) => {
+            let msg = if let Some(s) = payload.downcast_ref::<&'static str>() {
+                (*s).to_string()
+            } else if let Some(s) = payload.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "non-string panic".to_string()
+            };
+            err(format!("internal panic: {msg}"))
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_native_version() -> *mut c_char {
-    ok(
-        "wrongcl native ready",
-        json!({
-            "version": env!("CARGO_PKG_VERSION"),
-            "headless": true,
-            "proxies": ["vless", "naive", "hysteria2", "tuic", "trojan", "mixed", "shadowsocks", "wireguard"],
-            "transports": ["raw", "kcp", "meek", "gdocsviewer", "quic", "webtransport", "websocket", "httpupgrade", "xhttp", "grpc"],
-            "outer_security": ["none", "tls", "reality", "anytls", "shadowtls"],
-            "vless_flows": ["", "xtls-rprx-vision"],
-        }),
-    )
+    guarded(|| {
+        ok(
+            "wrongcl native ready",
+            json!({
+                "version": env!("CARGO_PKG_VERSION"),
+                "headless": true,
+                "proxies": ["vless", "naive", "hysteria2", "tuic", "trojan", "mixed", "shadowsocks", "wireguard"],
+                "transports": ["raw", "kcp", "meek", "gdocsviewer", "quic", "webtransport", "websocket", "httpupgrade", "xhttp", "grpc"],
+                "outer_security": ["none", "tls", "reality", "anytls", "shadowtls"],
+                "vless_flows": ["", "xtls-rprx-vision"],
+            }),
+        )
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -90,20 +112,25 @@ pub extern "C" fn wrongcl_start_proxy(
     local_host: *const c_char,
     local_port: u16,
 ) -> *mut c_char {
-    let config = match raw_vless_config(server_host, server_port, uuid, local_host, local_port) {
-        Ok(config) => config,
-        Err(e) => return err(e.to_string()),
-    };
-    start_proxy_with_config(config)
+    guarded(|| {
+        let config = match raw_vless_config(server_host, server_port, uuid, local_host, local_port)
+        {
+            Ok(config) => config,
+            Err(e) => return err(e.to_string()),
+        };
+        start_proxy_with_config(config)
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_start_proxy_json(config_json: *const c_char) -> *mut c_char {
-    let config = match parse_json_config(config_json) {
-        Ok(config) => config,
-        Err(e) => return err(e.to_string()),
-    };
-    start_proxy_with_config(config)
+    guarded(|| {
+        let config = match parse_json_config(config_json) {
+            Ok(config) => config,
+            Err(e) => return err(e.to_string()),
+        };
+        start_proxy_with_config(config)
+    })
 }
 
 fn start_proxy_with_config(config: ClientConfig) -> *mut c_char {
@@ -125,19 +152,19 @@ fn start_proxy_with_config(config: ClientConfig) -> *mut c_char {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_stop_proxy() -> *mut c_char {
-    match global_manager().stop_proxy() {
+    guarded(|| match global_manager().stop_proxy() {
         Ok(snapshot) => ok("local proxy stopped", snapshot),
         Err(e) => err(e.to_string()),
-    }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_proxy_status() -> *mut c_char {
-    match global_manager().status() {
+    guarded(|| match global_manager().status() {
         Ok(snapshot) if snapshot.running => ok("local proxy is running", snapshot),
         Ok(snapshot) => ok("local proxy is stopped", snapshot),
         Err(e) => err(e.to_string()),
-    }
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -149,19 +176,22 @@ pub extern "C" fn wrongcl_probe(
     target_port: u16,
     payload: *const c_char,
 ) -> *mut c_char {
-    let config = match raw_vless_config(server_host, server_port, uuid, c"127.0.0.1".as_ptr(), 0) {
-        Ok(config) => config,
-        Err(e) => return err(e.to_string()),
-    };
-    let target_host = match c_string_arg(target_host, "target host") {
-        Ok(value) => value,
-        Err(e) => return err(e.to_string()),
-    };
-    let payload = match c_string_arg(payload, "payload") {
-        Ok(value) => value,
-        Err(e) => return err(e.to_string()),
-    };
-    probe_with_config(config, target_host, target_port, payload)
+    guarded(|| {
+        let config =
+            match raw_vless_config(server_host, server_port, uuid, c"127.0.0.1".as_ptr(), 0) {
+                Ok(config) => config,
+                Err(e) => return err(e.to_string()),
+            };
+        let target_host = match c_string_arg(target_host, "target host") {
+            Ok(value) => value,
+            Err(e) => return err(e.to_string()),
+        };
+        let payload = match c_string_arg(payload, "payload") {
+            Ok(value) => value,
+            Err(e) => return err(e.to_string()),
+        };
+        probe_with_config(config, target_host, target_port, payload)
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -171,19 +201,21 @@ pub extern "C" fn wrongcl_probe_json(
     target_port: u16,
     payload: *const c_char,
 ) -> *mut c_char {
-    let config = match parse_json_config(config_json) {
-        Ok(config) => config,
-        Err(e) => return err(e.to_string()),
-    };
-    let target_host = match c_string_arg(target_host, "target host") {
-        Ok(value) => value,
-        Err(e) => return err(e.to_string()),
-    };
-    let payload = match c_string_arg(payload, "payload") {
-        Ok(value) => value,
-        Err(e) => return err(e.to_string()),
-    };
-    probe_with_config(config, target_host, target_port, payload)
+    guarded(|| {
+        let config = match parse_json_config(config_json) {
+            Ok(config) => config,
+            Err(e) => return err(e.to_string()),
+        };
+        let target_host = match c_string_arg(target_host, "target host") {
+            Ok(value) => value,
+            Err(e) => return err(e.to_string()),
+        };
+        let payload = match c_string_arg(payload, "payload") {
+            Ok(value) => value,
+            Err(e) => return err(e.to_string()),
+        };
+        probe_with_config(config, target_host, target_port, payload)
+    })
 }
 
 fn probe_with_config(
@@ -219,109 +251,119 @@ fn probe_with_config(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_stack_summary_json(config_json: *const c_char) -> *mut c_char {
-    let config = match parse_json_config(config_json) {
-        Ok(config) => config,
-        Err(e) => return err(e.to_string()),
-    };
-    let ep = match config.resolve_active_endpoint() {
-        Ok(ep) => ep,
-        Err(e) => return err(e.to_string()),
-    };
-    ok(
-        "stack resolved",
-        json!({
-            "stack": ep.server.endpoint.stack_summary(),
-            "proxy": ep.server.endpoint.proxy.id(),
-            "transport": ep.server.endpoint.transport.id(),
-            "outer_security": ep.server.endpoint.outer_security.id(),
-        }),
-    )
+    guarded(|| {
+        let config = match parse_json_config(config_json) {
+            Ok(config) => config,
+            Err(e) => return err(e.to_string()),
+        };
+        let ep = match config.resolve_active_endpoint() {
+            Ok(ep) => ep,
+            Err(e) => return err(e.to_string()),
+        };
+        ok(
+            "stack resolved",
+            json!({
+                "stack": ep.server.endpoint.stack_summary(),
+                "proxy": ep.server.endpoint.proxy.id(),
+                "transport": ep.server.endpoint.transport.id(),
+                "outer_security": ep.server.endpoint.outer_security.id(),
+            }),
+        )
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_validate_config_json(config_json: *const c_char) -> *mut c_char {
-    let config = match parse_json_config(config_json) {
-        Ok(config) => config,
-        Err(e) => return err(e.to_string()),
-    };
-    let ep = match config.resolve_active_endpoint() {
-        Ok(ep) => ep,
-        Err(e) => return err(e.to_string()),
-    };
-    let stack = ep.server.endpoint.stack_summary();
-    let proxy_id = ep.server.endpoint.proxy.id();
-    let transport_id = ep.server.endpoint.transport.id();
-    let outer_security_id = ep.server.endpoint.outer_security.id();
-    ok(
-        "client config validated",
-        json!({
-            "config": config,
-            "stack": stack,
-            "proxy": proxy_id,
-            "transport": transport_id,
-            "outer_security": outer_security_id,
-        }),
-    )
+    guarded(|| {
+        let config = match parse_json_config(config_json) {
+            Ok(config) => config,
+            Err(e) => return err(e.to_string()),
+        };
+        let ep = match config.resolve_active_endpoint() {
+            Ok(ep) => ep,
+            Err(e) => return err(e.to_string()),
+        };
+        let stack = ep.server.endpoint.stack_summary();
+        let proxy_id = ep.server.endpoint.proxy.id();
+        let transport_id = ep.server.endpoint.transport.id();
+        let outer_security_id = ep.server.endpoint.outer_security.id();
+        ok(
+            "client config validated",
+            json!({
+                "config": config,
+                "stack": stack,
+                "proxy": proxy_id,
+                "transport": transport_id,
+                "outer_security": outer_security_id,
+            }),
+        )
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_load_config_file_json(config_path: *const c_char) -> *mut c_char {
-    let path = match c_string_arg(config_path, "config path") {
-        Ok(path) => path,
-        Err(e) => return err(e.to_string()),
-    };
-    match ClientConfig::from_file(path) {
-        Ok(config) => {
-            let ep = match config.resolve_active_endpoint() {
-                Ok(ep) => ep,
-                Err(e) => return err(e.to_string()),
-            };
-            let stack = ep.server.endpoint.stack_summary();
-            let proxy = ep.server.endpoint.proxy.id();
-            let transport = ep.server.endpoint.transport.id();
-            let outer_security = ep.server.endpoint.outer_security.id();
-            ok(
-                "client config loaded",
-                json!({
-                    "config": config,
-                    "stack": stack,
-                    "proxy": proxy,
-                    "transport": transport,
-                    "outer_security": outer_security,
-                }),
-            )
+    guarded(|| {
+        let path = match c_string_arg(config_path, "config path") {
+            Ok(path) => path,
+            Err(e) => return err(e.to_string()),
+        };
+        match ClientConfig::from_file(path) {
+            Ok(config) => {
+                let ep = match config.resolve_active_endpoint() {
+                    Ok(ep) => ep,
+                    Err(e) => return err(e.to_string()),
+                };
+                let stack = ep.server.endpoint.stack_summary();
+                let proxy = ep.server.endpoint.proxy.id();
+                let transport = ep.server.endpoint.transport.id();
+                let outer_security = ep.server.endpoint.outer_security.id();
+                ok(
+                    "client config loaded",
+                    json!({
+                        "config": config,
+                        "stack": stack,
+                        "proxy": proxy,
+                        "transport": transport,
+                        "outer_security": outer_security,
+                    }),
+                )
+            }
+            Err(e) => err(e.to_string()),
         }
-        Err(e) => err(e.to_string()),
-    }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_export_config_toml_json(config_json: *const c_char) -> *mut c_char {
-    let config = match parse_json_config(config_json) {
-        Ok(config) => config,
-        Err(e) => return err(e.to_string()),
-    };
-    match config.to_toml_string() {
-        Ok(toml) => ok(
-            "client config exported as TOML",
-            json!({
-                "toml": toml,
-            }),
-        ),
-        Err(e) => err(e.to_string()),
-    }
+    guarded(|| {
+        let config = match parse_json_config(config_json) {
+            Ok(config) => config,
+            Err(e) => return err(e.to_string()),
+        };
+        match config.to_toml_string() {
+            Ok(toml) => ok(
+                "client config exported as TOML",
+                json!({
+                    "toml": toml,
+                }),
+            ),
+            Err(e) => err(e.to_string()),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_capabilities_json(wrongsv_config_path: *const c_char) -> *mut c_char {
-    let path = match c_string_arg(wrongsv_config_path, "wrongsv config path") {
-        Ok(path) => path,
-        Err(e) => return err(e.to_string()),
-    };
-    match inspect_wrongsv_config(path) {
-        Ok(report) => ok("wrongsv capabilities inspected", report),
-        Err(e) => err(e.to_string()),
-    }
+    guarded(|| {
+        let path = match c_string_arg(wrongsv_config_path, "wrongsv config path") {
+            Ok(path) => path,
+            Err(e) => return err(e.to_string()),
+        };
+        match inspect_wrongsv_config(path) {
+            Ok(report) => ok("wrongsv capabilities inspected", report),
+            Err(e) => err(e.to_string()),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -331,27 +373,29 @@ pub extern "C" fn wrongcl_adapt_wrongsv_config_json(
     listen_host: *const c_char,
     listen_port: u16,
 ) -> *mut c_char {
-    let path = match c_string_arg(wrongsv_config_path, "wrongsv config path") {
-        Ok(path) => path,
-        Err(e) => return err(e.to_string()),
-    };
-    let server_host = match c_string_arg(server_host, "server host") {
-        Ok(value) => value,
-        Err(e) => return err(e.to_string()),
-    };
-    let listen_host = match c_string_arg(listen_host, "listen host") {
-        Ok(value) => value,
-        Err(e) => return err(e.to_string()),
-    };
-    match adapt_wrongsv_config(path, server_host, listen_host, listen_port) {
-        Ok(adapted) => ok("wrongsv config adapted", adapted),
-        Err(e) => err(e.to_string()),
-    }
+    guarded(|| {
+        let path = match c_string_arg(wrongsv_config_path, "wrongsv config path") {
+            Ok(path) => path,
+            Err(e) => return err(e.to_string()),
+        };
+        let server_host = match c_string_arg(server_host, "server host") {
+            Ok(value) => value,
+            Err(e) => return err(e.to_string()),
+        };
+        let listen_host = match c_string_arg(listen_host, "listen host") {
+            Ok(value) => value,
+            Err(e) => return err(e.to_string()),
+        };
+        match adapt_wrongsv_config(path, server_host, listen_host, listen_port) {
+            Ok(adapted) => ok("wrongsv config adapted", adapted),
+            Err(e) => err(e.to_string()),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_connections_list_json() -> *mut c_char {
-    match global_manager().connections_snapshot() {
+    guarded(|| match global_manager().connections_snapshot() {
         Ok(Some(snap)) => ok(
             "connections snapshot",
             json!({
@@ -375,74 +419,80 @@ pub extern "C" fn wrongcl_connections_list_json() -> *mut c_char {
             }),
         ),
         Err(e) => err(e.to_string()),
-    }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_connection_close(id: u64) -> *mut c_char {
-    match global_manager().close_connection(id) {
+    guarded(|| match global_manager().close_connection(id) {
         Ok(true) => ok(
             "connection close requested",
             json!({ "id": id, "closed": true }),
         ),
         Ok(false) => ok("connection not found", json!({ "id": id, "closed": false })),
         Err(e) => err(e.to_string()),
-    }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_connections_close_matching(filter_json: *const c_char) -> *mut c_char {
-    let filter = if filter_json.is_null() {
-        ConnFilter::default()
-    } else {
-        let text = match c_string_arg(filter_json, "filter JSON") {
-            Ok(text) => text,
-            Err(e) => return err(e.to_string()),
+    guarded(|| {
+        let filter = if filter_json.is_null() {
+            ConnFilter::default()
+        } else {
+            let text = match c_string_arg(filter_json, "filter JSON") {
+                Ok(text) => text,
+                Err(e) => return err(e.to_string()),
+            };
+            match serde_json::from_str::<Value>(&text) {
+                Ok(value) => ConnFilter::from_json(&value),
+                Err(e) => return err(format!("invalid filter JSON: {e}")),
+            }
         };
-        match serde_json::from_str::<Value>(&text) {
-            Ok(value) => ConnFilter::from_json(&value),
-            Err(e) => return err(format!("invalid filter JSON: {e}")),
+        match global_manager().close_matching(&filter) {
+            Ok(count) => ok("connections close requested", json!({ "closed": count })),
+            Err(e) => err(e.to_string()),
         }
-    };
-    match global_manager().close_matching(&filter) {
-        Ok(count) => ok("connections close requested", json!({ "closed": count })),
-        Err(e) => err(e.to_string()),
-    }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_logs_since(cursor: u64) -> *mut c_char {
-    install_log_layer();
-    let ring = global_ring();
-    let (entries, next_cursor) = ring.since(cursor);
-    ok(
-        "logs snapshot",
-        json!({
-            "entries": entries,
-            "cursor": next_cursor,
-            "capacity": ring.capacity(),
-        }),
-    )
+    guarded(|| {
+        install_log_layer();
+        let ring = global_ring();
+        let (entries, next_cursor) = ring.since(cursor);
+        ok(
+            "logs snapshot",
+            json!({
+                "entries": entries,
+                "cursor": next_cursor,
+                "capacity": ring.capacity(),
+            }),
+        )
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_requests_since(cursor: u64) -> *mut c_char {
-    let log = global_request_log();
-    let (entries, next_cursor) = log.since(cursor);
-    let entries: Vec<Value> = entries.iter().map(|e| e.to_json()).collect();
-    ok(
-        "requests snapshot",
-        json!({
-            "entries": entries,
-            "cursor": next_cursor,
-            "capacity": log.capacity(),
-        }),
-    )
+    guarded(|| {
+        let log = global_request_log();
+        let (entries, next_cursor) = log.since(cursor);
+        let entries: Vec<Value> = entries.iter().map(|e| e.to_json()).collect();
+        ok(
+            "requests snapshot",
+            json!({
+                "entries": entries,
+                "cursor": next_cursor,
+                "capacity": log.capacity(),
+            }),
+        )
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_proxy_groups_json() -> *mut c_char {
-    match global_manager().proxy_groups_snapshot() {
+    guarded(|| match global_manager().proxy_groups_snapshot() {
         Ok(Some(snapshot)) => ok("proxy groups snapshot", snapshot),
         Ok(None) => ok(
             "proxy is stopped",
@@ -453,7 +503,7 @@ pub extern "C" fn wrongcl_proxy_groups_json() -> *mut c_char {
             }),
         ),
         Err(e) => err(e.to_string()),
-    }
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -461,73 +511,79 @@ pub extern "C" fn wrongcl_proxy_group_select(
     group: *const c_char,
     member: *const c_char,
 ) -> *mut c_char {
-    let group = match c_string_arg(group, "group name") {
-        Ok(value) => value,
-        Err(e) => return err(e.to_string()),
-    };
-    let member = match c_string_arg(member, "member name") {
-        Ok(value) => value,
-        Err(e) => return err(e.to_string()),
-    };
-    match global_manager().select_group_member(&group, &member) {
-        Ok(()) => ok(
-            "group member selected",
-            json!({ "group": group, "member": member }),
-        ),
-        Err(e) => err(e.to_string()),
-    }
+    guarded(|| {
+        let group = match c_string_arg(group, "group name") {
+            Ok(value) => value,
+            Err(e) => return err(e.to_string()),
+        };
+        let member = match c_string_arg(member, "member name") {
+            Ok(value) => value,
+            Err(e) => return err(e.to_string()),
+        };
+        match global_manager().select_group_member(&group, &member) {
+            Ok(()) => ok(
+                "group member selected",
+                json!({ "group": group, "member": member }),
+            ),
+            Err(e) => err(e.to_string()),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_dns_settings_json() -> *mut c_char {
-    match global_manager().dns_settings_snapshot() {
+    guarded(|| match global_manager().dns_settings_snapshot() {
         Ok(Some(snapshot)) => ok("dns settings snapshot", snapshot),
         Ok(None) => ok("proxy is stopped", json!(DnsSettings::default())),
         Err(e) => err(e.to_string()),
-    }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_dns_settings_set_json(settings_json: *const c_char) -> *mut c_char {
-    let text = match c_string_arg(settings_json, "dns settings JSON") {
-        Ok(value) => value,
-        Err(e) => return err(e.to_string()),
-    };
-    let settings: DnsSettings = match serde_json::from_str(&text) {
-        Ok(value) => value,
-        Err(e) => return err(format!("invalid DNS settings JSON: {e}")),
-    };
-    match global_manager().set_dns_settings(settings.clone()) {
-        Ok(()) => ok("DNS settings saved", json!(settings)),
-        Err(e) => err(e.to_string()),
-    }
+    guarded(|| {
+        let text = match c_string_arg(settings_json, "dns settings JSON") {
+            Ok(value) => value,
+            Err(e) => return err(e.to_string()),
+        };
+        let settings: DnsSettings = match serde_json::from_str(&text) {
+            Ok(value) => value,
+            Err(e) => return err(format!("invalid DNS settings JSON: {e}")),
+        };
+        match global_manager().set_dns_settings(settings.clone()) {
+            Ok(()) => ok("DNS settings saved", json!(settings)),
+            Err(e) => err(e.to_string()),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_tun_status_json() -> *mut c_char {
-    ok("TUN status snapshot", json!(tun::current_status()))
+    guarded(|| ok("TUN status snapshot", json!(tun::current_status())))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_tun_enable_json(config_json: *const c_char) -> *mut c_char {
-    let config_json = match c_string_arg(config_json, "tun config JSON") {
-        Ok(value) => value,
-        Err(e) => return err(e.to_string()),
-    };
-    match tun::enable(&config_json) {
-        Ok(status) => ok("TUN enabled", json!(status)),
-        Err(e) => err(e.to_string()),
-    }
+    guarded(|| {
+        let config_json = match c_string_arg(config_json, "tun config JSON") {
+            Ok(value) => value,
+            Err(e) => return err(e.to_string()),
+        };
+        match tun::enable(&config_json) {
+            Ok(status) => ok("TUN enabled", json!(status)),
+            Err(e) => err(e.to_string()),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_tun_disable() -> *mut c_char {
-    ok("TUN disabled", json!(tun::disable()))
+    guarded(|| ok("TUN disabled", json!(tun::disable())))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_router_snapshot_json() -> *mut c_char {
-    match global_manager().router_snapshot() {
+    guarded(|| match global_manager().router_snapshot() {
         Ok(Some(snapshot)) => ok("router snapshot", snapshot),
         Ok(None) => ok(
             "proxy is stopped",
@@ -538,77 +594,87 @@ pub extern "C" fn wrongcl_router_snapshot_json() -> *mut c_char {
             }),
         ),
         Err(e) => err(e.to_string()),
-    }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_router_set_active_mode(name: *const c_char) -> *mut c_char {
-    let name = match c_string_arg(name, "mode name") {
-        Ok(value) => value,
-        Err(e) => return err(e.to_string()),
-    };
-    match global_manager().set_active_mode(&name) {
-        Ok(()) => ok("active mode set", json!({ "active_mode": name })),
-        Err(e) => err(e.to_string()),
-    }
+    guarded(|| {
+        let name = match c_string_arg(name, "mode name") {
+            Ok(value) => value,
+            Err(e) => return err(e.to_string()),
+        };
+        match global_manager().set_active_mode(&name) {
+            Ok(()) => ok("active mode set", json!({ "active_mode": name })),
+            Err(e) => err(e.to_string()),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_router_set_script_json(script_json: *const c_char) -> *mut c_char {
-    let text = match c_string_arg(script_json, "script JSON") {
-        Ok(value) => value,
-        Err(e) => return err(e.to_string()),
-    };
-    let script: Script = match serde_json::from_str(&text) {
-        Ok(s) => s,
-        Err(e) => return err(format!("invalid script JSON: {e}")),
-    };
-    let name = script.name.clone();
-    match global_manager().upsert_script(script) {
-        Ok(()) => ok("script saved", json!({ "name": name })),
-        Err(e) => err(e.to_string()),
-    }
+    guarded(|| {
+        let text = match c_string_arg(script_json, "script JSON") {
+            Ok(value) => value,
+            Err(e) => return err(e.to_string()),
+        };
+        let script: Script = match serde_json::from_str(&text) {
+            Ok(s) => s,
+            Err(e) => return err(format!("invalid script JSON: {e}")),
+        };
+        let name = script.name.clone();
+        match global_manager().upsert_script(script) {
+            Ok(()) => ok("script saved", json!({ "name": name })),
+            Err(e) => err(e.to_string()),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_router_remove_script(name: *const c_char) -> *mut c_char {
-    let name = match c_string_arg(name, "script name") {
-        Ok(value) => value,
-        Err(e) => return err(e.to_string()),
-    };
-    match global_manager().remove_script(&name) {
-        Ok(()) => ok("script removed", json!({ "name": name })),
-        Err(e) => err(e.to_string()),
-    }
+    guarded(|| {
+        let name = match c_string_arg(name, "script name") {
+            Ok(value) => value,
+            Err(e) => return err(e.to_string()),
+        };
+        match global_manager().remove_script(&name) {
+            Ok(()) => ok("script removed", json!({ "name": name })),
+            Err(e) => err(e.to_string()),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_router_upsert_user_mode_json(mode_json: *const c_char) -> *mut c_char {
-    let text = match c_string_arg(mode_json, "mode JSON") {
-        Ok(value) => value,
-        Err(e) => return err(e.to_string()),
-    };
-    let mode: Mode = match serde_json::from_str(&text) {
-        Ok(m) => m,
-        Err(e) => return err(format!("invalid mode JSON: {e}")),
-    };
-    let name = mode.name.clone();
-    match global_manager().upsert_user_mode(mode) {
-        Ok(()) => ok("mode saved", json!({ "name": name })),
-        Err(e) => err(e.to_string()),
-    }
+    guarded(|| {
+        let text = match c_string_arg(mode_json, "mode JSON") {
+            Ok(value) => value,
+            Err(e) => return err(e.to_string()),
+        };
+        let mode: Mode = match serde_json::from_str(&text) {
+            Ok(m) => m,
+            Err(e) => return err(format!("invalid mode JSON: {e}")),
+        };
+        let name = mode.name.clone();
+        match global_manager().upsert_user_mode(mode) {
+            Ok(()) => ok("mode saved", json!({ "name": name })),
+            Err(e) => err(e.to_string()),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wrongcl_router_remove_user_mode(name: *const c_char) -> *mut c_char {
-    let name = match c_string_arg(name, "mode name") {
-        Ok(value) => value,
-        Err(e) => return err(e.to_string()),
-    };
-    match global_manager().remove_user_mode(&name) {
-        Ok(()) => ok("mode removed", json!({ "name": name })),
-        Err(e) => err(e.to_string()),
-    }
+    guarded(|| {
+        let name = match c_string_arg(name, "mode name") {
+            Ok(value) => value,
+            Err(e) => return err(e.to_string()),
+        };
+        match global_manager().remove_user_mode(&name) {
+            Ok(()) => ok("mode removed", json!({ "name": name })),
+            Err(e) => err(e.to_string()),
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -622,6 +688,12 @@ pub unsafe extern "C" fn wrongcl_free_string(ptr: *mut c_char) {
         return;
     }
     let _ = unsafe { CString::from_raw(ptr) };
+}
+
+#[cfg(test)]
+#[unsafe(no_mangle)]
+pub extern "C" fn wrongcl_debug_trigger_panic() -> *mut c_char {
+    guarded(|| panic!("debug-triggered panic"))
 }
 
 #[cfg(test)]

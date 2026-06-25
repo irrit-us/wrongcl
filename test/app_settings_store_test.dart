@@ -67,4 +67,64 @@ void main() {
 
     expect(loaded.themeVariant, WrongclThemeVariant.wrongcl);
   });
+
+  test('app settings store writes via .tmp then renames over target', () async {
+    final tempDir = Directory.systemTemp.createTempSync(
+      'wrongcl-settings-test',
+    );
+    final file = File('${tempDir.path}/app_settings.json');
+    final store = AppSettingsStore(file: file);
+
+    await store.save(const AppSettings(themeMode: ThemeMode.dark));
+
+    expect(file.existsSync(), isTrue);
+    expect(File('${file.path}.tmp').existsSync(), isFalse);
+    final loaded = await store.load();
+    expect(loaded.themeMode, ThemeMode.dark);
+  });
+
+  test('app settings store backs up syntactically broken JSON', () async {
+    final tempDir = Directory.systemTemp.createTempSync(
+      'wrongcl-settings-test',
+    );
+    final file = File('${tempDir.path}/app_settings.json');
+    await file.writeAsString('{ broken json');
+    final store = AppSettingsStore(file: file);
+
+    final loaded = await store.load();
+
+    expect(loaded.themeMode, ThemeMode.system);
+    expect(file.existsSync(), isFalse);
+    expect(store.lastCorruptBackupPath, isNotNull);
+    expect(store.lastCorruptBackupPath, startsWith('${file.path}.corrupt-'));
+    expect(File(store.lastCorruptBackupPath!).existsSync(), isTrue);
+  });
+
+  test('app settings store backs up unsupported versions', () async {
+    final tempDir = Directory.systemTemp.createTempSync(
+      'wrongcl-settings-test',
+    );
+    final file = File('${tempDir.path}/app_settings.json');
+    await file.writeAsString('{"version":99}');
+    final store = AppSettingsStore(file: file);
+
+    final loaded = await store.load();
+
+    expect(loaded.themeMode, ThemeMode.system);
+    expect(store.lastCorruptBackupPath, isNotNull);
+  });
+
+  test('app settings store clears lastCorruptBackupPath on successful load',
+      () async {
+    final tempDir = Directory.systemTemp.createTempSync(
+      'wrongcl-settings-test',
+    );
+    final file = File('${tempDir.path}/app_settings.json');
+    final store = AppSettingsStore(file: file);
+    store.lastCorruptBackupPath = '/stale/path';
+
+    await store.load();
+
+    expect(store.lastCorruptBackupPath, isNull);
+  });
 }
