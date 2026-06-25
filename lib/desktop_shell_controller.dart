@@ -44,6 +44,11 @@ abstract interface class DesktopShellController {
   Future<void> sync(DesktopShellState state);
 
   Future<void> dispose();
+
+  /// True once the controller has successfully wired up the native window
+  /// shell (window manager + tray). Used by the UI to decide whether the
+  /// custom in-app title bar can talk to `window_manager`.
+  bool get hasNativeWindowShell;
 }
 
 class NoopDesktopShellController implements DesktopShellController {
@@ -63,6 +68,9 @@ class NoopDesktopShellController implements DesktopShellController {
 
   @override
   Future<void> sync(DesktopShellState state) async {}
+
+  @override
+  bool get hasNativeWindowShell => false;
 }
 
 class TrayDesktopShellController
@@ -111,6 +119,8 @@ class TrayDesktopShellController
         center: true,
         skipTaskbar: false,
         title: 'Wrongcl',
+        titleBarStyle: TitleBarStyle.hidden,
+        windowButtonVisibility: false,
       );
       unawaited(
         windowManager.waitUntilReadyToShow(windowOptions, () async {
@@ -236,6 +246,9 @@ class TrayDesktopShellController
   void onWindowRestore() {
     unawaited(_updateTrayMenu());
   }
+
+  @override
+  bool get hasNativeWindowShell => _enabled;
 
   String _trayIconPath() {
     return Platform.isWindows

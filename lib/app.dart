@@ -22,6 +22,7 @@ import 'subviews/settings/network_view.dart';
 import 'system_proxy_manager.dart';
 import 'theme/wrongcl_colors.dart';
 import 'widgets/entry_chip.dart';
+import 'widgets/window_title_bar.dart';
 import 'wrongcl_client.dart';
 
 class WrongclApp extends StatefulWidget {
@@ -184,8 +185,9 @@ class _WrongclAppState extends State<WrongclApp> {
       textTheme: baseTextTheme.apply(fontSizeFactor: 1.0),
       colorScheme: scheme.copyWith(
         surface: palette.surface.surface,
-        surfaceContainerHighest:
-            isDark ? palette.surface.surfaceAccent : palette.surface.surfaceTinted,
+        surfaceContainerHighest: isDark
+            ? palette.surface.surfaceAccent
+            : palette.surface.surfaceTinted,
       ),
       extensions: [palette],
       scaffoldBackgroundColor: palette.surface.scaffold,
@@ -295,18 +297,27 @@ class _ClientHomeState extends State<ClientHome> {
 
   @override
   Widget build(BuildContext context) {
+    final hasCustomTitleBar =
+        widget.desktopShellController.hasNativeWindowShell;
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
         return Scaffold(
-          body: Stack(
+          body: Column(
             children: [
-              MainView(
-                controller: controller,
-                chipIconSide: widget.chipIconSide,
+              if (hasCustomTitleBar) const WindowTitleBar(),
+              Expanded(
+                child: Stack(
+                  children: [
+                    MainView(
+                      controller: controller,
+                      chipIconSide: widget.chipIconSide,
+                    ),
+                    if (controller.showingSubpage)
+                      Positioned.fill(child: _buildActiveSubpage()),
+                  ],
+                ),
               ),
-              if (controller.showingSubpage)
-                Positioned.fill(child: _buildActiveSubpage()),
             ],
           ),
         );

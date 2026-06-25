@@ -83,7 +83,7 @@ class EntryChip extends StatelessWidget {
               maxLines: 1,
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w700,
-                color: palette.text.primary,
+                color: palette.text.muted,
               ),
             ),
           );

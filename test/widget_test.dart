@@ -257,8 +257,10 @@ void main() {
       find.widgetWithText(TextField, 'wrongsv config path'),
       '/tmp/server.toml',
     );
-    final inspectButton =
-        find.widgetWithText(OutlinedButton, 'Inspect wrongsv');
+    final inspectButton = find.widgetWithText(
+      OutlinedButton,
+      'Inspect wrongsv',
+    );
     await tester.dragUntilVisible(
       inspectButton,
       find.byType(Scrollable).last,
@@ -344,16 +346,18 @@ void main() {
     );
   });
 
-  testWidgets('basic palette selector swaps the active WrongclColors palette',
-      (tester) async {
+  testWidgets('basic palette selector swaps the active WrongclColors palette', (
+    tester,
+  ) async {
     final harness = _makeHarness();
     await _pumpReady(tester, harness);
 
     await _tapEntryChip(tester, 'Basic');
 
-    final dropdown = tester.widget<DropdownButtonFormField<WrongclThemeVariant>>(
-      find.byType(DropdownButtonFormField<WrongclThemeVariant>),
-    );
+    final dropdown = tester
+        .widget<DropdownButtonFormField<WrongclThemeVariant>>(
+          find.byType(DropdownButtonFormField<WrongclThemeVariant>),
+        );
     expect(dropdown.initialValue, WrongclThemeVariant.wrongcl);
     expect(dropdown.onChanged, isNotNull);
 
@@ -361,9 +365,7 @@ void main() {
       dropdown.onChanged!(WrongclThemeVariant.nord);
       await Future<void>.delayed(const Duration(milliseconds: 200));
     });
-    final stored = await tester.runAsync(
-      () => harness.appSettingsStore.load(),
-    );
+    final stored = await tester.runAsync(() => harness.appSettingsStore.load());
     expect(stored!.themeVariant, WrongclThemeVariant.nord);
   });
 
@@ -1199,4 +1201,7 @@ class FakeDesktopShellController implements DesktopShellController {
   Future<void> sync(DesktopShellState state) async {
     syncedStates.add(state);
   }
+
+  @override
+  bool get hasNativeWindowShell => false;
 }
