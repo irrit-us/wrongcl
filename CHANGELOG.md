@@ -20,6 +20,13 @@
   test windows.
 - Added LICENSE (MIT), Code of Conduct, Contributing, Security policy, and
   GitHub issue templates.
+- Translated the desktop UI into Simplified Chinese, Spanish, Arabic, and
+  French via `flutter gen-l10n`, and made the language picker swap the whole
+  shell live without a restart.
+- Added a raw VLESS fragment transport and a Snell v1 TCP client.
+- Aligned wrongsv WireGuard import fields with the upstream schema and
+  refreshed the quinn-proto advisory fix.
+- Documented protocol catalog coverage.
 
 ## 0.1.1 - 2026-06-22
 
