@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../client_home_controller.dart';
+import '../../l10n/app_localizations.dart';
 import '../../theme/wrongcl_colors.dart';
 import '../../widgets/subpage_scaffold.dart';
 
@@ -16,33 +17,34 @@ class NetworkSettingsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final systemProxy = controller.systemProxyStatus;
     return SubpageScaffold(
-      title: 'Network',
+      title: l10n.navNetwork,
       onClose: onClose,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _Section(
-            title: 'Local proxy listen address',
+            title: l10n.networkLocalProxyListenAddress,
             children: [
               TextField(
                 controller: controller.localHost,
-                decoration: const InputDecoration(labelText: 'Listen host'),
+                decoration: InputDecoration(labelText: l10n.networkListenHost),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: controller.localPort,
-                decoration: const InputDecoration(labelText: 'Listen port'),
+                decoration: InputDecoration(labelText: l10n.networkListenPort),
                 keyboardType: TextInputType.number,
               ),
             ],
           ),
           const SizedBox(height: 16),
           _Section(
-            title: 'System proxy',
+            title: l10n.networkSystemProxy,
             children: [
-              Text(systemProxy?.message ?? 'Loading...'),
+              Text(systemProxy?.message ?? l10n.commonLoadingEllipsis),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 12,
@@ -57,7 +59,7 @@ class NetworkSettingsView extends StatelessWidget {
                             controller.enableSystemProxy,
                           ),
                     icon: const Icon(Icons.settings_ethernet),
-                    label: const Text('Enable system proxy'),
+                    label: Text(l10n.networkEnableSystemProxy),
                   ),
                   OutlinedButton.icon(
                     onPressed:
@@ -68,7 +70,7 @@ class NetworkSettingsView extends StatelessWidget {
                             controller.disableSystemProxy,
                           ),
                     icon: const Icon(Icons.portable_wifi_off),
-                    label: const Text('Disable system proxy'),
+                    label: Text(l10n.networkDisableSystemProxy),
                   ),
                 ],
               ),
@@ -76,11 +78,11 @@ class NetworkSettingsView extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _Section(
-            title: 'TUN setup',
+            title: l10n.networkTunSetup,
             children: [
               Text(
                 controller.tunAvailability.disabledReason.isEmpty
-                    ? 'TUN status is available.'
+                    ? l10n.networkTunStatusAvailable
                     : controller.tunAvailability.disabledReason,
               ),
               const SizedBox(height: 12),
@@ -99,7 +101,7 @@ class NetworkSettingsView extends StatelessWidget {
                             controller.enableTun,
                           ),
                     icon: const Icon(Icons.shield_outlined),
-                    label: const Text('Prepare TUN interface'),
+                    label: Text(l10n.networkPrepareTunInterface),
                   ),
                   OutlinedButton.icon(
                     onPressed:
@@ -110,7 +112,7 @@ class NetworkSettingsView extends StatelessWidget {
                             controller.disableTun,
                           ),
                     icon: const Icon(Icons.link_off),
-                    label: const Text('Remove prepared interface'),
+                    label: Text(l10n.networkRemovePreparedInterface),
                   ),
                 ],
               ),
@@ -120,16 +122,14 @@ class NetworkSettingsView extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _Section(
-            title: 'Mixed protocol toggles',
+            title: l10n.networkMixedProtocolToggles,
             children: [
               Material(
                 color: Colors.transparent,
                 child: SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Enable SOCKS5 listener'),
-                  subtitle: const Text(
-                    'Accept local SOCKS5 clients on the mixed port.',
-                  ),
+                  title: Text(l10n.networkEnableSocks5Listener),
+                  subtitle: Text(l10n.networkEnableSocks5Subtitle),
                   value: controller.localSocksEnabled,
                   onChanged: controller.busy
                       ? null
@@ -140,10 +140,8 @@ class NetworkSettingsView extends StatelessWidget {
                 color: Colors.transparent,
                 child: SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Enable HTTP proxy listener'),
-                  subtitle: const Text(
-                    'Accept HTTP CONNECT and absolute-form proxy requests.',
-                  ),
+                  title: Text(l10n.networkEnableHttpProxyListener),
+                  subtitle: Text(l10n.networkEnableHttpProxySubtitle),
                   value: controller.localHttpEnabled,
                   onChanged: controller.busy
                       ? null

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../theme/wrongcl_colors.dart';
 
 class SubpageScaffold extends StatelessWidget {
@@ -36,7 +37,7 @@ class SubpageScaffold extends StatelessWidget {
               child: Row(
                 children: [
                   IconButton(
-                    tooltip: 'Close',
+                    tooltip: AppLocalizations.of(context).commonClose,
                     onPressed: onClose,
                     icon: const Icon(Icons.chevron_left),
                   ),

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../l10n/app_localizations.dart';
 import '../theme/wrongcl_colors.dart';
 
 /// Custom Flutter-rendered window title bar.
@@ -79,6 +80,7 @@ class _WindowTitleBarState extends State<WindowTitleBar> with WindowListener {
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     return Container(
       height: 32,
       decoration: BoxDecoration(
@@ -114,23 +116,23 @@ class _WindowTitleBarState extends State<WindowTitleBar> with WindowListener {
           ),
           _TitleBarButton(
             icon: _pinned ? Icons.push_pin : Icons.push_pin_outlined,
-            tooltip: _pinned ? 'Unpin from top' : 'Keep on top',
+            tooltip: _pinned ? l10n.windowUnpinFromTop : l10n.windowKeepOnTop,
             onPressed: _togglePin,
             active: _pinned,
           ),
           _TitleBarButton(
             icon: Icons.remove,
-            tooltip: 'Minimize',
+            tooltip: l10n.windowMinimize,
             onPressed: () => windowManager.minimize(),
           ),
           _TitleBarButton(
             icon: _maximized ? Icons.filter_none : Icons.crop_square,
-            tooltip: _maximized ? 'Restore' : 'Maximize',
+            tooltip: _maximized ? l10n.windowRestore : l10n.windowMaximize,
             onPressed: _toggleMaximize,
           ),
           _TitleBarButton(
             icon: Icons.close,
-            tooltip: 'Close',
+            tooltip: l10n.windowClose,
             onPressed: () => windowManager.close(),
             danger: true,
           ),

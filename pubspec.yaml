@@ -37,6 +37,7 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   ffi: ^2.2.0
+  intl: any
   path_provider: ^2.1.5
   tray_manager: ^0.5.3
   window_manager: ^0.5.1
@@ -80,6 +81,7 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  generate: true
   assets:
     - assets/tray_icon.png
     - assets/tray_icon.ico

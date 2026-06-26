@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../client_home_controller.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/wrongcl_colors.dart';
 import '../widgets/subpage_scaffold.dart';
 
@@ -17,17 +18,17 @@ class RequestsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
+    final l10n = AppLocalizations.of(context);
     final requests = controller.recentRequests.reversed.toList(growable: false);
     return SubpageScaffold(
-      title: 'Requests',
+      title: l10n.navRequests,
       onClose: onClose,
       child: requests.isEmpty
           ? Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  'No captured requests yet. Send traffic through the local '
-                  'proxy and the most recent requests will appear here.',
+                  l10n.requestsEmpty,
                   textAlign: TextAlign.center,
                   style: TextStyle(color: palette.text.secondary),
                 ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../client_home_controller.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/wrongcl_colors.dart';
 import '../widgets/subpage_scaffold.dart';
 import '../wrongcl_client.dart';
@@ -40,7 +41,7 @@ class _ModePickerViewState extends State<ModePickerView> {
     final proxy = _proxyName;
     if (proxy == null) {
       setState(() {
-        _errorMessage = 'Pick a proxy/group to pin this mode to.';
+        _errorMessage = AppLocalizations.of(context).modePickProxy;
       });
       return;
     }
@@ -70,6 +71,7 @@ class _ModePickerViewState extends State<ModePickerView> {
   @override
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
+    final l10n = AppLocalizations.of(context);
     final controller = widget.controller;
     final groups = controller.currentProxyGroups;
     final candidates = <String>[
@@ -78,7 +80,7 @@ class _ModePickerViewState extends State<ModePickerView> {
     ];
     final scripts = controller.currentRouterSnapshot.scripts;
     return SubpageScaffold(
-      title: 'Add mode',
+      title: l10n.modeAddTitle,
       onClose: widget.onClose,
       child: Center(
         child: Padding(
@@ -98,7 +100,7 @@ class _ModePickerViewState extends State<ModePickerView> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'New user mode',
+                    l10n.modeNewUserMode,
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -108,15 +110,15 @@ class _ModePickerViewState extends State<ModePickerView> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Name',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: l10n.modeName,
+                      border: const OutlineInputBorder(),
                     ),
                     validator: (value) {
                       final v = value?.trim() ?? '';
-                      if (v.isEmpty) return 'Name is required';
+                      if (v.isEmpty) return l10n.modeNameRequired;
                       if (v == 'global' || v == 'rule' || v == 'direct') {
-                        return 'Name conflicts with a built-in mode';
+                        return l10n.modeNameConflictsBuiltin;
                       }
                       return null;
                     },
@@ -124,9 +126,9 @@ class _ModePickerViewState extends State<ModePickerView> {
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     initialValue: _proxyName,
-                    decoration: const InputDecoration(
-                      labelText: 'Proxy',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: l10n.modeProxy,
+                      border: const OutlineInputBorder(),
                     ),
                     items: [
                       for (final c in candidates)
@@ -139,14 +141,14 @@ class _ModePickerViewState extends State<ModePickerView> {
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String?>(
                     initialValue: _scriptName,
-                    decoration: const InputDecoration(
-                      labelText: 'Script (optional)',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: l10n.modeScriptOptional,
+                      border: const OutlineInputBorder(),
                     ),
                     items: [
-                      const DropdownMenuItem<String?>(
+                      DropdownMenuItem<String?>(
                         value: null,
-                        child: Text('— none —'),
+                        child: Text(l10n.modeNone),
                       ),
                       for (final s in scripts)
                         DropdownMenuItem<String?>(
@@ -169,12 +171,12 @@ class _ModePickerViewState extends State<ModePickerView> {
                     children: [
                       OutlinedButton(
                         onPressed: _saving ? null : widget.onClose,
-                        child: const Text('Cancel'),
+                        child: Text(l10n.commonCancel),
                       ),
                       const SizedBox(width: 8),
                       FilledButton(
                         onPressed: _saving ? null : _save,
-                        child: Text(_saving ? 'Saving…' : 'Save'),
+                        child: Text(_saving ? l10n.commonSavingEllipsis : l10n.commonSave),
                       ),
                     ],
                   ),

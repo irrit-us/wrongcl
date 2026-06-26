@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../control_state.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/wrongcl_colors.dart';
 import 'entry_chip.dart';
 
@@ -173,6 +174,7 @@ class _RuntimePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
+    final l10n = AppLocalizations.of(context);
     final iconOnRight = iconSide == ChipIconSide.right;
     final textAlign = iconOnRight ? TextAlign.end : TextAlign.start;
     final crossAxis = iconOnRight
@@ -186,7 +188,7 @@ class _RuntimePill extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Runtime',
+            l10n.runtimeLabel,
             textAlign: textAlign,
             style: TextStyle(
               color: palette.accent.runtimeOn,
@@ -196,10 +198,10 @@ class _RuntimePill extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             busy
-                ? 'Working...'
+                ? l10n.runtimeWorking
                 : running
-                    ? 'Running'
-                    : 'Stopped',
+                    ? l10n.runtimeRunning
+                    : l10n.runtimeStopped,
             textAlign: textAlign,
             style: TextStyle(
               color: palette.accent.runtimeOn.withAlpha(180),
@@ -210,7 +212,7 @@ class _RuntimePill extends StatelessWidget {
       ),
     );
     final iconWidget = IconButton(
-      tooltip: running ? 'Stop' : 'Start',
+      tooltip: running ? l10n.runtimeStopTooltip : l10n.runtimeStartTooltip,
       onPressed: busy ? null : () => onChanged(!running),
       icon: Icon(
         running ? Icons.stop_circle : Icons.play_circle_fill,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../client_home_controller.dart';
+import '../../l10n/app_localizations.dart';
 import '../../theme/wrongcl_colors.dart';
 import '../../widgets/subpage_scaffold.dart';
 
@@ -16,14 +17,15 @@ class AdvancedSettingsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return SubpageScaffold(
-      title: 'Advanced',
+      title: l10n.navAdvanced,
       onClose: onClose,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _Section(
-            title: 'Diagnostics',
+            title: l10n.advancedDiagnostics,
             children: [
               Text(controller.nativeInfo),
               const SizedBox(height: 12),
@@ -36,7 +38,7 @@ class AdvancedSettingsView extends StatelessWidget {
                         ? null
                         : controller.refreshStatus,
                     icon: const Icon(Icons.refresh),
-                    label: const Text('Refresh status'),
+                    label: Text(l10n.advancedRefreshStatus),
                   ),
                   OutlinedButton.icon(
                     onPressed: controller.busy
@@ -46,7 +48,7 @@ class AdvancedSettingsView extends StatelessWidget {
                             controller.validateCurrentConfig,
                           ),
                     icon: const Icon(Icons.fact_check_outlined),
-                    label: const Text('Validate config'),
+                    label: Text(l10n.advancedValidateConfig),
                   ),
                 ],
               ),
@@ -54,18 +56,15 @@ class AdvancedSettingsView extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _Section(
-            title: 'Log level',
+            title: l10n.advancedLogLevel,
             children: [
-              const Text(
-                'This filters what the Logs page displays. It does not change '
-                'the native tracing emission level yet.',
-              ),
+              Text(l10n.advancedLogLevelHint),
               const SizedBox(height: 12),
               DropdownButtonFormField<LogLevelFilter>(
                 initialValue: controller.logLevelFilter,
-                decoration: const InputDecoration(
-                  labelText: 'Logs page filter',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: l10n.advancedLogsPageFilter,
+                  border: const OutlineInputBorder(),
                 ),
                 items: [
                   for (final option in LogLevelFilter.values)
@@ -80,23 +79,19 @@ class AdvancedSettingsView extends StatelessWidget {
                       },
               ),
               const SizedBox(height: 12),
-              Text('Current filter: ${controller.logLevelFilter.label}'),
+              Text(l10n.advancedCurrentFilter(controller.logLevelFilter.label)),
             ],
           ),
           const SizedBox(height: 16),
           _Section(
-            title: 'Raw config editor',
+            title: l10n.advancedRawConfigEditor,
             children: [
-              const Text(
-                'Edit the current draft as JSON. TOML is supported for file '
-                'export, while file loading accepts whatever the native client '
-                'can parse.',
-              ),
+              Text(l10n.advancedRawConfigEditorHint),
               const SizedBox(height: 12),
               TextField(
                 controller: controller.clientConfigPath,
-                decoration: const InputDecoration(
-                  labelText: 'Config file path',
+                decoration: InputDecoration(
+                  labelText: l10n.advancedConfigFilePath,
                   hintText: '/tmp/wrongcl-config.json',
                 ),
               ),
@@ -113,7 +108,7 @@ class AdvancedSettingsView extends StatelessWidget {
                             controller.loadClientConfigFile,
                           ),
                     icon: const Icon(Icons.file_open_outlined),
-                    label: const Text('Load file'),
+                    label: Text(l10n.advancedLoadFile),
                   ),
                   OutlinedButton.icon(
                     onPressed: controller.busy
@@ -123,7 +118,7 @@ class AdvancedSettingsView extends StatelessWidget {
                             controller.exportCurrentConfigJson,
                           ),
                     icon: const Icon(Icons.download_outlined),
-                    label: const Text('Export JSON'),
+                    label: Text(l10n.advancedExportJson),
                   ),
                   OutlinedButton.icon(
                     onPressed: controller.busy
@@ -133,7 +128,7 @@ class AdvancedSettingsView extends StatelessWidget {
                             controller.exportCurrentConfigToml,
                           ),
                     icon: const Icon(Icons.description_outlined),
-                    label: const Text('Export TOML'),
+                    label: Text(l10n.advancedExportToml),
                   ),
                 ],
               ),
@@ -145,7 +140,7 @@ class AdvancedSettingsView extends StatelessWidget {
                       ? null
                       : controller.syncRawConfigEditorFromDraft,
                   icon: const Icon(Icons.sync_alt),
-                  label: const Text('Load current draft'),
+                  label: Text(l10n.advancedLoadCurrentDraft),
                 ),
               ),
               const SizedBox(height: 12),
@@ -153,8 +148,8 @@ class AdvancedSettingsView extends StatelessWidget {
                 controller: controller.rawConfigEditor,
                 maxLines: 18,
                 minLines: 12,
-                decoration: const InputDecoration(
-                  labelText: 'Raw client config (JSON)',
+                decoration: InputDecoration(
+                  labelText: l10n.advancedRawClientConfigJson,
                   alignLabelWithHint: true,
                 ),
               ),
@@ -169,7 +164,7 @@ class AdvancedSettingsView extends StatelessWidget {
                           controller.applyRawConfigEditorJson,
                         ),
                   icon: const Icon(Icons.playlist_add_check_circle_outlined),
-                  label: const Text('Apply JSON to draft'),
+                  label: Text(l10n.advancedApplyJsonToDraft),
                 ),
               ),
             ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../client_home_controller.dart';
+import '../l10n/app_localizations.dart';
 import '../profile_store.dart';
 import '../theme/wrongcl_colors.dart';
 import '../widgets/subpage_scaffold.dart';
@@ -17,14 +18,15 @@ class ProfilesView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return SubpageScaffold(
-      title: 'Profiles',
+      title: l10n.navProfiles,
       onClose: onClose,
       actions: [
         OutlinedButton.icon(
           onPressed: controller.busy ? null : controller.newBlankProfile,
           icon: const Icon(Icons.add),
-          label: const Text('New'),
+          label: Text(l10n.profilesNew),
         ),
         const SizedBox(width: 8),
         FilledButton.icon(
@@ -35,19 +37,19 @@ class ProfilesView extends StatelessWidget {
                   controller.saveCurrentProfile,
                 ),
           icon: const Icon(Icons.save),
-          label: const Text('Save current'),
+          label: Text(l10n.profilesSaveCurrent),
         ),
       ],
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _Section(
-            title: 'Current draft',
+            title: l10n.profilesCurrentDraft,
             children: [
               TextField(
                 key: const ValueKey('profile-name'),
                 controller: controller.profileName,
-                decoration: const InputDecoration(labelText: 'Profile name'),
+                decoration: InputDecoration(labelText: l10n.profilesProfileName),
               ),
               if (controller.profilesStatus.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -64,19 +66,19 @@ class ProfilesView extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _Section(
-            title: 'wrongsv import',
+            title: l10n.profilesWrongsvImport,
             children: [
               TextField(
                 controller: controller.wrongsvConfigPath,
-                decoration: const InputDecoration(
-                  labelText: 'wrongsv config path',
+                decoration: InputDecoration(
+                  labelText: l10n.profilesWrongsvConfigPath,
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: controller.wrongsvServerHost,
-                decoration: const InputDecoration(
-                  labelText: 'Server host for adapted client config',
+                decoration: InputDecoration(
+                  labelText: l10n.profilesServerHost,
                 ),
               ),
               const SizedBox(height: 12),
@@ -85,8 +87,8 @@ class ProfilesView extends StatelessWidget {
                   Expanded(
                     child: TextField(
                       controller: controller.wrongsvListenHost,
-                      decoration: const InputDecoration(
-                        labelText: 'Local listen host',
+                      decoration: InputDecoration(
+                        labelText: l10n.profilesLocalListenHost,
                       ),
                     ),
                   ),
@@ -96,8 +98,8 @@ class ProfilesView extends StatelessWidget {
                     child: TextField(
                       controller: controller.wrongsvListenPort,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Local listen port',
+                      decoration: InputDecoration(
+                        labelText: l10n.profilesLocalListenPort,
                       ),
                     ),
                   ),
@@ -116,7 +118,7 @@ class ProfilesView extends StatelessWidget {
                             controller.inspectWrongsv,
                           ),
                     icon: const Icon(Icons.search),
-                    label: const Text('Inspect wrongsv'),
+                    label: Text(l10n.profilesInspectWrongsv),
                   ),
                   FilledButton.icon(
                     onPressed: controller.busy
@@ -126,7 +128,7 @@ class ProfilesView extends StatelessWidget {
                             controller.adaptWrongsv,
                           ),
                     icon: const Icon(Icons.transform),
-                    label: const Text('Adapt wrongsv'),
+                    label: Text(l10n.profilesAdaptWrongsv),
                   ),
                 ],
               ),
@@ -168,7 +170,7 @@ class ProfilesView extends StatelessWidget {
                               controller.completeWrongsvImport,
                             ),
                       icon: const Icon(Icons.verified_outlined),
-                      label: const Text('Complete import'),
+                      label: Text(l10n.profilesCompleteImport),
                     ),
                   ],
                 ),
@@ -177,12 +179,11 @@ class ProfilesView extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _Section(
-            title: 'Saved profiles',
+            title: l10n.profilesSavedProfiles,
             children: [
               if (controller.savedProfiles.isEmpty)
                 Text(
-                  'No saved profiles yet. Save the current draft to create '
-                  'a reusable entry.',
+                  l10n.profilesSavedEmpty,
                   style: TextStyle(color: context.wrongclColors.text.secondary),
                 )
               else
@@ -206,7 +207,7 @@ class ProfilesView extends StatelessWidget {
                               ? null
                               : controller.loadSelectedProfile,
                           icon: const Icon(Icons.upload_file),
-                          label: const Text('Load selected'),
+                          label: Text(l10n.profilesLoadSelected),
                         ),
                         OutlinedButton.icon(
                           onPressed:
@@ -218,7 +219,7 @@ class ProfilesView extends StatelessWidget {
                                   controller.duplicateSelectedProfile,
                                 ),
                           icon: const Icon(Icons.copy_all),
-                          label: const Text('Duplicate selected'),
+                          label: Text(l10n.profilesDuplicateSelected),
                         ),
                         OutlinedButton.icon(
                           onPressed:
@@ -227,7 +228,7 @@ class ProfilesView extends StatelessWidget {
                               ? null
                               : () => _confirmDelete(context),
                           icon: const Icon(Icons.delete_outline),
-                          label: const Text('Delete selected'),
+                          label: Text(l10n.profilesDeleteSelected),
                         ),
                       ],
                     ),
@@ -314,23 +315,23 @@ class ProfilesView extends StatelessWidget {
     if (selected == null) {
       return;
     }
+    final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Delete saved profile?'),
+          title: Text(l10n.profilesDeleteTitle),
           content: Text(
-            'Delete "${selected.name}" from the local profile list? '
-            'This does not change the remote wrongsv server.',
+            l10n.profilesDeleteMessage(selected.name),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
+              child: Text(l10n.commonCancel),
             ),
             FilledButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Delete profile'),
+              child: Text(l10n.profilesDeleteConfirm),
             ),
           ],
         );

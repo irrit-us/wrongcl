@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../client_home_controller.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/wrongcl_colors.dart';
 import '../widgets/subpage_scaffold.dart';
 
@@ -13,20 +14,18 @@ class LogsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
+    final l10n = AppLocalizations.of(context);
     final logs = controller.visibleLogs;
     final hasSourceLogs = controller.recentLogs.isNotEmpty;
     return SubpageScaffold(
-      title: 'Logs',
+      title: l10n.navLogs,
       onClose: onClose,
       child: logs.isEmpty
           ? Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  hasSourceLogs
-                      ? 'No log entries match the current log-level filter.'
-                      : 'No log entries captured yet. Recent runtime events '
-                            'will stream here while the proxy is active.',
+                  hasSourceLogs ? l10n.logsNoMatch : l10n.logsEmpty,
                   textAlign: TextAlign.center,
                   style: TextStyle(color: palette.text.secondary),
                 ),

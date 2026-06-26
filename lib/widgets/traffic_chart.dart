@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../control_state.dart';
+import '../l10n/app_localizations.dart';
 import '../signal_widgets.dart';
 import '../theme/wrongcl_colors.dart';
 
@@ -19,6 +20,7 @@ class TrafficChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
+    final l10n = AppLocalizations.of(context);
     final upRate = _latestRate(uploadSeries.points);
     final downRate = _latestRate(downloadSeries.points);
     return Container(
@@ -32,7 +34,7 @@ class TrafficChart extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ChartRow(
-            label: 'Up',
+            label: l10n.trafficUp,
             valueText: '${formatSignalBytes(upRate)}/s',
             color: palette.chart.upload,
             gridColor: palette.chart.grid,
@@ -40,7 +42,7 @@ class TrafficChart extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _ChartRow(
-            label: 'Down',
+            label: l10n.trafficDown,
             valueText: '${formatSignalBytes(downRate)}/s',
             color: palette.chart.download,
             gridColor: palette.chart.grid,

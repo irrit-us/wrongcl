@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../client_home_controller.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/wrongcl_colors.dart';
 import '../widgets/subpage_scaffold.dart';
 
@@ -16,23 +17,22 @@ class ConnectionsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final connections = controller.activeConnections;
     return SubpageScaffold(
-      title: 'Connections',
+      title: l10n.navConnections,
       onClose: onClose,
       actions: [
         if (connections.isNotEmpty)
           OutlinedButton.icon(
             onPressed: controller.closeAllConnections,
             icon: const Icon(Icons.close),
-            label: const Text('Close all'),
+            label: Text(l10n.connectionsCloseAll),
           ),
       ],
       child: connections.isEmpty
-          ? const _EmptyState(
-              message:
-                  'No active connections. Live entries appear here while '
-                  'traffic is flowing through the local proxy.',
+          ? _EmptyState(
+              message: l10n.connectionsEmpty,
             )
           : ListView.separated(
               padding: const EdgeInsets.all(12),
@@ -59,6 +59,7 @@ class _ConnectionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
+    final l10n = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -79,7 +80,7 @@ class _ConnectionRow extends StatelessWidget {
                 ),
                 if (connection.sourceApp.isNotEmpty)
                   Text(
-                    'via ${connection.sourceApp}',
+                    l10n.connectionsVia(connection.sourceApp),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: palette.text.secondary,
                     ),
@@ -88,7 +89,7 @@ class _ConnectionRow extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: 'Close',
+            tooltip: l10n.commonClose,
             onPressed: onClose,
             icon: const Icon(Icons.close),
           ),

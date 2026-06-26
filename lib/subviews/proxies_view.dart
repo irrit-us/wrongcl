@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../client_home_controller.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/wrongcl_colors.dart';
 import '../widgets/subpage_scaffold.dart';
 import '../wrongcl_client.dart';
@@ -17,19 +18,19 @@ class ProxiesView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final snapshot = controller.proxyGroups;
     final activeKind = snapshot.active?.kind;
     final activeName = snapshot.active?.name ?? '';
 
     final Widget body;
     if (!controller.running) {
-      body = const _Notice(
-        message: 'Start the proxy to inspect endpoints and groups.',
+      body = _Notice(
+        message: l10n.proxiesEmptyStopped,
       );
     } else if (snapshot.endpoints.isEmpty) {
-      body = const _Notice(
-        message: 'No endpoints reported by the runtime yet. '
-            'Refresh once the proxy is fully started.',
+      body = _Notice(
+        message: l10n.proxiesEmptyNoEndpoints,
       );
     } else {
       body = ListView(
@@ -59,7 +60,7 @@ class ProxiesView extends StatelessWidget {
           ],
           const SizedBox(height: 8),
           Text(
-            'Endpoints',
+            l10n.proxiesEndpoints,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 6),
@@ -74,7 +75,7 @@ class ProxiesView extends StatelessWidget {
     }
 
     return SubpageScaffold(
-      title: 'Proxies',
+      title: l10n.navProxies,
       onClose: onClose,
       child: body,
     );
@@ -90,9 +91,10 @@ class _ActiveBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
+    final l10n = AppLocalizations.of(context);
     final label = activeKind == null || activeName.isEmpty
-        ? 'No active selection'
-        : 'Active $activeKind: $activeName';
+        ? l10n.proxiesNoActiveSelection
+        : l10n.proxiesActiveLabel(activeKind!, activeName);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
@@ -180,7 +182,7 @@ class _GroupCard extends StatelessWidget {
               ),
               const Spacer(),
               if (!canSelect)
-                Text('auto', style: Theme.of(context).textTheme.labelSmall),
+                Text(AppLocalizations.of(context).proxiesAuto, style: Theme.of(context).textTheme.labelSmall),
             ],
           ),
           const SizedBox(height: 8),
@@ -217,7 +219,7 @@ class _MemberRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
     final subtitle = endpoint == null
-        ? 'unknown endpoint'
+        ? AppLocalizations.of(context).proxiesUnknownEndpoint
         : '${endpoint!.host}:${endpoint!.port} - ${endpoint!.stack}';
     final iconColor = enabled
         ? (selected ? palette.status.success : palette.border.accent)

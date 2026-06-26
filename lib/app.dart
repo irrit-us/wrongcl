@@ -7,6 +7,7 @@ import 'app_settings_store.dart';
 import 'autostart_manager.dart';
 import 'client_home_controller.dart';
 import 'desktop_shell_controller.dart';
+import 'l10n/app_localizations.dart';
 import 'main_view.dart';
 import 'profile_store.dart';
 import 'subviews/connections_view.dart';
@@ -157,6 +158,7 @@ class _WrongclAppState extends State<WrongclApp> {
         Locale('fr'),
       ],
       localizationsDelegates: const [
+        AppLocalizations.delegate,
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,

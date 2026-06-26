@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'client_home_controller.dart';
+import 'l10n/app_localizations.dart';
 import 'theme/wrongcl_colors.dart';
 import 'widgets/control_column.dart';
 import 'widgets/entry_chip.dart';
@@ -124,6 +125,7 @@ class _EntriesGrid extends StatelessWidget {
     final selectedProfile = controller.selectedProfile;
     final activeProxy = controller.proxyGroups.active?.name;
     final iconOnRight = iconSide == ChipIconSide.right;
+    final l10n = AppLocalizations.of(context);
     final blocks = <Widget>[
       Expanded(
         flex: 2,
@@ -143,7 +145,7 @@ class _EntriesGrid extends StatelessWidget {
             children: [
               Expanded(
                 child: EntryChip(
-                  label: 'Proxies',
+                  label: l10n.navProxies,
                   icon: Icons.lan_outlined,
                   subtitle: activeProxy,
                   iconSide: iconSide,
@@ -153,7 +155,7 @@ class _EntriesGrid extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: EntryChip(
-                  label: 'Profiles',
+                  label: l10n.navProfiles,
                   icon: Icons.folder_copy_outlined,
                   subtitle: selectedProfile?.name,
                   iconSide: iconSide,
@@ -184,12 +186,13 @@ class _InspectBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
     final iconOnRight = iconSide == ChipIconSide.right;
+    final l10n = AppLocalizations.of(context);
     final topRow = <Widget>[
-      Expanded(child: _BlockTitle(label: 'Inspect', iconOnRight: iconOnRight)),
+      Expanded(child: _BlockTitle(label: l10n.navInspect, iconOnRight: iconOnRight)),
       const SizedBox(width: 8),
       Expanded(
         child: EntryChip(
-          label: 'Connections',
+          label: l10n.navConnections,
           icon: Icons.swap_horiz,
           trailing: '${controller.activeConnections.length}',
           iconSide: iconSide,
@@ -200,7 +203,7 @@ class _InspectBlock extends StatelessWidget {
     final bottomRow = <Widget>[
       Expanded(
         child: EntryChip(
-          label: 'Requests',
+          label: l10n.navRequests,
           icon: Icons.http_outlined,
           trailing: '${controller.recentRequests.length}',
           iconSide: iconSide,
@@ -210,7 +213,7 @@ class _InspectBlock extends StatelessWidget {
       const SizedBox(width: 8),
       Expanded(
         child: EntryChip(
-          label: 'Logs',
+          label: l10n.navLogs,
           icon: Icons.article_outlined,
           trailing: '${controller.recentLogs.length}',
           iconSide: iconSide,
@@ -253,16 +256,17 @@ class _SettingsBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
     final iconOnRight = iconSide == ChipIconSide.right;
+    final l10n = AppLocalizations.of(context);
     final topRow = <Widget>[
       Expanded(
         flex: 2,
-        child: _BlockTitle(label: 'Settings', iconOnRight: iconOnRight),
+        child: _BlockTitle(label: l10n.navSettings, iconOnRight: iconOnRight),
       ),
       const SizedBox(width: 8),
       Expanded(
         flex: 2,
         child: EntryChip(
-          label: 'Basic',
+          label: l10n.navBasic,
           icon: Icons.tune,
           iconSide: iconSide,
           onTap: () => controller.openRoute(HomeRoute.settingsBasic),
@@ -272,7 +276,7 @@ class _SettingsBlock extends StatelessWidget {
       Expanded(
         flex: 2,
         child: EntryChip(
-          label: 'Network',
+          label: l10n.navNetwork,
           icon: Icons.cable,
           iconSide: iconSide,
           onTap: () => controller.openRoute(HomeRoute.settingsNetwork),
@@ -284,7 +288,7 @@ class _SettingsBlock extends StatelessWidget {
       Expanded(
         flex: 2,
         child: EntryChip(
-          label: 'DNS',
+          label: l10n.navDns,
           icon: Icons.dns_outlined,
           iconSide: iconSide,
           onTap: () => controller.openRoute(HomeRoute.settingsDns),
@@ -294,7 +298,7 @@ class _SettingsBlock extends StatelessWidget {
       Expanded(
         flex: 2,
         child: EntryChip(
-          label: 'Advanced',
+          label: l10n.navAdvanced,
           icon: Icons.science_outlined,
           iconSide: iconSide,
           onTap: () => controller.openRoute(HomeRoute.settingsAdvanced),

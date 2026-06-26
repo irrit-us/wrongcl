@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../control_state.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/wrongcl_colors.dart';
 import 'entry_chip.dart';
 
@@ -83,11 +84,13 @@ class ModeStrip extends StatelessWidget {
 
   Widget _buildModeCell(BuildContext context, ModeSlot slot) {
     final palette = context.wrongclColors;
+    final l10n = AppLocalizations.of(context);
     final isActive = slot.id == activeId;
     final disabled = disabledReason.isNotEmpty;
     final foreground = disabled
         ? palette.topBar.foregroundMuted
         : palette.topBar.foreground;
+    final displayName = _localizedSlotName(l10n, slot);
     return Tooltip(
       message: disabled ? disabledReason : '',
       child: InkWell(
@@ -104,7 +107,7 @@ class ModeStrip extends StatelessWidget {
           ),
           child: Center(
             child: Text(
-              slot.name,
+              displayName,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: foreground,
@@ -118,8 +121,23 @@ class ModeStrip extends StatelessWidget {
     );
   }
 
+  String _localizedSlotName(AppLocalizations l10n, ModeSlot slot) {
+    if (!slot.builtin) return slot.name;
+    switch (slot.id) {
+      case 'global':
+        return l10n.modeGlobal;
+      case 'rule':
+        return l10n.modeRule;
+      case 'direct':
+        return l10n.modeDirect;
+      default:
+        return slot.name;
+    }
+  }
+
   Widget _buildAddCell(BuildContext context) {
     final palette = context.wrongclColors;
+    final l10n = AppLocalizations.of(context);
     return InkWell(
       onTap: onAdd,
       borderRadius: BorderRadius.circular(10),
@@ -131,9 +149,12 @@ class ModeStrip extends StatelessWidget {
             children: [
               Icon(Icons.add, color: palette.topBar.foregroundMuted, size: 16),
               const SizedBox(width: 4),
-              Text(
-                'Add',
-                style: TextStyle(color: palette.topBar.foregroundMuted),
+              Flexible(
+                child: Text(
+                  l10n.modeAdd,
+                  style: TextStyle(color: palette.topBar.foregroundMuted),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),

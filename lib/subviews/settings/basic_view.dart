@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../client_home_controller.dart';
+import '../../l10n/app_localizations.dart';
 import '../../theme/wrongcl_colors.dart';
 import '../../widgets/entry_chip.dart';
 import '../../widgets/subpage_scaffold.dart';
@@ -33,17 +34,18 @@ class BasicSettingsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final autostart = controller.autostartStatus;
     return SubpageScaffold(
-      title: 'Basic',
+      title: l10n.navBasic,
       onClose: onClose,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _Block(
-            title: 'Autostart',
+            title: l10n.settingsAutostart,
             message: autostart == null
-                ? 'Loading autostart status...'
+                ? l10n.settingsAutostartLoading
                 : autostart.message,
             child: Wrap(
               spacing: 12,
@@ -57,7 +59,7 @@ class BasicSettingsView extends StatelessWidget {
                           controller.enableAutostart,
                         ),
                   icon: const Icon(Icons.login),
-                  label: const Text('Enable autostart'),
+                  label: Text(l10n.settingsEnableAutostart),
                 ),
                 OutlinedButton.icon(
                   onPressed: controller.busy || !(autostart?.supported ?? false)
@@ -67,20 +69,20 @@ class BasicSettingsView extends StatelessWidget {
                           controller.disableAutostart,
                         ),
                   icon: const Icon(Icons.logout),
-                  label: const Text('Disable autostart'),
+                  label: Text(l10n.settingsDisableAutostart),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 16),
           _Block(
-            title: 'Language',
-            message: 'Language preference is saved locally.',
+            title: l10n.settingsLanguage,
+            message: l10n.settingsLanguageHint,
             child: DropdownButtonFormField<String>(
               initialValue: locale.languageCode,
-              decoration: const InputDecoration(
-                labelText: 'App language',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.settingsAppLanguage,
+                border: const OutlineInputBorder(),
               ),
               items: const [
                 DropdownMenuItem(value: 'en', child: Text('English')),
@@ -104,29 +106,29 @@ class BasicSettingsView extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _Block(
-            title: 'Theme',
-            message: 'Theme mode and palette are saved locally.',
+            title: l10n.settingsTheme,
+            message: l10n.settingsThemeHint,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 DropdownButtonFormField<ThemeMode>(
                   initialValue: themeMode,
-                  decoration: const InputDecoration(
-                    labelText: 'Theme mode',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: l10n.settingsThemeMode,
+                    border: const OutlineInputBorder(),
                   ),
-                  items: const [
+                  items: [
                     DropdownMenuItem(
                       value: ThemeMode.system,
-                      child: Text('Follow system'),
+                      child: Text(l10n.settingsThemeFollowSystem),
                     ),
                     DropdownMenuItem(
                       value: ThemeMode.light,
-                      child: Text('Light'),
+                      child: Text(l10n.settingsThemeLight),
                     ),
                     DropdownMenuItem(
                       value: ThemeMode.dark,
-                      child: Text('Dark'),
+                      child: Text(l10n.settingsThemeDark),
                     ),
                   ],
                   onChanged: controller.busy
@@ -143,9 +145,9 @@ class BasicSettingsView extends StatelessWidget {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<WrongclThemeVariant>(
                   initialValue: themeVariant,
-                  decoration: const InputDecoration(
-                    labelText: 'Theme palette',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: l10n.settingsThemePalette,
+                    border: const OutlineInputBorder(),
                   ),
                   items: [
                     for (final variant in WrongclThemeVariant.values)
@@ -170,23 +172,22 @@ class BasicSettingsView extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _Block(
-            title: 'Layout',
-            message: 'Move chip icons to the right when reading right-to-left '
-                '(Arabic, Hebrew, ...).',
+            title: l10n.settingsLayout,
+            message: l10n.settingsLayoutHint,
             child: DropdownButtonFormField<ChipIconSide>(
               initialValue: chipIconSide,
-              decoration: const InputDecoration(
-                labelText: 'Chip icon side',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.settingsChipIconSide,
+                border: const OutlineInputBorder(),
               ),
-              items: const [
+              items: [
                 DropdownMenuItem(
                   value: ChipIconSide.left,
-                  child: Text('Left (default)'),
+                  child: Text(l10n.settingsChipIconLeft),
                 ),
                 DropdownMenuItem(
                   value: ChipIconSide.right,
-                  child: Text('Right (RTL)'),
+                  child: Text(l10n.settingsChipIconRight),
                 ),
               ],
               onChanged: controller.busy

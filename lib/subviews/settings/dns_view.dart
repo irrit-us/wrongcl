@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../client_home_controller.dart';
+import '../../l10n/app_localizations.dart';
 import '../../theme/wrongcl_colors.dart';
 import '../../widgets/subpage_scaffold.dart';
 import '../../wrongcl_client.dart';
@@ -71,26 +72,27 @@ class _DnsSettingsViewState extends State<DnsSettingsView> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final controller = widget.controller;
     final infoText = controller.running
-        ? 'Applies to the active runtime immediately.'
-        : 'Saved into the current draft and used on the next start.';
+        ? l10n.dnsApplyImmediately
+        : l10n.dnsApplyOnNextStart;
     return SubpageScaffold(
-      title: 'DNS',
+      title: l10n.navDns,
       onClose: widget.onClose,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _Section(
-            title: 'Resolver backend',
+            title: l10n.dnsResolverBackend,
             children: [
               Text(infoText, style: Theme.of(context).textTheme.bodyMedium),
               const SizedBox(height: 12),
               DropdownButtonFormField<DnsBackendKind>(
                 initialValue: _kind,
-                decoration: const InputDecoration(
-                  labelText: 'Backend',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: l10n.dnsBackend,
+                  border: const OutlineInputBorder(),
                 ),
                 items: [
                   for (final kind in DnsBackendKind.values)
@@ -111,10 +113,10 @@ class _DnsSettingsViewState extends State<DnsSettingsView> {
                 TextField(
                   controller: _udpController,
                   enabled: !_saving,
-                  decoration: const InputDecoration(
-                    labelText: 'UDP server',
+                  decoration: InputDecoration(
+                    labelText: l10n.dnsUdpServer,
                     hintText: 'udp://1.1.1.1:53',
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
                   ),
                 ),
               ],
@@ -123,16 +125,16 @@ class _DnsSettingsViewState extends State<DnsSettingsView> {
                 TextField(
                   controller: _dohController,
                   enabled: !_saving,
-                  decoration: const InputDecoration(
-                    labelText: 'DoH URL',
+                  decoration: InputDecoration(
+                    labelText: l10n.dnsDohUrl,
                     hintText: 'https://1.1.1.1/dns-query',
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
                   ),
                 ),
               ],
               const SizedBox(height: 12),
               Text(
-                _helperText(),
+                _helperText(l10n),
                 style: Theme.of(
                   context,
                 ).textTheme.bodySmall?.copyWith(
@@ -156,7 +158,7 @@ class _DnsSettingsViewState extends State<DnsSettingsView> {
                 child: FilledButton.icon(
                   onPressed: _saving ? null : _apply,
                   icon: const Icon(Icons.save_outlined),
-                  label: Text(_saving ? 'Applying…' : 'Apply DNS settings'),
+                  label: Text(_saving ? l10n.commonApplyingEllipsis : l10n.dnsApplyDnsSettings),
                 ),
               ),
             ],
@@ -166,14 +168,14 @@ class _DnsSettingsViewState extends State<DnsSettingsView> {
     );
   }
 
-  String _helperText() {
+  String _helperText(AppLocalizations l10n) {
     switch (_kind) {
       case DnsBackendKind.system:
-        return 'Use the host OS resolver for IP-based routing decisions.';
+        return l10n.dnsHelperSystem;
       case DnsBackendKind.udp:
-        return 'Query a DNS server directly. Both udp://1.1.1.1:53 and 1.1.1.1:53 are accepted.';
+        return l10n.dnsHelperUdp;
       case DnsBackendKind.doh:
-        return 'Use DNS over HTTPS for IP-based routing decisions.';
+        return l10n.dnsHelperDoh;
     }
   }
 }

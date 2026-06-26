@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../control_state.dart';
+import '../l10n/app_localizations.dart';
 import '../signal_widgets.dart';
 import '../theme/wrongcl_colors.dart';
 
@@ -23,6 +24,7 @@ class TrafficStats extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
+    final l10n = AppLocalizations.of(context);
     final upRates = _rateSeries(uploadSeries.points);
     final downRates = _rateSeries(downloadSeries.points);
     return Container(
@@ -37,7 +39,7 @@ class TrafficStats extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _StatBlock(
-            label: 'Up',
+            label: l10n.trafficUp,
             peak: _peakRate(upRates),
             recentAverage: _recentAverageRate(
               uploadSeries.points,
@@ -47,7 +49,7 @@ class TrafficStats extends StatelessWidget {
           ),
           Divider(height: 1, color: palette.border.subtle),
           _StatBlock(
-            label: 'Down',
+            label: l10n.trafficDown,
             peak: _peakRate(downRates),
             recentAverage: _recentAverageRate(
               downloadSeries.points,
@@ -127,6 +129,7 @@ class _StatBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.wrongclColors;
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -138,17 +141,17 @@ class _StatBlock extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         _StatLine(
-          name: 'Peak',
+          name: l10n.trafficPeak,
           value: '${formatSignalBytes(peak)}/s',
           palette: palette,
         ),
         _StatLine(
-          name: 'Total',
+          name: l10n.trafficTotal,
           value: formatSignalBytes(total),
           palette: palette,
         ),
         _StatLine(
-          name: 'Avg(1min)',
+          name: l10n.trafficAvg1Min,
           value: '${formatSignalBytes(recentAverage)}/s',
           palette: palette,
         ),
@@ -174,10 +177,13 @@ class _StatLine extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          name,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: palette.text.secondary,
+        Flexible(
+          child: Text(
+            name,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: palette.text.secondary,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
         Text(
