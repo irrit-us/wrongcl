@@ -25,6 +25,12 @@ fn wrongcl_inspection_matches_wrongsv_endpoint_resolution_for_repo_fixtures() {
             .any(|path| path.file_name().and_then(|value| value.to_str()) == Some("naive.toml")),
         "expected wrongsv Naive fixture to keep protocols.md coverage visible"
     );
+    assert!(
+        fixture_paths
+            .iter()
+            .any(|path| path.file_name().and_then(|value| value.to_str()) == Some("snell.toml")),
+        "expected wrongsv Snell fixture to keep protocols.md coverage visible"
+    );
 
     for path in fixture_paths {
         let report = inspect_wrongsv_config(&path).unwrap_or_else(|error| {

@@ -34,6 +34,7 @@ pub enum ProxyProtocol {
     Trojan(TrojanOptions),
     Mixed(MixedOptions),
     Shadowsocks(ShadowsocksOptions),
+    Snell(SnellOptions),
     Wireguard(WireGuardOptions),
 }
 
@@ -47,6 +48,7 @@ impl ProxyProtocol {
             ProxyProtocol::Trojan(_) => "trojan",
             ProxyProtocol::Mixed(_) => "mixed",
             ProxyProtocol::Shadowsocks(_) => "shadowsocks",
+            ProxyProtocol::Snell(_) => "snell",
             ProxyProtocol::Wireguard(_) => "wireguard",
         }
     }
@@ -60,6 +62,7 @@ impl ProxyProtocol {
             ProxyProtocol::Trojan(_) => "Trojan",
             ProxyProtocol::Mixed(_) => "Mixed remote SOCKS/HTTP",
             ProxyProtocol::Shadowsocks(_) => "Shadowsocks",
+            ProxyProtocol::Snell(_) => "Snell",
             ProxyProtocol::Wireguard(_) => "WireGuard",
         }
     }
@@ -151,6 +154,17 @@ impl Default for ShadowsocksOptions {
             password: String::new(),
         }
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SnellOptions {
+    pub psk: String,
+    #[serde(default = "default_snell_version")]
+    pub version: u8,
+}
+
+fn default_snell_version() -> u8 {
+    1
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

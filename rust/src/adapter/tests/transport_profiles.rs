@@ -316,6 +316,48 @@ email = "alice@example.com"
 }
 
 #[test]
+fn adapts_snell_config() {
+    let cfg: WrongsvConfig = toml::from_str(
+        r#"
+listen = "0.0.0.0:443"
+
+[snell]
+psk = "hunter2"
+version = 1
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(active_profile(&cfg), "snell");
+    let assessment = active_capability(&cfg);
+    assert_eq!(assessment.support, SupportLevel::Supported);
+    assert!(assessment.config_adaptable);
+    assert_eq!(assessment.payload_networks, vec![PayloadNetwork::Tcp]);
+    assert_eq!(assessment.base_carriers, vec![BaseCarrier::Tcp]);
+
+    let config = client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap();
+    match &config.endpoints[0].server.endpoint.proxy {
+        ProxyProtocol::Snell(opts) => {
+            assert_eq!(opts.psk, "hunter2");
+            assert_eq!(opts.version, 1);
+        }
+        other => panic!("expected Snell proxy, got {other:?}"),
+    }
+    assert!(matches!(
+        config.endpoints[0].server.endpoint.transport,
+        Transport::Raw
+    ));
+    assert!(matches!(
+        config.endpoints[0].server.endpoint.outer_security,
+        OuterSecurity::None
+    ));
+    assert_eq!(
+        config.endpoints[0].server.endpoint.stack_summary(),
+        "Snell → raw TCP"
+    );
+}
+
+#[test]
 fn wireguard_config_reports_partial_and_draft_only() {
     let cfg: WrongsvConfig = toml::from_str(
         r#"

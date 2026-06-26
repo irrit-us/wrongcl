@@ -45,6 +45,7 @@ Verified local proxy coverage currently includes:
 - Trojan over TLS (TCP and UDP)
 - Naive over HTTP/2 CONNECT over TLS (TCP only)
 - Shadowsocks AEAD / AEAD-2022 over raw TCP and UDP
+- Snell v1 over raw TCP (TCP only)
 - Remote mixed proxy backends over SOCKS5 (TCP and UDP) or HTTP CONNECT (TCP)
 - WireGuard tunnel service through a built-in userspace runtime (TCP and UDP proxying; imported wrongsv configs still need a client private-key supplied separately)
 - Local HTTP `CONNECT` tunneling and absolute-form HTTP forwarding over the same listener as SOCKS5
@@ -52,7 +53,7 @@ Verified local proxy coverage currently includes:
 Catalog coverage for `../protocols.md` is intentionally explicit: wrongcl
 implements the wrongsv profile families listed above, reports partial support
 for imports that need client-only secrets, and leaves unrelated catalog entries
-such as Tor, SSH, Snell, Brook, Mieru, Juicity, and TrustTunnel out of the local
+such as Tor, SSH, Brook, Mieru, Juicity, and TrustTunnel out of the local
 proxy runtime rather than advertising unimplemented stacks.
 
 Direct-probe coverage also exists for the same core transport families.

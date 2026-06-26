@@ -59,6 +59,18 @@ pub(super) fn shadowsocks_server(host: &str, port: u16, opts: ShadowsocksOptions
     }
 }
 
+pub(super) fn snell_server(host: &str, port: u16, opts: SnellOptions) -> ServerConfig {
+    ServerConfig {
+        host: host.into(),
+        port,
+        endpoint: Endpoint {
+            proxy: ProxyProtocol::Snell(opts),
+            transport: Transport::Raw,
+            outer_security: OuterSecurity::None,
+        },
+    }
+}
+
 pub(super) fn run_socks_echo(local_addr: SocketAddr, payload: &[u8]) -> io::Result<Vec<u8>> {
     let mut stream = TcpStream::connect_timeout(&local_addr, Duration::from_secs(2))?;
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;
@@ -98,6 +110,20 @@ pub(super) fn spawn_fake_shadowsocks_server(method: String, password: String) ->
     FakeServer { port }
 }
 
+pub(super) fn spawn_fake_snell_server(psk: String, version: u8) -> FakeServer {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (ready_tx, ready_rx) = mpsc::channel();
+    thread::spawn(move || {
+        ready_tx.send(()).unwrap();
+        for stream in listener.incoming().flatten() {
+            let _ = handle_fake_snell(stream, &psk, version);
+        }
+    });
+    ready_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+    FakeServer { port }
+}
+
 fn handle_fake_shadowsocks(stream: TcpStream, method: &str, password: &str) -> io::Result<()> {
     use wrongsv_shadowsocks::{
         ServerConfig as SsServerConfig, ShadowsocksReader, ShadowsocksWriter, parse_request_header,
@@ -125,6 +151,49 @@ fn handle_fake_shadowsocks(stream: TcpStream, method: &str, password: &str) -> i
             .write_chunk(&initial_payload)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
     }
+
+    loop {
+        match reader.read_chunk() {
+            Ok(chunk) if chunk.is_empty() => return Ok(()),
+            Ok(chunk) => writer
+                .write_chunk(&chunk)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?,
+            Err(_) => return Ok(()),
+        }
+    }
+}
+
+fn handle_fake_snell(stream: TcpStream, psk: &str, version: u8) -> io::Result<()> {
+    use wrongsv_snell::{
+        COMMAND_TUNNEL, ClientCommand, SnellConfig, SnellReader, SnellWriter, parse_client_command,
+    };
+
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    let config = SnellConfig::new(psk.as_bytes().to_vec(), version)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
+    let read_stream = stream.try_clone()?;
+    let mut reader = SnellReader::new(read_stream, &config)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+    let first = reader
+        .read_chunk()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+    let command = parse_client_command(&first)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+    match command {
+        ClientCommand::Connect { .. } => {}
+        ClientCommand::Udp => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "fake Snell server expected CONNECT",
+            ));
+        }
+    }
+
+    let mut writer = SnellWriter::new(stream, &config)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+    writer
+        .write_chunk(&[COMMAND_TUNNEL])
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
     loop {
         match reader.read_chunk() {

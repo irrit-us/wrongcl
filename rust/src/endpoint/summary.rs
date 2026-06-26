@@ -11,6 +11,9 @@ impl Endpoint {
         if matches!(self.proxy, ProxyProtocol::Naive(_)) {
             return "Naive → h2 CONNECT → TLS → TCP".into();
         }
+        if matches!(self.proxy, ProxyProtocol::Snell(_)) {
+            return "Snell → raw TCP".into();
+        }
         if matches!(self.proxy, ProxyProtocol::Wireguard(_)) {
             return "Payload IP → WireGuard → UDP".into();
         }

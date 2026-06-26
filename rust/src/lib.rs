@@ -24,6 +24,7 @@ pub mod reality;
 pub mod router;
 pub mod shadowsocks;
 pub mod shadowtls;
+pub mod snell;
 pub mod source_app;
 pub mod tls;
 pub mod trojan;
@@ -44,8 +45,8 @@ pub use config::{
 pub use endpoint::{
     AnyTlsOptions, Endpoint, GdocsViewerOptions, GrpcOptions, HuOptions, Hysteria2Options,
     KcpOptions, MeekOptions, MixedOptions, NaiveOptions, OuterSecurity, ProxyProtocol, QuicOptions,
-    RealityOptions, ShadowsocksOptions, TlsOptions, Transport, TrojanOptions, TuicOptions,
-    VlessOptions, WebTransportOptions, WireGuardOptions, WsOptions, XhttpOptions,
+    RealityOptions, ShadowsocksOptions, SnellOptions, TlsOptions, Transport, TrojanOptions,
+    TuicOptions, VlessOptions, WebTransportOptions, WireGuardOptions, WsOptions, XhttpOptions,
 };
 pub use error::{ClientError, Result};
 pub use manager::{ConnectionManager, global_manager};

@@ -194,6 +194,26 @@ impl Endpoint {
                     ));
                 }
             }
+            ProxyProtocol::Snell(opts) => {
+                if opts.psk.trim().is_empty() {
+                    return Err(ClientError::Config("Snell requires a non-empty psk".into()));
+                }
+                if opts.version != 1 {
+                    return Err(ClientError::UnsupportedProtocol(
+                        "wrongcl currently supports Snell version 1 TCP CONNECT".into(),
+                    ));
+                }
+                if !matches!(self.transport, Transport::Raw) {
+                    return Err(ClientError::Config(
+                        "Snell only supports raw transport in wrongcl".into(),
+                    ));
+                }
+                if !matches!(self.outer_security, OuterSecurity::None) {
+                    return Err(ClientError::Config(
+                        "Snell does not wrap an outer security layer".into(),
+                    ));
+                }
+            }
             ProxyProtocol::Wireguard(opts) => {
                 if !matches!(self.transport, Transport::Raw) {
                     return Err(ClientError::Config(

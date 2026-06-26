@@ -380,6 +380,29 @@ impl WrongsvClient {
         open_shadowsocks_udp_session(config, server_addr, target.clone())
     }
 
+    pub(super) fn connect_snell(
+        &self,
+        target: &Target,
+        opts: &SnellOptions,
+    ) -> Result<Box<dyn Tunnel>> {
+        let tcp = self.connect_tcp_with_timeouts()?;
+        let timeout_handle = tcp.try_clone()?;
+        let inner: Box<dyn Tunnel> = Box::new(tcp);
+        let tunnel = snell::open_tunnel(inner, opts, target)?;
+        clear_timeouts(&timeout_handle)?;
+        Ok(tunnel)
+    }
+
+    pub(super) fn connect_snell_udp(
+        &self,
+        _target: &Target,
+        _opts: &SnellOptions,
+    ) -> Result<Box<dyn UdpSession>> {
+        Err(ClientError::UnsupportedProtocol(
+            "Snell v1 does not support UDP relay in wrongcl".into(),
+        ))
+    }
+
     pub(super) fn connect_wireguard(
         &self,
         target: &Target,

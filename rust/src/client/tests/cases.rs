@@ -372,6 +372,26 @@ fn probe_works_against_fake_shadowsocks_server() {
 }
 
 #[test]
+fn probe_works_against_fake_snell_server() {
+    let server = spawn_fake_snell_server("hunter2".into(), 1);
+    let client = WrongsvClient::new(snell_server(
+        "127.0.0.1",
+        server.port,
+        SnellOptions {
+            psk: "hunter2".into(),
+            version: 1,
+        },
+    ))
+    .unwrap();
+
+    let result = client
+        .probe(&Target::new("example.com", 80).unwrap(), "ping-snell")
+        .unwrap();
+    assert_eq!(result.bytes_read, 10);
+    assert_eq!(result.preview, "ping-snell");
+}
+
+#[test]
 fn supports_udp_tracks_transport_capability() {
     let raw =
         WrongsvClient::new(vless_server("127.0.0.1", 443, TEST_UUID, Transport::Raw)).unwrap();
@@ -418,6 +438,17 @@ fn supports_udp_tracks_transport_capability() {
     let mixed =
         WrongsvClient::new(mixed_server("127.0.0.1", 443, MixedOptions::default())).unwrap();
     assert!(mixed.supports_udp());
+
+    let snell = WrongsvClient::new(snell_server(
+        "127.0.0.1",
+        443,
+        SnellOptions {
+            psk: "hunter2".into(),
+            version: 1,
+        },
+    ))
+    .unwrap();
+    assert!(!snell.supports_udp());
 
     let wireguard = WrongsvClient::new(ServerConfig {
         host: "127.0.0.1".into(),
@@ -514,4 +545,32 @@ fn socks_proxy_works_against_fake_shadowsocks_aead_2022_server() {
     proxy.stop().unwrap();
 
     assert_eq!(response, b"hello-2022".to_vec());
+}
+
+#[test]
+fn socks_proxy_works_against_fake_snell_server() {
+    let server = spawn_fake_snell_server("hunter2".into(), 1);
+    let mut proxy = ProxyHandle::start(ClientConfig::single_server(
+        "default",
+        snell_server(
+            "127.0.0.1",
+            server.port,
+            SnellOptions {
+                psk: "hunter2".into(),
+                version: 1,
+            },
+        ),
+        LocalProxyConfig {
+            host: "127.0.0.1".into(),
+            port: 0,
+            allow_socks: true,
+            allow_http: true,
+        },
+    ))
+    .unwrap();
+
+    let response = run_socks_echo(proxy.snapshot().socket_addr(), b"hello-snell").unwrap();
+    proxy.stop().unwrap();
+
+    assert_eq!(response, b"hello-snell".to_vec());
 }

@@ -52,6 +52,7 @@ wrongsv-grpc = { path = "../../wrongsv/crates/grpc" }
 wrongsv-net-types = { path = "../../wrongsv/crates/net-types" }
 wrongsv-reality = { path = "../../wrongsv/crates/reality" }
 wrongsv-shadowsocks = { path = "../../wrongsv/crates/shadowsocks" }
+wrongsv-snell = { path = "../../wrongsv/crates/snell" }
 wrongsv-vless = { path = "../../wrongsv/crates/vless" }
 wrongsv-vless-encoding = { path = "../../wrongsv/crates/vless-encoding" }
 x25519-dalek = { version = "2", features = ["static_secrets"] }

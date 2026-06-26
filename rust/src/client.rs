@@ -14,7 +14,7 @@ use crate::anytls;
 use crate::config::ServerConfig;
 use crate::endpoint::{
     Endpoint, HuOptions, Hysteria2Options, MixedOptions, OuterSecurity, ProxyProtocol,
-    ShadowsocksOptions, Transport, TrojanOptions, VlessOptions, WsOptions,
+    ShadowsocksOptions, SnellOptions, Transport, TrojanOptions, VlessOptions, WsOptions,
 };
 use crate::error::{ClientError, Result};
 use crate::gdocsviewer;
@@ -29,6 +29,7 @@ use crate::quic;
 use crate::reality;
 use crate::shadowsocks as ss;
 use crate::shadowtls;
+use crate::snell;
 use crate::tls;
 use crate::trojan;
 use crate::tuic;
@@ -175,6 +176,7 @@ impl WrongsvClient {
             ProxyProtocol::Trojan(opts) => self.connect_trojan(target, &opts),
             ProxyProtocol::Mixed(opts) => self.connect_mixed(target, &opts),
             ProxyProtocol::Shadowsocks(opts) => self.connect_shadowsocks(target, &opts),
+            ProxyProtocol::Snell(opts) => self.connect_snell(target, &opts),
             ProxyProtocol::Wireguard(opts) => self.connect_wireguard(target, &opts),
         }
     }
@@ -194,6 +196,7 @@ impl WrongsvClient {
             }
             ProxyProtocol::Hysteria2(opts) => opts.udp_enabled,
             ProxyProtocol::Naive(_) => false,
+            ProxyProtocol::Snell(_) => false,
             ProxyProtocol::Tuic(_)
             | ProxyProtocol::Trojan(_)
             | ProxyProtocol::Shadowsocks(_)
@@ -210,6 +213,7 @@ impl WrongsvClient {
             ProxyProtocol::Tuic(opts) => self.connect_tuic_udp(target, &opts),
             ProxyProtocol::Trojan(opts) => self.connect_trojan_udp(target, &opts),
             ProxyProtocol::Shadowsocks(opts) => self.connect_shadowsocks_udp(target, &opts),
+            ProxyProtocol::Snell(opts) => self.connect_snell_udp(target, &opts),
             ProxyProtocol::Mixed(opts) => self.connect_mixed_udp(target, &opts),
             ProxyProtocol::Wireguard(opts) => self.connect_wireguard_udp(target, &opts),
         }
