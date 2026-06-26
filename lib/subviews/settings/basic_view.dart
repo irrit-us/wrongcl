@@ -95,16 +95,11 @@ class BasicSettingsView extends StatelessWidget {
                 ),
                 DropdownMenuItem(value: 'fr', child: Text('Français')),
               ],
-              onChanged: controller.busy
-                  ? null
-                  : (value) {
-                      if (value != null) {
-                        controller.runTask(
-                          'update language',
-                          () => onLocaleCodeChanged(value),
-                        );
-                      }
-                    },
+              onChanged: (value) {
+                if (value != null) {
+                  onLocaleCodeChanged(value);
+                }
+              },
             ),
           ),
           const SizedBox(height: 16),

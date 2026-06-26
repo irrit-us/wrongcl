@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wrongcl/app.dart';
 import 'package:wrongcl/app_settings_store.dart';
 import 'package:wrongcl/autostart_manager.dart';
+import 'package:wrongcl/client_home_controller.dart';
 import 'package:wrongcl/desktop_shell_controller.dart';
 import 'package:wrongcl/profile_store.dart';
 import 'package:wrongcl/system_proxy_manager.dart';
@@ -385,6 +387,39 @@ void main() {
 
     final scaffold = find.byType(Scaffold).first;
     expect(Directionality.of(tester.element(scaffold)), TextDirection.rtl);
+  });
+
+  testWidgets('language picker stays operable while controller is busy', (
+    tester,
+  ) async {
+    final harness = _makeHarness();
+    await _pumpReady(tester, harness);
+    await _tapEntryChip(tester, 'Basic');
+
+    final controller = tester
+        .widgetList<AnimatedBuilder>(find.byType(AnimatedBuilder))
+        .map((w) => w.animation)
+        .whereType<ClientHomeController>()
+        .first;
+
+    final blocker = Completer<void>();
+    unawaited(controller.runTask('test-block', () => blocker.future));
+    await tester.pump();
+    expect(controller.busy, isTrue);
+
+    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Français').last);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).locale,
+      const Locale('fr'),
+    );
+    expect(controller.busy, isTrue);
+
+    blocker.complete();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('all five supported locales are declared on MaterialApp', (
