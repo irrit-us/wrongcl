@@ -346,6 +346,64 @@ void main() {
     );
   });
 
+  final additionalLanguages = <(String, String, Locale)>[
+    ('Spanish', 'Español', Locale('es')),
+    ('Arabic', 'العربية', Locale('ar')),
+    ('French', 'Français', Locale('fr')),
+  ];
+
+  for (final (name, nativeLabel, expected) in additionalLanguages) {
+    testWidgets(
+      'basic language selector switches MaterialApp locale to $name',
+      (tester) async {
+        final harness = _makeHarness();
+        await _pumpReady(tester, harness);
+
+        await _tapEntryChip(tester, 'Basic');
+        await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(nativeLabel).last);
+        await tester.pumpAndSettle();
+
+        expect(
+          tester.widget<MaterialApp>(find.byType(MaterialApp)).locale,
+          expected,
+        );
+      },
+    );
+  }
+
+  testWidgets('selecting Arabic flips text direction to RTL', (tester) async {
+    final harness = _makeHarness();
+    await _pumpReady(tester, harness);
+
+    await _tapEntryChip(tester, 'Basic');
+    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('العربية').last);
+    await tester.pumpAndSettle();
+
+    final scaffold = find.byType(Scaffold).first;
+    expect(Directionality.of(tester.element(scaffold)), TextDirection.rtl);
+  });
+
+  testWidgets('all five supported locales are declared on MaterialApp', (
+    tester,
+  ) async {
+    final harness = _makeHarness();
+    await _pumpReady(tester, harness);
+
+    final supported = tester
+        .widget<MaterialApp>(find.byType(MaterialApp))
+        .supportedLocales
+        .toList(growable: false);
+    expect(supported, contains(const Locale('en')));
+    expect(supported, contains(const Locale('zh', 'CN')));
+    expect(supported, contains(const Locale('es')));
+    expect(supported, contains(const Locale('ar')));
+    expect(supported, contains(const Locale('fr')));
+  });
+
   testWidgets('basic palette selector swaps the active WrongclColors palette', (
     tester,
   ) async {

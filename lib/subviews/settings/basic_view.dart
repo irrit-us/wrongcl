@@ -85,6 +85,15 @@ class BasicSettingsView extends StatelessWidget {
               items: const [
                 DropdownMenuItem(value: 'en', child: Text('English')),
                 DropdownMenuItem(value: 'zh', child: Text('简体中文')),
+                DropdownMenuItem(value: 'es', child: Text('Español')),
+                DropdownMenuItem(
+                  value: 'ar',
+                  child: Text(
+                    'العربية',
+                    textDirection: TextDirection.rtl,
+                  ),
+                ),
+                DropdownMenuItem(value: 'fr', child: Text('Français')),
               ],
               onChanged: controller.busy
                   ? null

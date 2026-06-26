@@ -132,6 +132,12 @@ class _WrongclAppState extends State<WrongclApp> {
     switch (code) {
       case 'zh':
         return const Locale('zh', 'CN');
+      case 'es':
+        return const Locale('es');
+      case 'ar':
+        return const Locale('ar');
+      case 'fr':
+        return const Locale('fr');
       default:
         return const Locale('en');
     }
@@ -143,7 +149,13 @@ class _WrongclAppState extends State<WrongclApp> {
       title: 'Wrongcl',
       themeMode: _themeMode,
       locale: _locale,
-      supportedLocales: const [Locale('en'), Locale('zh', 'CN')],
+      supportedLocales: const [
+        Locale('en'),
+        Locale('zh', 'CN'),
+        Locale('es'),
+        Locale('ar'),
+        Locale('fr'),
+      ],
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,

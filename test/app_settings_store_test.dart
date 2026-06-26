@@ -36,6 +36,22 @@ void main() {
     expect(loaded.localeCode, 'zh');
   });
 
+  for (final code in ['es', 'ar', 'fr']) {
+    test('app settings store round-trips $code locale code', () async {
+      final tempDir = Directory.systemTemp.createTempSync(
+        'wrongcl-settings-test',
+      );
+      final store = AppSettingsStore(
+        file: File('${tempDir.path}/app_settings.json'),
+      );
+
+      await store.save(AppSettings(localeCode: code));
+      final loaded = await store.load();
+
+      expect(loaded.localeCode, code);
+    });
+  }
+
   test('app settings store saves and loads theme variant', () async {
     final tempDir = Directory.systemTemp.createTempSync(
       'wrongcl-settings-test',
