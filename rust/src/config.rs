@@ -798,6 +798,52 @@ mod tests {
     }
 
     #[test]
+    fn loads_fragment_transport_from_toml() {
+        let path = write_temp_config(
+            r#"
+[[endpoints]]
+name = "frag"
+host = "127.0.0.1"
+port = 443
+
+[endpoints.proxy]
+type = "vless"
+uuid = "12345678-1234-1234-1234-123456789abc"
+
+[endpoints.transport]
+type = "fragment"
+length-min = 1
+length-max = 4
+packets-from = 1
+packets-to = 2
+
+[endpoints.outer-security]
+type = "none"
+
+[active]
+type = "endpoint"
+name = "frag"
+
+[local]
+host = "127.0.0.1"
+port = 1080
+"#,
+            "toml",
+        );
+
+        let config = ClientConfig::from_file(path).unwrap();
+        let active = config.resolve_active_endpoint().unwrap();
+        match &active.server.endpoint.transport {
+            Transport::Fragment(opts) => {
+                assert_eq!(opts.length_min, 1);
+                assert_eq!(opts.length_max, 4);
+                assert_eq!(opts.packets_to, 2);
+            }
+            other => panic!("expected Fragment transport, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn validates_duplicate_endpoint_name() {
         let config = ClientConfig {
             endpoints: vec![

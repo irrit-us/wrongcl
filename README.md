@@ -26,6 +26,7 @@ Flutter UI target.
 Verified local proxy coverage currently includes:
 
 - VLESS raw TCP and raw UDP
+- VLESS raw TCP with configurable Fragment write-splitting
 - VLESS + TLS (TCP and UDP)
 - VLESS + AnyTLS (TCP and UDP)
 - VLESS + ShadowTLS (TCP and UDP)

@@ -31,6 +31,7 @@ impl Endpoint {
         match self.transport {
             Transport::Raw => parts.push("raw"),
             Transport::Kcp(_) => parts.push("KCP"),
+            Transport::Fragment(_) => parts.push("Fragment"),
             Transport::Meek(_) => parts.push("Meek"),
             Transport::Gdocsviewer(_) => parts.push("Google Docs Viewer"),
             Transport::Webtransport(_) => parts.push("WebTransport"),

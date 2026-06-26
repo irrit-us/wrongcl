@@ -193,6 +193,7 @@ pub enum Transport {
     #[default]
     Raw,
     Kcp(KcpOptions),
+    Fragment(FragmentOptions),
     Meek(MeekOptions),
     Gdocsviewer(GdocsViewerOptions),
     Webtransport(WebTransportOptions),
@@ -208,6 +209,7 @@ impl Transport {
         match self {
             Transport::Raw => "raw",
             Transport::Kcp(_) => "kcp",
+            Transport::Fragment(_) => "fragment",
             Transport::Meek(_) => "meek",
             Transport::Gdocsviewer(_) => "gdocsviewer",
             Transport::Webtransport(_) => "webtransport",
@@ -223,6 +225,7 @@ impl Transport {
         match self {
             Transport::Raw => "raw",
             Transport::Kcp(_) => "KCP",
+            Transport::Fragment(_) => "Fragment",
             Transport::Meek(_) => "Meek",
             Transport::Gdocsviewer(_) => "Google Docs Viewer",
             Transport::Webtransport(_) => "WebTransport",
@@ -314,6 +317,38 @@ pub struct KcpOptions {
     pub seed: String,
     pub mtu: u16,
     pub tti: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FragmentOptions {
+    #[serde(default = "default_fragment_length_min", rename = "length-min")]
+    pub length_min: usize,
+    #[serde(default = "default_fragment_length_max", rename = "length-max")]
+    pub length_max: usize,
+    #[serde(default, rename = "delay-min-ms")]
+    pub delay_min_ms: u64,
+    #[serde(default, rename = "delay-max-ms")]
+    pub delay_max_ms: u64,
+    #[serde(default = "default_fragment_packets_from", rename = "packets-from")]
+    pub packets_from: u64,
+    #[serde(default = "default_fragment_packets_to", rename = "packets-to")]
+    pub packets_to: u64,
+}
+
+fn default_fragment_length_min() -> usize {
+    1
+}
+
+fn default_fragment_length_max() -> usize {
+    8
+}
+
+fn default_fragment_packets_from() -> u64 {
+    1
+}
+
+fn default_fragment_packets_to() -> u64 {
+    1
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

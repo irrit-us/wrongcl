@@ -480,6 +480,7 @@ fn wrap_transport(
 ) -> Result<Box<dyn Tunnel>> {
     match transport {
         Transport::Raw => Ok(inner),
+        Transport::Fragment(opts) => Ok(fragment::wrap(inner, opts)),
         Transport::Httpupgrade(opts) => connect_httpupgrade(inner, opts, server_host, server_port),
         Transport::Meek(_) => Err(ClientError::Config(
             "Meek transport must be opened directly, not wrap_transport".into(),

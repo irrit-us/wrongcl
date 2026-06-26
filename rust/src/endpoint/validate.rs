@@ -396,6 +396,38 @@ impl Endpoint {
                 return Err(ClientError::Config("KCP tti must be in 10..=100".into()));
             }
         }
+        if let Transport::Fragment(opts) = &self.transport {
+            if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
+                return Err(ClientError::Config(
+                    "Fragment transport only wraps the VLESS proxy".into(),
+                ));
+            }
+            if !matches!(self.outer_security, OuterSecurity::None) {
+                return Err(ClientError::Config(
+                    "Fragment transport is currently implemented for raw TCP only".into(),
+                ));
+            }
+            if opts.length_min == 0 || opts.length_max == 0 || opts.length_min > opts.length_max {
+                return Err(ClientError::Config(
+                    "Fragment length range must be non-empty and ordered".into(),
+                ));
+            }
+            if opts.length_max > 16 * 1024 {
+                return Err(ClientError::Config(
+                    "Fragment length-max must be at most 16384 bytes".into(),
+                ));
+            }
+            if opts.delay_min_ms > opts.delay_max_ms {
+                return Err(ClientError::Config(
+                    "Fragment delay range must be ordered".into(),
+                ));
+            }
+            if opts.packets_from == 0 || opts.packets_to < opts.packets_from {
+                return Err(ClientError::Config(
+                    "Fragment packet range must start at 1 and be ordered".into(),
+                ));
+            }
+        }
         if let Transport::Meek(opts) = &self.transport {
             if !matches!(self.proxy, ProxyProtocol::Vless(_)) {
                 return Err(ClientError::Config(

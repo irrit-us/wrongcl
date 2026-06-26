@@ -17,6 +17,7 @@ use crate::endpoint::{
     ShadowsocksOptions, SnellOptions, Transport, TrojanOptions, VlessOptions, WsOptions,
 };
 use crate::error::{ClientError, Result};
+use crate::fragment;
 use crate::gdocsviewer;
 use crate::hysteria2;
 use crate::kcp;

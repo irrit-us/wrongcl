@@ -20,6 +20,33 @@ fn probe_works_against_fake_raw_vless_server() {
 }
 
 #[test]
+fn probe_works_with_fragment_transport() {
+    let server = spawn_fake_server(FakeCarrier::Raw);
+    let client = WrongsvClient::new(vless_server(
+        "127.0.0.1",
+        server.port,
+        TEST_UUID,
+        Transport::Fragment(FragmentOptions {
+            length_min: 1,
+            length_max: 1,
+            delay_min_ms: 0,
+            delay_max_ms: 0,
+            packets_from: 1,
+            packets_to: 2,
+        }),
+    ))
+    .unwrap();
+
+    let mut tunnel = client
+        .connect(&Target::new("example.com", 80).unwrap())
+        .unwrap();
+    tunnel.write_all(b"frag").unwrap();
+    let mut echoed = [0u8; 4];
+    tunnel.read_exact(&mut echoed).unwrap();
+    assert_eq!(&echoed, b"frag");
+}
+
+#[test]
 fn probe_works_against_fake_httpupgrade_server() {
     let server = spawn_fake_server(FakeCarrier::HttpUpgrade);
     let client = WrongsvClient::new(vless_server(

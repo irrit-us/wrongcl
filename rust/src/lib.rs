@@ -8,6 +8,7 @@ pub mod dns;
 pub mod endpoint;
 pub mod error;
 pub mod ffi;
+mod fragment;
 pub mod gdocsviewer;
 pub mod grpc;
 pub mod hysteria2;
@@ -43,10 +44,11 @@ pub use config::{
     ServerConfig,
 };
 pub use endpoint::{
-    AnyTlsOptions, Endpoint, GdocsViewerOptions, GrpcOptions, HuOptions, Hysteria2Options,
-    KcpOptions, MeekOptions, MixedOptions, NaiveOptions, OuterSecurity, ProxyProtocol, QuicOptions,
-    RealityOptions, ShadowsocksOptions, SnellOptions, TlsOptions, Transport, TrojanOptions,
-    TuicOptions, VlessOptions, WebTransportOptions, WireGuardOptions, WsOptions, XhttpOptions,
+    AnyTlsOptions, Endpoint, FragmentOptions, GdocsViewerOptions, GrpcOptions, HuOptions,
+    Hysteria2Options, KcpOptions, MeekOptions, MixedOptions, NaiveOptions, OuterSecurity,
+    ProxyProtocol, QuicOptions, RealityOptions, ShadowsocksOptions, SnellOptions, TlsOptions,
+    Transport, TrojanOptions, TuicOptions, VlessOptions, WebTransportOptions, WireGuardOptions,
+    WsOptions, XhttpOptions,
 };
 pub use error::{ClientError, Result};
 pub use manager::{ConnectionManager, global_manager};
