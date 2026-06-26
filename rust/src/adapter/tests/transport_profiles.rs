@@ -382,7 +382,10 @@ allowed_ips = ["10.77.0.2/32"]
     assert_eq!(assessment.payload_networks, vec![PayloadNetwork::Ip]);
     assert_eq!(assessment.base_carriers, vec![BaseCarrier::Udp]);
     assert_eq!(assessment.missing_fields.len(), 1);
-    assert_eq!(assessment.missing_fields[0].field, "wireguard.private-key");
+    assert_eq!(
+        assessment.missing_fields[0].field,
+        "wireguard.peers.private-key"
+    );
 
     let resolution = import_resolution_hint(&cfg);
     let plan =
@@ -393,7 +396,7 @@ allowed_ips = ["10.77.0.2/32"]
     let err = client_config_for(cfg, "wrong.example".into(), "127.0.0.1".into(), 1080).unwrap_err();
     match err {
         ClientError::Config(msg) => {
-            assert!(msg.contains("wireguard.private-key"), "msg: {msg}");
+            assert!(msg.contains("wireguard.peers.private-key"), "msg: {msg}");
         }
         other => panic!("expected Config error, got {other:?}"),
     }

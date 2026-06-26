@@ -400,7 +400,8 @@ class ClientHomeController extends ChangeNotifier {
             disabledReason: systemProxyStatus!.supported
                 ? ''
                 : systemProxyStatus!.message,
-            platform: systemProxyManager.platform?.name ?? Platform.operatingSystem,
+            platform:
+                systemProxyManager.platform?.name ?? Platform.operatingSystem,
           );
     return DashboardSnapshot(
       running: running,
@@ -2603,6 +2604,7 @@ class ClientHomeController extends ChangeNotifier {
         return trojanPassword;
       case 'anytls.password':
         return anytlsPassword;
+      case 'wireguard.peers.private-key':
       case 'wireguard.private-key':
         return wireguardPrivateKey;
       case 'naive.username':
@@ -2626,8 +2628,9 @@ class ClientHomeController extends ChangeNotifier {
         return 'Trojan password (required)';
       case 'anytls.password':
         return 'AnyTLS password (required)';
+      case 'wireguard.peers.private-key':
       case 'wireguard.private-key':
-        return 'WireGuard private-key (required)';
+        return 'WireGuard peer private-key (required)';
       case 'naive.username':
         return 'Naive username (required)';
       case 'naive.password':

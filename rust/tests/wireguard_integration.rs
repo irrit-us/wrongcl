@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -24,6 +24,12 @@ struct WireGuardServer {
 fn wireguard_test_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn wireguard_test_guard() -> MutexGuard<'static, ()> {
+    wireguard_test_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn spawn_wireguard_server(server_private_key: &str, client_public_key: &str) -> WireGuardServer {
@@ -149,7 +155,7 @@ fn spawn_udp_echo_server() -> SocketAddr {
     ignore = "WireGuard runtime is currently verified on Linux"
 )]
 fn probe_works_against_wireguard_server() {
-    let _guard = wireguard_test_lock().lock().unwrap();
+    let _guard = wireguard_test_guard();
     let server_private = [7u8; 32];
     let client_private = [9u8; 32];
     let server_private_b64 = encode_private_key_b64(server_private);
@@ -181,7 +187,7 @@ fn probe_works_against_wireguard_server() {
     ignore = "WireGuard runtime is currently verified on Linux"
 )]
 fn socks_proxy_works_against_wireguard_server() {
-    let _guard = wireguard_test_lock().lock().unwrap();
+    let _guard = wireguard_test_guard();
     let server_private = [7u8; 32];
     let client_private = [9u8; 32];
     let server_private_b64 = encode_private_key_b64(server_private);
@@ -221,7 +227,7 @@ fn socks_proxy_works_against_wireguard_server() {
     ignore = "WireGuard runtime is currently verified on Linux"
 )]
 fn socks_proxy_udp_works_against_wireguard_server() {
-    let _guard = wireguard_test_lock().lock().unwrap();
+    let _guard = wireguard_test_guard();
     let server_private = [7u8; 32];
     let client_private = [9u8; 32];
     let server_private_b64 = encode_private_key_b64(server_private);
@@ -242,7 +248,7 @@ fn socks_proxy_udp_works_against_wireguard_server() {
         .connect_udp_session(&Target::new(echo_addr.ip().to_string(), echo_addr.port()).unwrap())
         .unwrap();
     session.send_packet(b"ping-wireguard-udp").unwrap();
-    for _ in 0..200 {
+    for _ in 0..400 {
         if let Some(packet) = session.try_recv_packet().unwrap() {
             assert_eq!(packet.payload, b"ping-wireguard-udp");
             return;

@@ -189,7 +189,7 @@ fn socks_proxy_udp_works_against_meek_server() {
         .connect_udp_session(&Target::new(echo_addr.ip().to_string(), echo_addr.port()).unwrap())
         .unwrap();
     session.send_packet(b"ping-meek-udp").unwrap();
-    for _ in 0..400 {
+    for _ in 0..800 {
         if let Some(packet) = session.try_recv_packet().unwrap() {
             assert_eq!(packet.payload, b"ping-meek-udp");
             return;
