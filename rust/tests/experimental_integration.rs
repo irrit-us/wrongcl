@@ -40,7 +40,9 @@ password = "test-password"
 
     // 3. Connect client stream manually to verify
     let mut stream = TcpStream::connect(&listen).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
 
     // Verify manually
     use md5::{Digest, Md5};

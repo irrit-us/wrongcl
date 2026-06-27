@@ -312,7 +312,9 @@ impl Endpoint {
             }
             ProxyProtocol::VlessEncryption(opts) => {
                 if opts.password.trim().is_empty() {
-                    return Err(ClientError::Config("VLESS-Encryption requires password".into()));
+                    return Err(ClientError::Config(
+                        "VLESS-Encryption requires password".into(),
+                    ));
                 }
             }
             ProxyProtocol::Shadowquic(opts) => {
@@ -322,10 +324,14 @@ impl Endpoint {
             }
             ProxyProtocol::AnytlsReality(opts) => {
                 if opts.password.trim().is_empty() {
-                    return Err(ClientError::Config("AnyTLS-Reality requires password".into()));
+                    return Err(ClientError::Config(
+                        "AnyTLS-Reality requires password".into(),
+                    ));
                 }
                 if opts.private_key.trim().is_empty() {
-                    return Err(ClientError::Config("AnyTLS-Reality requires private-key".into()));
+                    return Err(ClientError::Config(
+                        "AnyTLS-Reality requires private-key".into(),
+                    ));
                 }
             }
         }

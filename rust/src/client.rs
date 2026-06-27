@@ -191,9 +191,9 @@ impl WrongsvClient {
             | ProxyProtocol::Sudoku(_)
             | ProxyProtocol::VlessEncryption(_)
             | ProxyProtocol::Shadowquic(_)
-            | ProxyProtocol::AnytlsReality(_) => {
-                Err(ClientError::UnsupportedProtocol(self.server.endpoint.proxy.id().to_string()))
-            }
+            | ProxyProtocol::AnytlsReality(_) => Err(ClientError::UnsupportedProtocol(
+                self.server.endpoint.proxy.id().to_string(),
+            )),
         }
     }
 
@@ -245,7 +245,9 @@ impl WrongsvClient {
             ProxyProtocol::Snell(opts) => self.connect_snell_udp(target, &opts),
             ProxyProtocol::Mixed(opts) => self.connect_mixed_udp(target, &opts),
             ProxyProtocol::Wireguard(opts) => self.connect_wireguard_udp(target, &opts),
-            _ => Err(ClientError::UnsupportedProtocol(self.server.endpoint.proxy.id().to_string())),
+            _ => Err(ClientError::UnsupportedProtocol(
+                self.server.endpoint.proxy.id().to_string(),
+            )),
         }
     }
 
