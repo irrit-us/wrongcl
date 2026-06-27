@@ -12,7 +12,21 @@ enum ProxyKind {
   trojan('trojan', 'Trojan'),
   mixed('mixed', 'Mixed remote SOCKS/HTTP'),
   shadowsocks('shadowsocks', 'Shadowsocks'),
-  wireguard('wireguard', 'WireGuard');
+  wireguard('wireguard', 'WireGuard'),
+  snell('snell', 'Snell'),
+  lua('lua', 'Lua'),
+  masque('masque', 'Masque'),
+  trusttunnel('trusttunnel', 'TrustTunnel'),
+  brook('brook', 'Brook'),
+  vlite('vlite', 'Vlite'),
+  tor('tor', 'Tor'),
+  ssh('ssh', 'SSH'),
+  juicity('juicity', 'Juicity'),
+  mieru('mieru', 'Mieru'),
+  sudoku('sudoku', 'Sudoku'),
+  vlessEncryption('vless-encryption', 'VLESS-Encryption'),
+  shadowquic('shadowquic', 'ShadowQUIC'),
+  anytlsReality('anytls-reality', 'AnyTLS-Reality');
 
   const ProxyKind(this.id, this.label);
   final String id;

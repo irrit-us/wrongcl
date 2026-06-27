@@ -1574,6 +1574,34 @@ class ClientHomeController extends ChangeNotifier {
           allowedIps: allowedIps,
           mtu: int.tryParse(wireguardMtu.text) ?? 1400,
         ).toJson();
+      case ProxyKind.snell:
+        return const {'type': 'snell', 'psk': 'test-password', 'version': 1};
+      case ProxyKind.lua:
+        return const {'type': 'lua', 'script-path': 'test.lua'};
+      case ProxyKind.masque:
+        return const {'type': 'masque', 'password': 'test-password'};
+      case ProxyKind.trusttunnel:
+        return const {'type': 'trusttunnel', 'key': 'test-key'};
+      case ProxyKind.brook:
+        return const {'type': 'brook', 'password': 'test-password'};
+      case ProxyKind.vlite:
+        return const {'type': 'vlite', 'key': 'test-key'};
+      case ProxyKind.tor:
+        return const {'type': 'tor', 'bridge-line': 'test-bridge'};
+      case ProxyKind.ssh:
+        return const {'type': 'ssh', 'password': 'test-password'};
+      case ProxyKind.juicity:
+        return const {'type': 'juicity', 'password': 'test-password'};
+      case ProxyKind.mieru:
+        return const {'type': 'mieru', 'password': 'test-password'};
+      case ProxyKind.sudoku:
+        return const {'type': 'sudoku', 'password': 'test-password'};
+      case ProxyKind.vlessEncryption:
+        return const {'type': 'vless-encryption', 'password': 'test-password'};
+      case ProxyKind.shadowquic:
+        return const {'type': 'shadowquic', 'password': 'test-password'};
+      case ProxyKind.anytlsReality:
+        return const {'type': 'anytls-reality', 'password': 'test-password', 'private-key': 'test-private-key'};
     }
   }
 
@@ -2808,6 +2836,21 @@ class ClientHomeController extends ChangeNotifier {
             (proxy['allowed-ips'] as List?)?.cast<Object?>() ?? const [];
         wireguardAllowedIps.text = allowedIps.join(', ');
         wireguardMtu.text = '${proxy['mtu'] ?? wireguardMtu.text}';
+        break;
+      case ProxyKind.snell:
+      case ProxyKind.lua:
+      case ProxyKind.masque:
+      case ProxyKind.trusttunnel:
+      case ProxyKind.brook:
+      case ProxyKind.vlite:
+      case ProxyKind.tor:
+      case ProxyKind.ssh:
+      case ProxyKind.juicity:
+      case ProxyKind.mieru:
+      case ProxyKind.sudoku:
+      case ProxyKind.vlessEncryption:
+      case ProxyKind.shadowquic:
+      case ProxyKind.anytlsReality:
         break;
     }
 
