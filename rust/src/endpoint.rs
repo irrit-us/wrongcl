@@ -36,6 +36,19 @@ pub enum ProxyProtocol {
     Shadowsocks(ShadowsocksOptions),
     Snell(SnellOptions),
     Wireguard(WireGuardOptions),
+    Lua(LuaOptions),
+    Masque(MasqueOptions),
+    TrustTunnel(TrustTunnelOptions),
+    Brook(BrookOptions),
+    Vlite(VliteOptions),
+    Tor(TorOptions),
+    Ssh(SshOptions),
+    Juicity(JuicityOptions),
+    Mieru(MieruOptions),
+    Sudoku(SudokuOptions),
+    VlessEncryption(VlessEncryptionOptions),
+    Shadowquic(ShadowquicOptions),
+    AnytlsReality(AnytlsRealityOptions),
 }
 
 impl ProxyProtocol {
@@ -50,6 +63,19 @@ impl ProxyProtocol {
             ProxyProtocol::Shadowsocks(_) => "shadowsocks",
             ProxyProtocol::Snell(_) => "snell",
             ProxyProtocol::Wireguard(_) => "wireguard",
+            ProxyProtocol::Lua(_) => "lua",
+            ProxyProtocol::Masque(_) => "masque",
+            ProxyProtocol::TrustTunnel(_) => "trusttunnel",
+            ProxyProtocol::Brook(_) => "brook",
+            ProxyProtocol::Vlite(_) => "vlite",
+            ProxyProtocol::Tor(_) => "tor",
+            ProxyProtocol::Ssh(_) => "ssh",
+            ProxyProtocol::Juicity(_) => "juicity",
+            ProxyProtocol::Mieru(_) => "mieru",
+            ProxyProtocol::Sudoku(_) => "sudoku",
+            ProxyProtocol::VlessEncryption(_) => "vless-encryption",
+            ProxyProtocol::Shadowquic(_) => "shadowquic",
+            ProxyProtocol::AnytlsReality(_) => "anytls-reality",
         }
     }
 
@@ -64,6 +90,19 @@ impl ProxyProtocol {
             ProxyProtocol::Shadowsocks(_) => "Shadowsocks",
             ProxyProtocol::Snell(_) => "Snell",
             ProxyProtocol::Wireguard(_) => "WireGuard",
+            ProxyProtocol::Lua(_) => "Lua",
+            ProxyProtocol::Masque(_) => "Masque",
+            ProxyProtocol::TrustTunnel(_) => "TrustTunnel",
+            ProxyProtocol::Brook(_) => "Brook",
+            ProxyProtocol::Vlite(_) => "Vlite",
+            ProxyProtocol::Tor(_) => "Tor",
+            ProxyProtocol::Ssh(_) => "SSH",
+            ProxyProtocol::Juicity(_) => "Juicity",
+            ProxyProtocol::Mieru(_) => "Mieru",
+            ProxyProtocol::Sudoku(_) => "Sudoku",
+            ProxyProtocol::VlessEncryption(_) => "VLESS-Encryption",
+            ProxyProtocol::Shadowquic(_) => "ShadowQUIC",
+            ProxyProtocol::AnytlsReality(_) => "AnyTLS-Reality",
         }
     }
 }
@@ -476,6 +515,75 @@ pub struct ShadowTlsOptions {
     #[serde(rename = "server-name")]
     pub server_name: String,
     pub password: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LuaOptions {
+    #[serde(rename = "script-path")]
+    pub script_path: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MasqueOptions {
+    pub password: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TrustTunnelOptions {
+    pub key: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BrookOptions {
+    pub password: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct VliteOptions {
+    pub key: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TorOptions {
+    #[serde(rename = "bridge-line")]
+    pub bridge_line: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SshOptions {
+    pub password: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct JuicityOptions {
+    pub password: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MieruOptions {
+    pub password: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SudokuOptions {
+    pub password: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct VlessEncryptionOptions {
+    pub password: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ShadowquicOptions {
+    pub password: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AnytlsRealityOptions {
+    pub password: String,
+    #[serde(rename = "private-key")]
+    pub private_key: String,
 }
 
 mod summary;

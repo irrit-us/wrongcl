@@ -64,6 +64,7 @@ tokio-tun = "0.15"
 tun-rs = { version = "2.8.5", features = ["async"] }
 
 [dev-dependencies]
+md-5 = "0.10"
 rcgen = "0.13"
 wrongsv-server = { path = "../../wrongsv/crates/server" }
 

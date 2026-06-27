@@ -179,6 +179,21 @@ impl WrongsvClient {
             ProxyProtocol::Shadowsocks(opts) => self.connect_shadowsocks(target, &opts),
             ProxyProtocol::Snell(opts) => self.connect_snell(target, &opts),
             ProxyProtocol::Wireguard(opts) => self.connect_wireguard(target, &opts),
+            ProxyProtocol::Lua(_)
+            | ProxyProtocol::Masque(_)
+            | ProxyProtocol::TrustTunnel(_)
+            | ProxyProtocol::Brook(_)
+            | ProxyProtocol::Vlite(_)
+            | ProxyProtocol::Tor(_)
+            | ProxyProtocol::Ssh(_)
+            | ProxyProtocol::Juicity(_)
+            | ProxyProtocol::Mieru(_)
+            | ProxyProtocol::Sudoku(_)
+            | ProxyProtocol::VlessEncryption(_)
+            | ProxyProtocol::Shadowquic(_)
+            | ProxyProtocol::AnytlsReality(_) => {
+                Err(ClientError::UnsupportedProtocol(self.server.endpoint.proxy.id().to_string()))
+            }
         }
     }
 
@@ -203,6 +218,19 @@ impl WrongsvClient {
             | ProxyProtocol::Shadowsocks(_)
             | ProxyProtocol::Wireguard(_) => true,
             ProxyProtocol::Mixed(_) => true,
+            ProxyProtocol::Lua(_)
+            | ProxyProtocol::TrustTunnel(_)
+            | ProxyProtocol::Tor(_)
+            | ProxyProtocol::Ssh(_)
+            | ProxyProtocol::Sudoku(_)
+            | ProxyProtocol::VlessEncryption(_)
+            | ProxyProtocol::AnytlsReality(_) => false,
+            ProxyProtocol::Masque(_)
+            | ProxyProtocol::Brook(_)
+            | ProxyProtocol::Vlite(_)
+            | ProxyProtocol::Juicity(_)
+            | ProxyProtocol::Mieru(_)
+            | ProxyProtocol::Shadowquic(_) => true,
         }
     }
 
@@ -217,6 +245,7 @@ impl WrongsvClient {
             ProxyProtocol::Snell(opts) => self.connect_snell_udp(target, &opts),
             ProxyProtocol::Mixed(opts) => self.connect_mixed_udp(target, &opts),
             ProxyProtocol::Wireguard(opts) => self.connect_wireguard_udp(target, &opts),
+            _ => Err(ClientError::UnsupportedProtocol(self.server.endpoint.proxy.id().to_string())),
         }
     }
 

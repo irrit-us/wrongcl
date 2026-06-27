@@ -3534,6 +3534,7 @@ dependencies = [
  "http",
  "ipnet",
  "kcp",
+ "md-5",
  "prost",
  "quinn",
  "rand 0.8.6",

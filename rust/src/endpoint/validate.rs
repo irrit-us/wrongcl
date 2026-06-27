@@ -260,6 +260,74 @@ impl Endpoint {
                     ));
                 }
             }
+            ProxyProtocol::Lua(opts) => {
+                if opts.script_path.trim().is_empty() {
+                    return Err(ClientError::Config("Lua requires script-path".into()));
+                }
+            }
+            ProxyProtocol::Masque(opts) => {
+                if opts.password.trim().is_empty() {
+                    return Err(ClientError::Config("Masque requires password".into()));
+                }
+            }
+            ProxyProtocol::TrustTunnel(opts) => {
+                if opts.key.trim().is_empty() {
+                    return Err(ClientError::Config("TrustTunnel requires key".into()));
+                }
+            }
+            ProxyProtocol::Brook(opts) => {
+                if opts.password.trim().is_empty() {
+                    return Err(ClientError::Config("Brook requires password".into()));
+                }
+            }
+            ProxyProtocol::Vlite(opts) => {
+                if opts.key.trim().is_empty() {
+                    return Err(ClientError::Config("Vlite requires key".into()));
+                }
+            }
+            ProxyProtocol::Tor(opts) => {
+                if opts.bridge_line.trim().is_empty() {
+                    return Err(ClientError::Config("Tor requires bridge-line".into()));
+                }
+            }
+            ProxyProtocol::Ssh(opts) => {
+                if opts.password.trim().is_empty() {
+                    return Err(ClientError::Config("SSH requires password".into()));
+                }
+            }
+            ProxyProtocol::Juicity(opts) => {
+                if opts.password.trim().is_empty() {
+                    return Err(ClientError::Config("Juicity requires password".into()));
+                }
+            }
+            ProxyProtocol::Mieru(opts) => {
+                if opts.password.trim().is_empty() {
+                    return Err(ClientError::Config("Mieru requires password".into()));
+                }
+            }
+            ProxyProtocol::Sudoku(opts) => {
+                if opts.password.trim().is_empty() {
+                    return Err(ClientError::Config("Sudoku requires password".into()));
+                }
+            }
+            ProxyProtocol::VlessEncryption(opts) => {
+                if opts.password.trim().is_empty() {
+                    return Err(ClientError::Config("VLESS-Encryption requires password".into()));
+                }
+            }
+            ProxyProtocol::Shadowquic(opts) => {
+                if opts.password.trim().is_empty() {
+                    return Err(ClientError::Config("ShadowQUIC requires password".into()));
+                }
+            }
+            ProxyProtocol::AnytlsReality(opts) => {
+                if opts.password.trim().is_empty() {
+                    return Err(ClientError::Config("AnyTLS-Reality requires password".into()));
+                }
+                if opts.private_key.trim().is_empty() {
+                    return Err(ClientError::Config("AnyTLS-Reality requires private-key".into()));
+                }
+            }
         }
 
         if let OuterSecurity::Tls(opts) = &self.outer_security {
